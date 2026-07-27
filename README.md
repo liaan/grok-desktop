@@ -2,6 +2,25 @@
 
 Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding agent.
 
+## Install for the team (no npm)
+
+**Nobody needs Node or npm to use this app.** Download the installer from the latest
+[GitHub Release](https://github.com/liaan/grok-desktop/releases/latest):
+
+| OS | Download | What to do |
+|----|----------|------------|
+| **Windows** | `Grok Desktop Setup ….exe` | Double-click → Next → finish. Optional: portable `.exe` needs no install. |
+| **macOS** | `….dmg` | Open DMG → drag **Grok Desktop** into Applications. First launch: right-click → **Open**. |
+| **Linux** | `….AppImage` | `chmod +x "Grok Desktop-….AppImage"` then run it. |
+
+Also install the **Grok Build CLI** (`grok`) on each machine — this app is only the GUI and talks to that CLI.
+
+Then: open **Grok Desktop** → **Sign in with browser** → **Open project…**
+
+> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned internal build). That’s expected — choose **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
+
+---
+
 This project is **not** a reimplementation of the agent, models, or tools. It is an **Electron + React** app that:
 
 1. Signs you in with the same browser flow as the Grok CLI (`grok login`)
@@ -36,7 +55,7 @@ Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI i
 | Diff review pane | Planned |
 | Multi-session tabs | Planned |
 | Settings UI (model / MCP) | Planned |
-| Native installers (Windows / macOS / Linux) | Planned |
+| Native installers (Windows / macOS / Linux) | Done (`npm run dist`) |
 
 ## Requirements
 
@@ -74,6 +93,36 @@ Production-style run from source:
 npm run build
 npm start
 ```
+
+## Ship a release (maintainer only)
+
+GitHub Actions builds Windows / macOS / Linux installers automatically. The team only downloads from **Releases** — they never touch npm.
+
+### Easy path (recommended)
+
+```bash
+# 1. Bump version in package.json (e.g. 0.1.0 → 0.1.1), commit & push
+
+# 2. Tag and push the tag
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Wait a few minutes → open **GitHub → Releases** → send the guys the download links.
+
+You can also trigger **Actions → Build & Release → Run workflow** for a test build (artifacts only, no release page unless you pushed a `v*` tag).
+
+### Local build (optional)
+
+```bash
+npm install
+npm run dist:win    # Windows machine
+npm run dist:mac    # Mac
+npm run dist:linux  # Linux
+npm run pack        # unpackaged folder for a quick smoke test
+```
+
+**Important:** packaging only ships the GUI. Users still need the **Grok Build CLI** (`grok` / `grok.exe`), or set `GROK_BINARY`.
 
 ### First launch
 

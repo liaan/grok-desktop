@@ -1,0 +1,126 @@
+# Builds installers for Windows, macOS, and Linux.
+#
+# How to ship a release to the team:
+#   1. Bump "version" in package.json (e.g. 0.1.0 → 0.1.1)
+#   2. Commit, push to master
+#   3. Tag and push:
+#        git tag v0.1.1
+#        git push origin v0.1.1
+#   4. Wait for this workflow → GitHub → Releases
+#   5. Send the guys the download links from that release
+#
+# You can also run it manually (Actions → Build & Release → Run workflow)
+# to get downloadable artifacts without creating a tagged release.
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+            args: --win
+          - os: macos-latest
+            label: macOS
+            args: --mac
+          - os: ubuntu-latest
+            label: Linux
+            args: --linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installers
+        run: npx vite build && npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          # Unsigned builds are fine for internal team use.
+          # (Windows SmartScreen / macOS Gatekeeper may show a one-time warning.)
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-desktop-${{ matrix.label }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.zip
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    # Only create a Release page when a version tag was pushed
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-installers
+          merge-multiple: true
+
+      - name: List files
+        run: find dist-installers -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Grok Desktop ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          body: |
+            ## Install (no npm needed)
+
+            | OS | What to download |
+            |----|------------------|
+            | **Windows** | `Grok Desktop Setup … .exe` (installer) — or the portable `.exe` if you prefer no install |
+            | **macOS** | `.dmg` — open it, drag **Grok Desktop** to Applications |
+            | **Linux** | `.AppImage` — make executable and run (`chmod +x …AppImage && ./…AppImage`) |
+
+            ### First-time notes
+
+            1. You still need the **Grok Build CLI** (`grok`) installed on the machine — this app is only the GUI.
+            2. Unsigned build: Windows may show SmartScreen (“Windows protected your PC”) → **More info** → **Run anyway**. On macOS, right-click the app → **Open** the first time.
+            3. Open the app → **Sign in with browser** → **Open project…**
+
+            ---
+            Built automatically from tag `${{ github.ref_name }}`.
+          files: |
+            dist-installers/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
