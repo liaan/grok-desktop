@@ -4,8 +4,8 @@
   "description": "Desktop GUI for Grok Build — Codex-style app on the Grok agent backbone (ACP)",
   "main": "electron/main.mjs",
   "type": "module",
-  "author": "Local fork / desktop shell for xai-org/grok-build",
-  "license": "Apache-2.0",
+  "author": "liaan",
+  "license": "MIT",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build",

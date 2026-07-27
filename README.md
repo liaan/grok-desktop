@@ -124,4 +124,8 @@ Agent → Client:
 
 ## License
 
-Apache-2.0 for this desktop shell. Grok Build itself remains under its upstream license (Apache-2.0 for first-party code in `xai-org/grok-build`).
+**MIT** for this desktop shell (see [`LICENSE`](./LICENSE)).
+
+This repo is an independent GUI client. It does **not** redistribute Grok Build source code; it spawns the separately installed `grok` binary over ACP.
+
+[Grok Build](https://github.com/xai-org/grok-build) remains under its own upstream license (**Apache-2.0** for first-party code). Using or bundling that binary is subject to xAI / Grok Build terms, separate from this MIT-licensed UI.

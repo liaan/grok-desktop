@@ -38,3 +38,7 @@ You do **not** need to rebuild Grok to run Grok Desktop if the official binary i
 So the durable approach is:
 
 **Fork the product experience (GUI) · reuse the backbone process.**
+
+## License note
+
+This desktop shell is **MIT**. Upstream Grok Build is **Apache-2.0**. Because this repository does not copy Grok Build source into the tree, the shell can use MIT; the installed `grok` binary stays under its own license.
