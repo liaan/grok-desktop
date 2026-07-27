@@ -10,7 +10,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
-import { GrokAcpClient, resolveGrokBinary } from "./acp-client.mjs";
+import { GrokAcpClient } from "./acp-client.mjs";
+import {
+  cancelLogin,
+  getAuthStatus,
+  setSessionApiKey,
+  startLogin,
+  startLogout,
+} from "./auth.mjs";
+import { inspectBackbone } from "./backbone.mjs";
+import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -114,16 +123,67 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle("app:get-info", async () => {
     const state = loadState();
+    const auth = getAuthStatus();
     return {
       version: app.getVersion(),
       platform: process.platform,
       grokBinary: resolveGrokBinary(),
+      grokHome: grokHomeDir(),
       userData: app.getPath("userData"),
       alwaysApprove: state.alwaysApprove,
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
+      auth,
     };
+  });
+
+  ipcMain.handle("auth:status", async () => getAuthStatus());
+
+  ipcMain.handle("auth:login", async (_e, opts = {}) => {
+    try {
+      const result = await startLogin({
+        deviceAuth: Boolean(opts?.deviceAuth),
+      });
+      return result;
+    } catch (err) {
+      return {
+        ok: false,
+        status: getAuthStatus(),
+        error: err?.message || String(err),
+      };
+    }
+  });
+
+  ipcMain.handle("auth:cancel-login", async () => {
+    cancelLogin();
+    return getAuthStatus();
+  });
+
+  ipcMain.handle("auth:logout", async () => {
+    try {
+      return await startLogout();
+    } catch (err) {
+      return {
+        ok: false,
+        status: getAuthStatus(),
+        message: err?.message || String(err),
+      };
+    }
+  });
+
+  ipcMain.handle("auth:set-api-key", async (_e, key) => {
+    const ok = setSessionApiKey(key);
+    return { ok, status: getAuthStatus() };
+  });
+
+  ipcMain.handle("auth:open-install-docs", async () => {
+    await shell.openExternal("https://docs.x.ai/build/overview");
+    return true;
+  });
+
+  ipcMain.handle("backbone:inspect", async (_e, cwd) => {
+    return inspectBackbone(cwd || process.cwd());
   });
 
   ipcMain.handle("project:pick", async () => {

@@ -39,19 +39,51 @@ export type PermissionRequest = {
   };
 };
 
+export type AuthStatus = {
+  binary: string;
+  binaryFound: boolean;
+  grokHome: string;
+  authPath: string;
+  authenticated: boolean;
+  method: string | null;
+  email: string | null;
+  displayName: string | null;
+  expiresAt: string | null;
+  expired: boolean;
+  hasApiKey: boolean;
+  loginInProgress: boolean;
+};
+
+export type BackboneSummary = {
+  ok: boolean;
+  skills: Array<{ name: string; source?: string }>;
+  mcpServers: Array<{
+    name: string;
+    transport?: string;
+    source?: string;
+  }>;
+  plugins: Array<{ name: string }>;
+  grokVersion?: string;
+  error?: string;
+};
+
+export type AppInfo = {
+  version: string;
+  platform: string;
+  grokBinary: string;
+  grokHome: string;
+  userData: string;
+  alwaysApprove: boolean;
+  recentProjects: string[];
+  lastProject: string | null;
+  home: string;
+  auth: AuthStatus;
+};
+
 declare global {
   interface Window {
     grokDesktop: {
-      getInfo: () => Promise<{
-        version: string;
-        platform: string;
-        grokBinary: string;
-        userData: string;
-        alwaysApprove: boolean;
-        recentProjects: string[];
-        lastProject: string | null;
-        home: string;
-      }>;
+      getInfo: () => Promise<AppInfo>;
       pickProject: () => Promise<string | null>;
       openProject: (cwd: string) => Promise<{
         cwd: string;
@@ -71,6 +103,26 @@ declare global {
       ) => Promise<Array<{ name: string; isDirectory: boolean; path: string }>>;
       openPath: (path: string) => Promise<string>;
       showItem: (path: string) => Promise<void>;
+      getAuthStatus: () => Promise<AuthStatus>;
+      login: (opts?: {
+        deviceAuth?: boolean;
+      }) => Promise<{
+        ok: boolean;
+        status?: AuthStatus;
+        error?: string;
+        output?: string;
+      }>;
+      cancelLogin: () => Promise<AuthStatus>;
+      logout: () => Promise<{
+        ok: boolean;
+        status?: AuthStatus;
+        message?: string;
+      }>;
+      setApiKey: (
+        key: string,
+      ) => Promise<{ ok: boolean; status: AuthStatus }>;
+      openInstallDocs: () => Promise<boolean>;
+      inspectBackbone: (cwd?: string) => Promise<BackboneSummary>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
   }

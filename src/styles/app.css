@@ -520,12 +520,147 @@ button {
 }
 
 .welcome-card {
-  width: min(640px, 100%);
+  width: min(680px, 100%);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   border-radius: 18px;
   padding: 28px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
+}
+
+.auth-card {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.auth-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.auth-card.auth-ok {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.auth-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.auth-value {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auth-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--accent);
+}
+
+.auth-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.auth-output {
+  margin-top: 12px;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: #0a0a0e;
+  border-radius: 8px;
+  padding: 10px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
+.auth-divider {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 14px 0 10px;
+}
+
+.auth-key-box {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.auth-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.auth-input:focus {
+  border-color: var(--accent);
+}
+
+.auth-backbone {
+  margin-top: 12px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.sidebar-account {
+  padding: 0 4px;
+}
+
+.sidebar-account .name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar-account .path {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.error-banner {
+  padding: 8px 16px;
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+  border-bottom: 1px solid rgba(248, 113, 113, 0.25);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .welcome-card h1 {

@@ -28,11 +28,16 @@ Users who want a **GUI** (like OpenAI Codex’s desktop app) while keeping:
 
 ## Requirements
 
-1. **Node.js 20+**
-2. **Grok Build CLI** installed (`grok` on PATH or `~/.grok/bin/grok[.exe]`)
-3. Authenticated Grok session (`grok login` or `XAI_API_KEY`)
+1. **Node.js 20+** (for development / `npm run dev`)
+2. **Grok Build CLI** installed once (`~/.grok/bin/grok` or PATH)  
+   - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`  
+   - Windows: `irm https://x.ai/cli/install.ps1 | iex`
+3. **Sign in from the app** (browser OAuth — same as `grok login`)  
+   - Or optional session API key in the UI / `XAI_API_KEY`
 
-Optional: set `GROK_BINARY` to a custom path.
+You do **not** need to run CLI auth commands for normal use. Skills, MCP servers, plugins, and models still come from `~/.grok` (configure those in the CLI for now; the desktop loads them automatically).
+
+Optional: set `GROK_BINARY` or `GROK_HOME` to override discovery.
 
 ## Backbone source (fork reference)
 
@@ -65,6 +70,8 @@ npm start
 
 | Area | Status |
 |------|--------|
+| In-app browser login / logout (official `grok login`) | Done |
+| Skills + MCP from `~/.grok` (same as CLI) | Done |
 | Open project / recent projects | Done |
 | ACP session (`initialize`, `session/new`, `session/prompt`) | Done |
 | Streaming message / thought / plan / tool cards | Done |

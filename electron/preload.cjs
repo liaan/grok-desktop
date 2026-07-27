@@ -15,6 +15,14 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
   showItem: (path) => ipcRenderer.invoke("shell:show-item", path),
 
+  getAuthStatus: () => ipcRenderer.invoke("auth:status"),
+  login: (opts) => ipcRenderer.invoke("auth:login", opts || {}),
+  cancelLogin: () => ipcRenderer.invoke("auth:cancel-login"),
+  logout: () => ipcRenderer.invoke("auth:logout"),
+  setApiKey: (key) => ipcRenderer.invoke("auth:set-api-key", key),
+  openInstallDocs: () => ipcRenderer.invoke("auth:open-install-docs"),
+  inspectBackbone: (cwd) => ipcRenderer.invoke("backbone:inspect", cwd),
+
   on: (channel, handler) => {
     const valid = [
       "agent:session-update",

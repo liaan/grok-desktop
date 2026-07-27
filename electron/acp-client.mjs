@@ -1,32 +1,18 @@
 /**
  * Minimal ACP (Agent Client Protocol) client over `grok agent stdio`.
  * Backbone: xAI Grok Build agent runtime — same path as IDE / grok-desktop embeds.
+ *
+ * Skills, MCP servers, plugins, and auth all come from the installed Grok CLI
+ * (`~/.grok`). We pass `mcpServers: []` on session/new the same way VS Code /
+ * official embeds do — the agent merges config.toml + plugins itself.
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
-
-function resolveGrokBinary() {
-  if (process.env.GROK_BINARY) return process.env.GROK_BINARY;
-  const home = os.homedir();
-  const candidates = [
-    path.join(home, ".grok", "bin", process.platform === "win32" ? "grok.exe" : "grok"),
-    path.join(home, ".local", "bin", "grok"),
-    "grok",
-  ];
-  for (const c of candidates) {
-    if (c === "grok") return c;
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      /* ignore */
-    }
-  }
-  return "grok";
-}
+import { agentEnv } from "./auth.mjs";
+import { resolveGrokBinary } from "./grok-home.mjs";
 
 export class GrokAcpClient extends EventEmitter {
   constructor({ cwd, grokPath, alwaysApprove = false } = {}) {
@@ -46,11 +32,11 @@ export class GrokAcpClient extends EventEmitter {
   async start() {
     if (this.proc) return this;
 
+    // Same entrypoint as the CLI agent; inherits ~/.grok skills, MCP, auth.
     const args = ["agent", "stdio"];
-    // Prefer env PATH fallbacks; Windows needs shell:false and absolute path when possible
     this.proc = spawn(this.grokPath, args, {
       cwd: this.cwd,
-      env: { ...process.env },
+      env: agentEnv(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -89,13 +75,18 @@ export class GrokAcpClient extends EventEmitter {
       },
     });
 
+    // Empty mcpServers = client adds none; agent still loads ~/.grok config + plugins.
     const session = await this.request("session/new", {
       cwd: this.cwd,
       mcpServers: [],
     });
     this.sessionId = session.sessionId;
     this.ready = true;
-    this.emit("ready", { sessionId: this.sessionId, cwd: this.cwd });
+    this.emit("ready", {
+      sessionId: this.sessionId,
+      cwd: this.cwd,
+      grokBinary: this.grokPath,
+    });
     return this;
   }
 
@@ -257,7 +248,11 @@ export class GrokAcpClient extends EventEmitter {
       mcpServers: [],
     });
     this.sessionId = session.sessionId;
-    this.emit("ready", { sessionId: this.sessionId, cwd: this.cwd });
+    this.emit("ready", {
+      sessionId: this.sessionId,
+      cwd: this.cwd,
+      grokBinary: this.grokPath,
+    });
     return this.sessionId;
   }
 
@@ -275,4 +270,4 @@ export class GrokAcpClient extends EventEmitter {
   }
 }
 
-export { resolveGrokBinary };
+export { resolveGrokBinary } from "./grok-home.mjs";
