@@ -21,6 +21,11 @@ import {
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 import { setupAutoUpdater } from "./auto-update.mjs";
+import {
+  listSessionsForCwd,
+  loadTimelineFromDisk,
+  mostRecentSession,
+} from "./sessions.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -31,6 +36,8 @@ let mainWindow = null;
 let agent = null;
 /** @type {Map<string, (outcome: any) => void>} */
 const pendingPermissions = new Map();
+/** Serialize agent lifecycle (open/switch/dispose). */
+let agentChain = Promise.resolve();
 
 const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 
@@ -57,42 +64,127 @@ function send(channel, payload) {
   }
 }
 
-async function ensureAgent(cwd) {
-  if (agent?.ready && agent.cwd === cwd) return agent;
-  if (agent) {
-    await agent.dispose();
-    agent = null;
+function clearPendingPermissions() {
+  for (const [, respond] of pendingPermissions) {
+    try {
+      respond({ outcome: { outcome: "cancelled" } });
+    } catch {
+      /* ignore */
+    }
   }
+  pendingPermissions.clear();
+}
 
-  const state = loadState();
-  agent = new GrokAcpClient({
-    cwd,
-    alwaysApprove: state.alwaysApprove,
-  });
+/**
+ * Ensure path is inside project root (renderer FS IPC).
+ * @param {string} root
+ * @param {string} target
+ */
+function assertPathInProject(root, target) {
+  if (!root) throw new Error("No project open");
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(target);
+  const rel = path.relative(resolvedRoot, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("Path is outside the open project");
+  }
+  return resolved;
+}
 
-  agent.on("session-update", (params) => {
-    send("agent:session-update", params);
-  });
+/**
+ * Ensure agent process for cwd, optionally resuming a CLI session.
+ * Serialized — concurrent open/switch cannot race dispose/start.
+ * @param {string} cwd
+ * @param {{ resumeSessionId?: string | null, forceNew?: boolean }} [opts]
+ */
+function ensureAgent(cwd, opts = {}) {
+  const run = async () => {
+    const resumeSessionId = opts.resumeSessionId || null;
+    const forceNew = Boolean(opts.forceNew);
 
-  agent.on("permission-request", ({ params, respond }) => {
-    const reqId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    pendingPermissions.set(reqId, respond);
-    send("agent:permission-request", { reqId, params });
-  });
+    if (agent?.ready && agent.cwd === cwd && agent.proc) {
+      if (forceNew) {
+        clearPendingPermissions();
+        await agent.newSession();
+        return agent;
+      }
+      if (resumeSessionId && resumeSessionId !== agent.sessionId) {
+        clearPendingPermissions();
+        await agent.loadSession(resumeSessionId);
+        return agent;
+      }
+      if (resumeSessionId && resumeSessionId === agent.sessionId) {
+        return agent;
+      }
+      if (!resumeSessionId && !forceNew) {
+        return agent;
+      }
+    }
 
-  agent.on("stderr", (text) => send("agent:stderr", text));
-  agent.on("error", (err) =>
-    send("agent:error", { message: err?.message || String(err) }),
+    if (agent) {
+      clearPendingPermissions();
+      await agent.dispose();
+      agent = null;
+    }
+
+    const state = loadState();
+    agent = new GrokAcpClient({
+      cwd,
+      alwaysApprove: state.alwaysApprove,
+      clientVersion: app.getVersion(),
+    });
+
+    agent.on("session-update", (params) => {
+      send("agent:session-update", params);
+    });
+
+    agent.on("permission-request", ({ params, respond }) => {
+      const reqId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      pendingPermissions.set(reqId, respond);
+      send("agent:permission-request", { reqId, params });
+    });
+
+    agent.on("stderr", (text) => send("agent:stderr", text));
+    agent.on("error", (err) =>
+      send("agent:error", { message: err?.message || String(err) }),
+    );
+    agent.on("exit", (info) => {
+      clearPendingPermissions();
+      send("agent:exit", info);
+    });
+    // Do not push agent:ready for conn — renderer only trusts open IPC results
+    agent.on("ready", (info) => send("agent:ready", info));
+
+    await agent.start({
+      resumeSessionId: forceNew ? null : resumeSessionId,
+    });
+    return agent;
+  };
+
+  const next = agentChain.then(run, run);
+  agentChain = next.then(
+    () => undefined,
+    () => undefined,
   );
-  agent.on("exit", (info) => send("agent:exit", info));
-  agent.on("ready", (info) => send("agent:ready", info));
+  return next;
+}
 
-  await agent.start();
-  return agent;
+function rememberProjectSession(cwd, sessionId) {
+  if (!cwd || !sessionId) return;
+  const state = loadState();
+  state.lastProject = cwd;
+  state.recentProjects = [
+    cwd,
+    ...(state.recentProjects || []).filter((p) => p !== cwd),
+  ].slice(0, 12);
+  state.sessionsByProject = state.sessionsByProject || {};
+  state.sessionsByProject[cwd] = sessionId;
+  saveState(state);
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  /** @type {import('electron').BrowserWindowConstructorOptions} */
+  const winOpts = {
     width: 1440,
     height: 900,
     minWidth: 960,
@@ -106,7 +198,14 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
-  });
+  };
+
+  // Sit traffic lights in the brand top band (matches .platform-darwin sidebar padding)
+  if (process.platform === "darwin") {
+    winOpts.trafficLightPosition = { x: 14, y: 16 };
+  }
+
+  mainWindow = new BrowserWindow(winOpts);
 
   if (isDev) {
     mainWindow.loadURL("http://127.0.0.1:5173");
@@ -116,7 +215,10 @@ function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Never open data:/blob: via openExternal
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url);
+    }
     return { action: "deny" };
   });
 }
@@ -204,29 +306,128 @@ function registerIpc() {
     return cwd;
   });
 
-  ipcMain.handle("project:open", async (_e, cwd) => {
+  /**
+   * Open a project and attach an ACP session.
+   * @param {string} cwd
+   * @param {{ mode?: 'continue' | 'new' | 'resume', sessionId?: string }} [opts]
+   *   - continue (default): resume most recent session for cwd (CLI `-c`)
+   *   - new: brand-new session (CLI `/new`)
+   *   - resume: load opts.sessionId (CLI `--resume id`)
+   */
+  ipcMain.handle("project:open", async (_e, cwd, opts = {}) => {
     if (!cwd || !fs.existsSync(cwd)) {
       throw new Error(`Project path not found: ${cwd}`);
     }
-    const state = loadState();
-    state.lastProject = cwd;
-    state.recentProjects = [
-      cwd,
-      ...(state.recentProjects || []).filter((p) => p !== cwd),
-    ].slice(0, 12);
-    saveState(state);
 
-    const client = await ensureAgent(cwd);
+    const mode = opts?.mode || "continue";
+    let resumeSessionId = null;
+    let forceNew = false;
+
+    if (mode === "new") {
+      forceNew = true;
+    } else if (mode === "resume" && opts?.sessionId) {
+      resumeSessionId = opts.sessionId;
+    } else {
+      // continue — CLI `-c`: most recent on disk by lastActiveAt
+      resumeSessionId = mostRecentSession(cwd)?.id || null;
+    }
+
+    let client;
+    try {
+      client = await ensureAgent(cwd, {
+        resumeSessionId,
+        forceNew,
+      });
+    } catch (err) {
+      // Corrupt / missing session — fall back to a new chat
+      if (resumeSessionId && !forceNew) {
+        console.warn(
+          "[project:open] resume failed, starting new session:",
+          err?.message || err,
+        );
+        client = await ensureAgent(cwd, { forceNew: true });
+        resumeSessionId = null;
+        forceNew = true;
+      } else {
+        throw err;
+      }
+    }
+
+    rememberProjectSession(cwd, client.sessionId);
+
+    let history = [];
+    if (client.sessionId && !forceNew) {
+      const loaded = loadTimelineFromDisk(cwd, client.sessionId);
+      history = loaded.items || [];
+    }
+
+    const sessions = listSessionsForCwd(cwd);
+
     return {
       cwd: client.cwd,
       sessionId: client.sessionId,
       grokBinary: client.grokPath,
+      resumed: Boolean(resumeSessionId) && !forceNew,
+      history,
+      sessions,
     };
   });
 
-  ipcMain.handle("agent:prompt", async (_e, { text }) => {
+  ipcMain.handle("sessions:list", async (_e, cwd) => {
+    if (!cwd) return [];
+    return listSessionsForCwd(cwd);
+  });
+
+  ipcMain.handle("sessions:open", async (_e, { cwd, sessionId, mode }) => {
+    if (!cwd || !fs.existsSync(cwd)) {
+      throw new Error(`Project path not found: ${cwd}`);
+    }
+    let forceNew = mode === "new";
+    let resumeSessionId = forceNew ? null : sessionId;
+    let client;
+    let resumeWarning = null;
+    try {
+      client = await ensureAgent(cwd, {
+        resumeSessionId,
+        forceNew,
+      });
+    } catch (err) {
+      if (resumeSessionId && !forceNew) {
+        console.warn(
+          "[sessions:open] resume failed, starting new session:",
+          err?.message || err,
+        );
+        resumeWarning =
+          err?.message ||
+          "Could not resume that chat; started a new session.";
+        client = await ensureAgent(cwd, { forceNew: true });
+        forceNew = true;
+        resumeSessionId = null;
+      } else {
+        throw err;
+      }
+    }
+    rememberProjectSession(cwd, client.sessionId);
+
+    let history = [];
+    if (!forceNew && client.sessionId) {
+      history = loadTimelineFromDisk(cwd, client.sessionId).items || [];
+    }
+
+    return {
+      cwd: client.cwd,
+      sessionId: client.sessionId,
+      grokBinary: client.grokPath,
+      resumed: Boolean(resumeSessionId) && !forceNew,
+      history,
+      sessions: listSessionsForCwd(cwd),
+      warning: resumeWarning,
+    };
+  });
+
+  ipcMain.handle("agent:prompt", async (_e, { text, images = [] }) => {
     if (!agent?.ready) throw new Error("Agent not connected. Open a project first.");
-    return agent.prompt(text);
+    return agent.prompt(text, { images });
   });
 
   ipcMain.handle("agent:cancel", async () => {
@@ -251,26 +452,44 @@ function registerIpc() {
   });
 
   ipcMain.handle("fs:read-file", async (_e, filePath) => {
-    return fs.promises.readFile(filePath, "utf8");
+    const root = agent?.cwd;
+    const safe = assertPathInProject(root, filePath);
+    return fs.promises.readFile(safe, "utf8");
   });
 
   ipcMain.handle("fs:list-dir", async (_e, dirPath) => {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const root = agent?.cwd;
+    const safe = assertPathInProject(root, dirPath);
+    const entries = await fs.promises.readdir(safe, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith("."))
       .slice(0, 200)
       .map((e) => ({
         name: e.name,
         isDirectory: e.isDirectory(),
-        path: path.join(dirPath, e.name),
+        path: path.join(safe, e.name),
       }));
   });
 
   ipcMain.handle("shell:open-path", async (_e, target) => {
+    const root = agent?.cwd;
+    if (root) {
+      try {
+        return shell.openPath(assertPathInProject(root, target));
+      } catch {
+        /* allow absolute paths outside for explicit reveal? no — stay strict */
+        throw new Error("Path is outside the open project");
+      }
+    }
     return shell.openPath(target);
   });
 
   ipcMain.handle("shell:show-item", async (_e, target) => {
+    const root = agent?.cwd;
+    if (root) {
+      shell.showItemInFolder(assertPathInProject(root, target));
+      return;
+    }
     shell.showItemInFolder(target);
   });
 }

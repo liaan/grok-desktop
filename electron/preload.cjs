@@ -3,8 +3,14 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("grokDesktop", {
   getInfo: () => ipcRenderer.invoke("app:get-info"),
   pickProject: () => ipcRenderer.invoke("project:pick"),
-  openProject: (cwd) => ipcRenderer.invoke("project:open", cwd),
-  prompt: (text) => ipcRenderer.invoke("agent:prompt", { text }),
+  openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),
+  listSessions: (cwd) => ipcRenderer.invoke("sessions:list", cwd),
+  openSession: (opts) => ipcRenderer.invoke("sessions:open", opts || {}),
+  prompt: (text, opts) =>
+    ipcRenderer.invoke("agent:prompt", {
+      text,
+      images: opts?.images || [],
+    }),
   cancel: () => ipcRenderer.invoke("agent:cancel"),
   respondPermission: (reqId, outcome) =>
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),

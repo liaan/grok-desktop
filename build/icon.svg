@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="shell" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C4B5FD"/>
+      <stop offset="0.45" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="16" y1="10" x2="16" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9D5FF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#A78BFA" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="url(#shell)"/>
+  <rect x="1.5" y="1.5" width="29" height="29" rx="8" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+  <rect x="5" y="5.5" width="22" height="6" rx="2" fill="rgba(12,12,18,0.45)"/>
+  <circle cx="8.2" cy="8.5" r="1.05" fill="#F87171" opacity="0.9"/>
+  <circle cx="11.4" cy="8.5" r="1.05" fill="#FBBF24" opacity="0.9"/>
+  <circle cx="14.6" cy="8.5" r="1.05" fill="#34D399" opacity="0.9"/>
+  <rect x="5" y="13" width="22" height="13.5" rx="2.5" fill="rgba(12,12,18,0.5)" stroke="rgba(255,255,255,0.08)"/>
+  <g transform="translate(16 19.5)">
+    <path d="M0 -5.2 L1.15 -1.15 L5.2 0 L1.15 1.15 L0 5.2 L-1.15 1.15 L-5.2 0 L-1.15 -1.15 Z" fill="url(#glow)"/>
+    <circle cx="0" cy="0" r="1.35" fill="#F8FAFC"/>
+    <circle cx="4.2" cy="-3.1" r="0.7" fill="#E9D5FF" opacity="0.85"/>
+    <circle cx="-3.8" cy="3.2" r="0.55" fill="#C4B5FD" opacity="0.8"/>
+  </g>
+</svg>

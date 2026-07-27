@@ -14,25 +14,41 @@ import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+const INIT_TIMEOUT_MS = 60_000;
+const LOAD_TIMEOUT_MS = 90_000;
+
 export class GrokAcpClient extends EventEmitter {
-  constructor({ cwd, grokPath, alwaysApprove = false } = {}) {
+  constructor({
+    cwd,
+    grokPath,
+    alwaysApprove = false,
+    clientVersion = "0.1.2",
+  } = {}) {
     super();
     this.cwd = cwd || process.cwd();
     this.grokPath = grokPath || resolveGrokBinary();
     this.alwaysApprove = alwaysApprove;
+    this.clientVersion = clientVersion;
     this.proc = null;
     this.rl = null;
     this.nextId = 1;
+    /** @type {Map<number, { resolve: Function, reject: Function, timer?: NodeJS.Timeout }>} */
     this.pending = new Map();
     this.sessionId = null;
     this.ready = false;
     this.stderrBuf = "";
+    /** @type {Record<string, any>} */
+    this.agentCapabilities = {};
   }
 
-  async start() {
+  /**
+   * Spawn agent + initialize. Optionally resume a persisted session (ACP session/load).
+   * @param {{ resumeSessionId?: string | null }} [opts]
+   */
+  async start(opts = {}) {
     if (this.proc) return this;
 
-    // Same entrypoint as the CLI agent; inherits ~/.grok skills, MCP, auth.
     const args = ["agent", "stdio"];
     this.proc = spawn(this.grokPath, args, {
       cwd: this.cwd,
@@ -47,10 +63,9 @@ export class GrokAcpClient extends EventEmitter {
 
     this.proc.on("exit", (code, signal) => {
       this.ready = false;
-      for (const [, p] of this.pending) {
-        p.reject(new Error(`Agent exited (code=${code}, signal=${signal})`));
-      }
-      this.pending.clear();
+      this._rejectAllPending(
+        new Error(`Agent exited (code=${code}, signal=${signal})`),
+      );
       this.emit("exit", { code, signal });
     });
 
@@ -63,31 +78,89 @@ export class GrokAcpClient extends EventEmitter {
     this.rl = createInterface({ input: this.proc.stdout });
     this.rl.on("line", (line) => this._onLine(line));
 
-    await this.request("initialize", {
-      protocolVersion: 1,
-      clientInfo: {
-        name: "grok-desktop",
-        version: "0.1.0",
+    const init = await this.request(
+      "initialize",
+      {
+        protocolVersion: 1,
+        clientInfo: {
+          name: "grok-desktop",
+          version: this.clientVersion,
+        },
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: true,
+        },
       },
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: true,
-      },
-    });
+      { timeoutMs: INIT_TIMEOUT_MS },
+    );
+    this.agentCapabilities = init?.agentCapabilities || {};
 
-    // Empty mcpServers = client adds none; agent still loads ~/.grok config + plugins.
-    const session = await this.request("session/new", {
-      cwd: this.cwd,
-      mcpServers: [],
-    });
+    if (opts.resumeSessionId) {
+      await this.loadSession(opts.resumeSessionId);
+    } else {
+      await this.newSession();
+    }
+    return this;
+  }
+
+  async newSession() {
+    const session = await this.request(
+      "session/new",
+      {
+        cwd: this.cwd,
+        mcpServers: [],
+      },
+      { timeoutMs: LOAD_TIMEOUT_MS },
+    );
     this.sessionId = session.sessionId;
     this.ready = true;
     this.emit("ready", {
       sessionId: this.sessionId,
       cwd: this.cwd,
       grokBinary: this.grokPath,
+      resumed: false,
     });
-    return this;
+    return this.sessionId;
+  }
+
+  /**
+   * @param {string} sessionId
+   */
+  async loadSession(sessionId) {
+    if (!sessionId) throw new Error("sessionId required");
+    const caps = this.agentCapabilities || {};
+    if (caps.loadSession === false) {
+      throw new Error("This Grok agent does not support session/load");
+    }
+
+    const result = await this.request(
+      "session/load",
+      {
+        sessionId,
+        cwd: this.cwd,
+        mcpServers: [],
+      },
+      { timeoutMs: LOAD_TIMEOUT_MS },
+    );
+
+    this.sessionId =
+      result?.sessionId || result?._meta?.sessionId || sessionId;
+    this.ready = true;
+    this.emit("ready", {
+      sessionId: this.sessionId,
+      cwd: this.cwd,
+      grokBinary: this.grokPath,
+      resumed: true,
+    });
+    return this.sessionId;
+  }
+
+  _rejectAllPending(err) {
+    for (const [, p] of this.pending) {
+      if (p.timer) clearTimeout(p.timer);
+      p.reject(err);
+    }
+    this.pending.clear();
   }
 
   _onLine(line) {
@@ -101,7 +174,6 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    // Server request to client (permission / fs / terminal)
     if (msg.method && msg.id !== undefined && !msg.result && !msg.error) {
       this._handleServerRequest(msg).catch((err) => {
         this._respond(msg.id, null, {
@@ -112,7 +184,6 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    // Notification
     if (msg.method && msg.id === undefined) {
       if (msg.method === "session/update") {
         this.emit("session-update", msg.params);
@@ -122,12 +193,17 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    // Response to our request
     if (msg.id !== undefined && this.pending.has(msg.id)) {
       const p = this.pending.get(msg.id);
       this.pending.delete(msg.id);
-      if (msg.error) p.reject(Object.assign(new Error(msg.error.message || "ACP error"), msg.error));
-      else p.resolve(msg.result);
+      if (p.timer) clearTimeout(p.timer);
+      if (msg.error) {
+        p.reject(
+          Object.assign(new Error(msg.error.message || "ACP error"), msg.error),
+        );
+      } else {
+        p.resolve(msg.result);
+      }
     }
   }
 
@@ -176,7 +252,6 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    // Terminal methods — stub with not-supported for v0.1 (agent can still use shell tools server-side)
     if (method?.startsWith("terminal/")) {
       this._respond(id, null, {
         code: -32601,
@@ -203,11 +278,32 @@ export class GrokAcpClient extends EventEmitter {
     this.proc.stdin.write(JSON.stringify(obj) + "\n");
   }
 
-  request(method, params = {}) {
+  /**
+   * @param {string} method
+   * @param {object} [params]
+   * @param {{ timeoutMs?: number }} [opts]
+   */
+  request(method, params = {}, opts = {}) {
     const id = this.nextId++;
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this._write({ jsonrpc: "2.0", id, method, params });
+      const timer = setTimeout(() => {
+        if (!this.pending.has(id)) return;
+        this.pending.delete(id);
+        reject(
+          new Error(
+            `ACP request timed out after ${timeoutMs}ms: ${method}`,
+          ),
+        );
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this._write({ jsonrpc: "2.0", id, method, params });
+      } catch (err) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(err);
+      }
     });
   }
 
@@ -225,10 +321,15 @@ export class GrokAcpClient extends EventEmitter {
         mimeType: img.mimeType || "image/png",
       });
     }
-    return this.request("session/prompt", {
-      sessionId: this.sessionId,
-      prompt,
-    });
+    // Long agent turns — generous timeout
+    return this.request(
+      "session/prompt",
+      {
+        sessionId: this.sessionId,
+        prompt,
+      },
+      { timeoutMs: 30 * 60_000 },
+    );
   }
 
   cancel() {
@@ -242,21 +343,11 @@ export class GrokAcpClient extends EventEmitter {
 
   async setCwd(cwd) {
     this.cwd = cwd;
-    // New session in new workspace (ACP sessions are cwd-scoped at creation)
-    const session = await this.request("session/new", {
-      cwd: this.cwd,
-      mcpServers: [],
-    });
-    this.sessionId = session.sessionId;
-    this.emit("ready", {
-      sessionId: this.sessionId,
-      cwd: this.cwd,
-      grokBinary: this.grokPath,
-    });
-    return this.sessionId;
+    return this.newSession();
   }
 
   async dispose() {
+    this._rejectAllPending(new Error("Agent disposed"));
     try {
       this.rl?.close();
     } catch {
@@ -267,6 +358,7 @@ export class GrokAcpClient extends EventEmitter {
     }
     this.proc = null;
     this.ready = false;
+    this.sessionId = null;
   }
 }
 

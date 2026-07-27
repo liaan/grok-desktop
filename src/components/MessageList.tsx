@@ -63,7 +63,22 @@ export function MessageList({
               <div className="meta">
                 <span>You</span>
               </div>
-              <div className="body">{item.text}</div>
+              {item.images && item.images.length > 0 && (
+                <div className="msg-images">
+                  {item.images.map((img, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="msg-image"
+                      title="Image attachment"
+                      onClick={(e) => e.preventDefault()}
+                    >
+                      <img src={img.previewUrl} alt={`Attachment ${i + 1}`} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {item.text ? <div className="body">{item.text}</div> : null}
             </article>
           );
         }
