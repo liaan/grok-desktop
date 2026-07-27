@@ -32,6 +32,19 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     source: "desktop",
     local: true,
   },
+  {
+    name: "plan",
+    description: "Enter plan mode (explore + design before coding)",
+    source: "desktop",
+    inputHint: "description",
+    // Not local: sent to the agent as `/plan …` (same as CLI)
+  },
+  {
+    name: "view-plan",
+    description: "Ask the agent to show the current plan",
+    source: "desktop",
+    // Sent to agent
+  },
 ];
 
 /**

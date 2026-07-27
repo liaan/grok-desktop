@@ -28,6 +28,7 @@ import {
   mostRecentSession,
 } from "./sessions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
+import { probeSandbox, sandboxStatusLabel } from "./terminal-sandbox.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -38,6 +39,9 @@ let mainWindow = null;
 let agent = null;
 /** @type {Map<string, (outcome: any) => void>} */
 const pendingPermissions = new Map();
+/** Plan approval / ask-user extension method responders */
+const pendingPlanApprovals = new Map();
+const pendingUserQuestions = new Map();
 /** Serialize agent lifecycle (open/switch/dispose). */
 let agentChain = Promise.resolve();
 
@@ -51,6 +55,13 @@ function loadState() {
       alwaysApprove: false,
       /** When false (default), agent FS + terminal cwd cannot leave project root */
       allowOutsideProject: false,
+      /**
+       * When true (default), ACP tool shells run in an OS FS jail
+       * (Seatbelt / bwrap / WSL+bwrap / Docker). Independent of allowOutside.
+       */
+      sandboxTerminal: true,
+      /** UI theme: "dark" | "light" */
+      theme: "dark",
       lastProject: null,
       ...raw,
     };
@@ -59,6 +70,8 @@ function loadState() {
       recentProjects: [],
       alwaysApprove: false,
       allowOutsideProject: false,
+      sandboxTerminal: true,
+      theme: "dark",
       lastProject: null,
     };
   }
@@ -84,6 +97,22 @@ function clearPendingPermissions() {
     }
   }
   pendingPermissions.clear();
+  for (const [, respond] of pendingPlanApprovals) {
+    try {
+      respond({ type: "abandoned" });
+    } catch {
+      /* ignore */
+    }
+  }
+  pendingPlanApprovals.clear();
+  for (const [, respond] of pendingUserQuestions) {
+    try {
+      respond({ type: "declined" });
+    } catch {
+      /* ignore */
+    }
+  }
+  pendingUserQuestions.clear();
 }
 
 /**
@@ -127,6 +156,7 @@ function ensureAgent(cwd, opts = {}) {
       cwd,
       alwaysApprove: state.alwaysApprove,
       allowOutsideProject: Boolean(state.allowOutsideProject),
+      sandboxTerminal: state.sandboxTerminal !== false,
       clientVersion: app.getVersion(),
     });
 
@@ -138,6 +168,18 @@ function ensureAgent(cwd, opts = {}) {
       const reqId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       pendingPermissions.set(reqId, respond);
       send("agent:permission-request", { reqId, params });
+    });
+
+    agent.on("plan-approval-request", ({ params, respond }) => {
+      const reqId = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      pendingPlanApprovals.set(reqId, respond);
+      send("agent:plan-approval-request", { reqId, params });
+    });
+
+    agent.on("user-question-request", ({ params, respond }) => {
+      const reqId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      pendingUserQuestions.set(reqId, respond);
+      send("agent:user-question-request", { reqId, params });
     });
 
     agent.on("stderr", (text) => send("agent:stderr", text));
@@ -178,6 +220,14 @@ function rememberProjectSession(cwd, sessionId) {
   saveState(state);
 }
 
+function openSettingsFromMenu() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send("app:open-settings");
+  }
+}
+
 /**
  * Standard app menu with Edit roles.
  * Without role-based Cut/Copy/Paste/Select All, Cmd/Ctrl+V often does nothing
@@ -186,6 +236,12 @@ function rememberProjectSession(cwd, sessionId) {
 function installApplicationMenu() {
   const isMac = process.platform === "darwin";
   /** @type {import('electron').MenuItemConstructorOptions[]} */
+  const settingsItem = {
+    label: "Settings…",
+    accelerator: "CmdOrCtrl+,",
+    click: () => openSettingsFromMenu(),
+  };
+  /** @type {import('electron').MenuItemConstructorOptions[]} */
   const template = [
     ...(isMac
       ? [
@@ -193,6 +249,8 @@ function installApplicationMenu() {
             label: app.name,
             submenu: [
               { role: "about" },
+              { type: "separator" },
+              settingsItem,
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -204,7 +262,16 @@ function installApplicationMenu() {
             ],
           },
         ]
-      : []),
+      : [
+          {
+            label: "File",
+            submenu: [
+              settingsItem,
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]),
     {
       label: "Edit",
       submenu: [
@@ -348,6 +415,10 @@ function registerIpc() {
       userData: app.getPath("userData"),
       alwaysApprove: state.alwaysApprove,
       allowOutsideProject: Boolean(state.allowOutsideProject),
+      sandboxTerminal: state.sandboxTerminal !== false,
+      sandboxStatus: sandboxStatusLabel(),
+      sandboxBackend: probeSandbox().backend,
+      theme: state.theme === "light" ? "light" : "dark",
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -557,6 +628,22 @@ function registerIpc() {
     return true;
   });
 
+  ipcMain.handle("agent:plan-approval-respond", async (_e, { reqId, decision }) => {
+    const respond = pendingPlanApprovals.get(reqId);
+    if (!respond) return false;
+    pendingPlanApprovals.delete(reqId);
+    respond(decision || { type: "abandoned" });
+    return true;
+  });
+
+  ipcMain.handle("agent:user-question-respond", async (_e, { reqId, decision }) => {
+    const respond = pendingUserQuestions.get(reqId);
+    if (!respond) return false;
+    pendingUserQuestions.delete(reqId);
+    respond(decision || { type: "declined" });
+    return true;
+  });
+
   ipcMain.handle("agent:set-always-approve", async (_e, value) => {
     const state = loadState();
     state.alwaysApprove = Boolean(value);
@@ -571,6 +658,23 @@ function registerIpc() {
     saveState(state);
     agent?.setAllowOutsideProject(state.allowOutsideProject);
     return state.allowOutsideProject;
+  });
+
+  ipcMain.handle("agent:set-sandbox-terminal", async (_e, value) => {
+    const state = loadState();
+    // Explicit boolean from UI — do not use `!== false` here (undefined would stick ON)
+    state.sandboxTerminal = Boolean(value);
+    saveState(state);
+    agent?.setSandboxTerminal(state.sandboxTerminal);
+    return state.sandboxTerminal;
+  });
+
+  ipcMain.handle("app:set-theme", async (_e, value) => {
+    const theme = value === "light" ? "light" : "dark";
+    const state = loadState();
+    state.theme = theme;
+    saveState(state);
+    return theme;
   });
 
   ipcMain.handle("fs:read-file", async (_e, filePath) => {

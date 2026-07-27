@@ -9,19 +9,27 @@ import {
 } from "../lib/path-utils";
 import type { PermissionRequest } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
+import type { BackgroundTask } from "../lib/background-tasks";
+import { runningTaskCount } from "../lib/background-tasks";
 
 type FileEntry = { name: string; isDirectory: boolean; path: string };
 
 export function SidePanel({
   project,
   permissions,
+  backgroundTasks,
+  sessionMode,
   onPermission,
 }: {
   project: string | null;
   permissions: PermissionRequest[];
+  backgroundTasks: BackgroundTask[];
+  /** e.g. "plan" when plan mode is active */
+  sessionMode: string | null;
   onPermission: (reqId: string, optionId: string | "cancelled") => void;
 }) {
-  const [tab, setTab] = useState<"files" | "approvals">("approvals");
+  const [tab, setTab] = useState<"files" | "approvals" | "tasks">("approvals");
+  const running = runningTaskCount(backgroundTasks);
   const [browseCwd, setBrowseCwd] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [filesError, setFilesError] = useState<string | null>(null);
@@ -69,6 +77,10 @@ export function SidePanel({
     if (permissions.length > 0) setTab("approvals");
   }, [permissions.length]);
 
+  useEffect(() => {
+    if (running > 0 && permissions.length === 0) setTab("tasks");
+  }, [running, permissions.length]);
+
   const atProjectRoot =
     Boolean(project && browseCwd) &&
     normalizePathKey(project!) === normalizePathKey(browseCwd!);
@@ -98,6 +110,13 @@ export function SidePanel({
         </button>
         <button
           type="button"
+          className={tab === "tasks" ? "active" : ""}
+          onClick={() => setTab("tasks")}
+        >
+          Tasks{running ? ` (${running})` : ""}
+        </button>
+        <button
+          type="button"
           className={tab === "files" ? "active" : ""}
           onClick={() => setTab("files")}
         >
@@ -105,6 +124,51 @@ export function SidePanel({
         </button>
       </div>
       <div className="panel-body">
+        {sessionMode === "plan" ? (
+          <div className="mode-banner plan-mode-banner" role="status">
+            Plan mode active — file edits blocked until you approve a plan
+          </div>
+        ) : null}
+        {tab === "tasks" && (
+          <>
+            {backgroundTasks.length === 0 ? (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                Background commands and subagents appear here while they run.
+              </p>
+            ) : (
+              backgroundTasks.map((t) => (
+                <div
+                  key={t.id}
+                  className={`task-card status-${t.status}`}
+                >
+                  <div className="task-card-top">
+                    <span className={`task-kind`}>{t.kind}</span>
+                    <span className={`task-status status-${t.status}`}>
+                      {t.status}
+                    </span>
+                  </div>
+                  <h3 className="task-title" title={t.title}>
+                    {t.title}
+                  </h3>
+                  {t.detail ? (
+                    <div className="task-detail" title={t.detail}>
+                      {t.detail}
+                    </div>
+                  ) : null}
+                  {t.command && t.command !== t.title ? (
+                    <pre className="task-cmd">{t.command}</pre>
+                  ) : null}
+                  {t.outputSnippet ? (
+                    <pre className="task-out">{t.outputSnippet}</pre>
+                  ) : null}
+                  {t.exitCode != null ? (
+                    <div className="task-meta">exit {t.exitCode}</div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </>
+        )}
         {tab === "approvals" && (
           <>
             {permissions.length === 0 ? (

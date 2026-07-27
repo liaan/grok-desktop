@@ -15,10 +15,14 @@ import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
 import { AcpTerminalManager } from "./acp-terminals.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
+import { sessionsRootForCwd } from "./sessions.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
 const LOAD_TIMEOUT_MS = 90_000;
+/** Client extension methods used by Grok for plan UI / questions (not plain tools). */
+const EXT_EXIT_PLAN = "x.ai/exit_plan_mode";
+const EXT_ASK_USER = "x.ai/ask_user_question";
 
 export class GrokAcpClient extends EventEmitter {
   constructor({
@@ -27,6 +31,8 @@ export class GrokAcpClient extends EventEmitter {
     alwaysApprove = false,
     /** When false (default), ACP fs/* and terminal cwd stay inside project */
     allowOutsideProject = false,
+    /** When true (default), wrap ACP tool shells in an OS FS jail */
+    sandboxTerminal = true,
     clientVersion = "0.1.2",
   } = {}) {
     super();
@@ -34,6 +40,7 @@ export class GrokAcpClient extends EventEmitter {
     this.grokPath = grokPath || resolveGrokBinary();
     this.alwaysApprove = alwaysApprove;
     this.allowOutsideProject = Boolean(allowOutsideProject);
+    this.sandboxTerminal = sandboxTerminal !== false;
     this.clientVersion = clientVersion;
     this.proc = null;
     this.rl = null;
@@ -48,6 +55,7 @@ export class GrokAcpClient extends EventEmitter {
     this.terminals = new AcpTerminalManager({
       defaultCwd: this.cwd,
       allowOutsideProject: this.allowOutsideProject,
+      sandboxTerminal: this.sandboxTerminal,
     });
     // Forward terminal lifecycle for optional UI live-output later
     for (const ev of ["created", "output", "exit", "released"]) {
@@ -56,19 +64,64 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   /**
+   * Session store dir for this project + session (where plan.md lives).
+   * @returns {string | null}
+   */
+  sessionDir() {
+    if (!this.cwd || !this.sessionId) return null;
+    return path.join(sessionsRootForCwd(this.cwd), this.sessionId);
+  }
+
+  /**
+   * True if absolute path is inside the current CLI session folder.
+   * Plan mode writes plan.md there (outside the open project tree).
+   * @param {string} abs
+   */
+  _isUnderSessionDir(abs) {
+    const root = this.sessionDir();
+    if (!root) return false;
+    let realRoot = root;
+    let realAbs = abs;
+    try {
+      realRoot = fs.realpathSync(root);
+    } catch {
+      /* session dir may not exist yet */
+    }
+    try {
+      realAbs = fs.realpathSync(abs);
+    } catch {
+      /* write targets may not exist */
+    }
+    const rel = path.relative(realRoot, realAbs);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  }
+
+  /**
    * Resolve ACP fs path (relative → project cwd) and optionally sandbox.
+   * Always allows the current session directory so plan.md can be written.
    * @param {string} filePath
    */
   _resolveFsPath(filePath) {
+    const empty = filePath == null || String(filePath).trim() === "";
+    if (empty) {
+      throw Object.assign(new Error("Path is required"), { code: -32602 });
+    }
+    const asStr = String(filePath);
+    const abs = path.isAbsolute(asStr)
+      ? path.resolve(asStr)
+      : path.resolve(this.cwd || process.cwd(), asStr);
+
+    if (this._isUnderSessionDir(abs)) {
+      return abs;
+    }
+
     try {
       return resolveProjectPath(this.cwd, filePath, {
         allowOutside: this.allowOutsideProject,
       });
     } catch (err) {
-      const empty =
-        filePath == null || String(filePath).trim() === "";
       throw Object.assign(new Error(err?.message || String(err)), {
-        code: empty ? -32602 : -32000,
+        code: err?.code ?? -32000,
       });
     }
   }
@@ -260,7 +313,41 @@ export class GrokAcpClient extends EventEmitter {
   async _handleServerRequest(msg) {
     const { method, params, id } = msg;
 
+    // Grok extension: plan approval popup (must not auto-approve / no-op)
+    if (
+      method === EXT_EXIT_PLAN ||
+      method === "exit_plan_mode" ||
+      method?.endsWith("/exit_plan_mode")
+    ) {
+      await this._handleExitPlanMode(id, params);
+      return;
+    }
+
+    // Grok extension: multi-choice questions
+    if (
+      method === EXT_ASK_USER ||
+      method === "ask_user_question" ||
+      method?.endsWith("/ask_user_question")
+    ) {
+      await this._handleAskUserQuestion(id, params);
+      return;
+    }
+
     if (method === "session/request_permission") {
+      const toolName = String(
+        params?.toolCall?.title ||
+          params?.toolCall?._meta?.["x.ai/tool"]?.name ||
+          params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
+          "",
+      );
+      // exit_plan_mode: ACP permission is a formality; real UI is x.ai/exit_plan_mode
+      if (/exit_plan/i.test(toolName)) {
+        this._respond(id, {
+          outcome: { outcome: "selected", optionId: "allow-once" },
+        });
+        return;
+      }
+
       if (this.alwaysApprove) {
         this._respond(id, {
           outcome: { outcome: "selected", optionId: "allow-once" },
@@ -312,6 +399,114 @@ export class GrokAcpClient extends EventEmitter {
       code: -32601,
       message: `Unhandled client method: ${method}`,
     });
+  }
+
+  /**
+   * Plan approval extension. Agent parks until the client responds.
+   * @param {number|string} id
+   * @param {any} params
+   */
+  async _handleExitPlanMode(id, params) {
+    const planContent =
+      params?.planContent ??
+      params?.plan_content ??
+      params?.content ??
+      params?.plan ??
+      "";
+    const planFilePath =
+      params?.planFilePath ??
+      params?.plan_file_path ??
+      params?.planPath ??
+      null;
+
+    let markdown = typeof planContent === "string" ? planContent : "";
+    if (!markdown && planFilePath) {
+      try {
+        markdown = await fs.promises.readFile(String(planFilePath), "utf8");
+      } catch {
+        /* empty plan UI still opens */
+      }
+    }
+    if (!markdown) {
+      const sd = this.sessionDir();
+      if (sd) {
+        try {
+          markdown = await fs.promises.readFile(
+            path.join(sd, "plan.md"),
+            "utf8",
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    const decision = await new Promise((resolve) => {
+      const timeout = setTimeout(
+        () => resolve({ type: "abandoned" }),
+        30 * 60_000,
+      );
+      this.emit("plan-approval-request", {
+        params: {
+          planContent: markdown,
+          planFilePath,
+          raw: params,
+        },
+        respond: (outcome) => {
+          clearTimeout(timeout);
+          resolve(outcome);
+        },
+      });
+    });
+
+    // Internally-tagged response variants the agent accepts
+    const type = decision?.type || decision?.outcome || "abandoned";
+    if (type === "approved" || type === "approve") {
+      this._respond(id, { type: "approved" });
+      return;
+    }
+    if (type === "request_changes" || type === "requestChanges") {
+      this._respond(id, {
+        type: "request_changes",
+        feedback: String(decision?.feedback || decision?.message || ""),
+      });
+      return;
+    }
+    this._respond(id, { type: "abandoned" });
+  }
+
+  /**
+   * @param {number|string} id
+   * @param {any} params
+   */
+  async _handleAskUserQuestion(id, params) {
+    const questions = Array.isArray(params?.questions)
+      ? params.questions
+      : [];
+
+    const decision = await new Promise((resolve) => {
+      const timeout = setTimeout(
+        () => resolve({ type: "declined" }),
+        10 * 60_000,
+      );
+      this.emit("user-question-request", {
+        params: { questions, raw: params },
+        respond: (outcome) => {
+          clearTimeout(timeout);
+          resolve(outcome);
+        },
+      });
+    });
+
+    const type = decision?.type || "declined";
+    if (type === "answered" || type === "answers") {
+      this._respond(id, {
+        type: "answered",
+        answers: decision?.answers ?? [],
+      });
+      return;
+    }
+    this._respond(id, { type: "declined" });
   }
 
   /**
@@ -437,6 +632,11 @@ export class GrokAcpClient extends EventEmitter {
   setAllowOutsideProject(value) {
     this.allowOutsideProject = Boolean(value);
     this.terminals.setAllowOutsideProject(this.allowOutsideProject);
+  }
+
+  setSandboxTerminal(value) {
+    this.sandboxTerminal = Boolean(value);
+    this.terminals.setSandboxTerminal(this.sandboxTerminal);
   }
 
   async setCwd(cwd) {

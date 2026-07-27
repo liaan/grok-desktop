@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildGrokEnv } from "./grok-home.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
+import { planSandboxedSpawn } from "./terminal-sandbox.mjs";
 
 const DEFAULT_OUTPUT_BYTE_LIMIT = 1_048_576; // 1 MiB
 const KILL_ESCALATE_MS = 1500;
@@ -36,6 +37,8 @@ const KILL_ESCALATE_MS = 1500;
  *   command: string,
  *   args: string[],
  *   cwd: string,
+ *   cleanup?: (() => void) | null,
+ *   sandboxBackend?: string | null,
  * }} ManagedTerminal
  */
 
@@ -158,6 +161,20 @@ export function normalizeTerminalSpawn(command, argsIn) {
   };
 }
 
+/**
+ * Run and clear a terminal's optional post-spawn cleanup (e.g. temp files).
+ * @param {{ cleanup?: (() => void) | null }} term
+ */
+function runTermCleanup(term) {
+  if (typeof term.cleanup !== "function") return;
+  try {
+    term.cleanup();
+  } catch {
+    /* ignore */
+  }
+  term.cleanup = null;
+}
+
 /** Kill a pid (and process group on Unix) without relying on ChildProcess state. */
 function killPidTree(pid, signal) {
   if (!pid) return;
@@ -224,12 +241,18 @@ function resolveCwd(requested, fallback, opts = {}) {
 }
 
 export class AcpTerminalManager extends EventEmitter {
-  constructor({ defaultCwd, allowOutsideProject = false } = {}) {
+  constructor({
+    defaultCwd,
+    allowOutsideProject = false,
+    /** When true (default), wrap tool shells in an OS FS jail */
+    sandboxTerminal = true,
+  } = {}) {
     super();
     /** @type {Map<string, ManagedTerminal>} */
     this.terminals = new Map();
     this.defaultCwd = defaultCwd || process.cwd();
     this.allowOutsideProject = Boolean(allowOutsideProject);
+    this.sandboxTerminal = sandboxTerminal !== false;
   }
 
   setDefaultCwd(cwd) {
@@ -238,6 +261,10 @@ export class AcpTerminalManager extends EventEmitter {
 
   setAllowOutsideProject(value) {
     this.allowOutsideProject = Boolean(value);
+  }
+
+  setSandboxTerminal(value) {
+    this.sandboxTerminal = Boolean(value);
   }
 
   /**
@@ -346,26 +373,58 @@ export class AcpTerminalManager extends EventEmitter {
       command: execCommand,
       args,
       cwd,
+      cleanup: null,
+      sandboxBackend: null,
     };
 
-    const spawnOnce = (file, fileArgs, shell) =>
-      spawn(file, fileArgs, {
-        cwd,
-        env,
+    /**
+     * Single spawn site. Sandbox off → identity plan; sandbox on → OS jail.
+     * Fail closed when sandbox is enabled but the backend cannot plan a spawn.
+     * @param {string} file
+     * @param {string[]} fileArgs
+     * @param {boolean} shell
+     */
+    const spawnOnce = (file, fileArgs, shell) => {
+      runTermCleanup(term);
+      const plan = this.sandboxTerminal
+        ? planSandboxedSpawn({
+            file,
+            fileArgs,
+            shell,
+            cwd,
+            env,
+            projectRoot: this.defaultCwd,
+          })
+        : {
+            file,
+            fileArgs,
+            shell,
+            cwd,
+            env,
+            backend: null,
+          };
+      term.sandboxBackend = plan.backend || null;
+      if (typeof plan.cleanup === "function") {
+        term.cleanup = plan.cleanup;
+      }
+      return spawn(plan.file, plan.fileArgs, {
+        cwd: plan.cwd,
+        env: plan.env,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
-        shell,
-        // detached process groups are fragile under Electron; keep attached
+        shell: plan.shell,
         detached: false,
       });
+    };
 
     let proc;
     try {
       proc = spawnOnce(execCommand, args, useShell);
     } catch (err) {
+      runTermCleanup(term);
       throw Object.assign(
         new Error(`terminal/create failed: ${err?.message || err}`),
-        { code: -32000 },
+        { code: err?.code ?? -32000 },
       );
     }
 
@@ -444,6 +503,7 @@ export class AcpTerminalManager extends EventEmitter {
       command: execCommand,
       args,
       cwd,
+      sandbox: this.sandboxTerminal ? term.sandboxBackend || true : false,
     });
 
     return { terminalId: id };
@@ -611,6 +671,7 @@ export class AcpTerminalManager extends EventEmitter {
     term.exitCode = exitCode;
     term.signal = signal;
     term.proc = null;
+    runTermCleanup(term);
     const status = { exitCode, signal };
     const waiters = term.waiters.splice(0, term.waiters.length);
     for (const w of waiters) w(status);

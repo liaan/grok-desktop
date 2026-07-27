@@ -133,6 +133,16 @@ export type AppInfo = {
   alwaysApprove: boolean;
   /** When false (default), ACP fs + terminal cwd cannot leave project root */
   allowOutsideProject: boolean;
+  /**
+   * When true (default), ACP tool shells run in an OS FS jail
+   * (Seatbelt / bwrap / WSL+bwrap / Docker).
+   */
+  sandboxTerminal: boolean;
+  /** Human-readable backend probe for Settings */
+  sandboxStatus: string;
+  sandboxBackend: string;
+  /** UI appearance */
+  theme: "dark" | "light";
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -163,8 +173,23 @@ declare global {
         reqId: string,
         outcome: PermissionOutcome,
       ) => Promise<boolean>;
+      respondPlanApproval: (
+        reqId: string,
+        decision: {
+          type: "approved" | "request_changes" | "abandoned";
+          feedback?: string;
+        },
+      ) => Promise<boolean>;
+      respondUserQuestion: (
+        reqId: string,
+        decision:
+          | { type: "answered"; answers: Array<Record<string, unknown>> }
+          | { type: "declined" },
+      ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
       setAllowOutsideProject: (value: boolean) => Promise<boolean>;
+      setSandboxTerminal: (value: boolean) => Promise<boolean>;
+      setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
       readFile: (path: string) => Promise<string>;
       listDir: (
         path: string,

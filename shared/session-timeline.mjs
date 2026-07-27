@@ -127,10 +127,22 @@ export function applySessionUpdate(items, params) {
       return next;
     }
     case "plan": {
+      // Replace the latest plan card when the agent updates todos (avoid stacking)
+      const entries = update.entries || [];
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i]?.kind === "plan") {
+          next[i] = {
+            ...next[i],
+            entries,
+            at: next[i].at || at,
+          };
+          return next;
+        }
+      }
       next.push({
         id: uid("plan"),
         kind: "plan",
-        entries: update.entries || [],
+        entries,
         at,
       });
       return next;

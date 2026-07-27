@@ -200,7 +200,42 @@ Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolvePr
 
 Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
 
-**Limits:** A shell command with cwd *inside* the project can still `cat` paths outside the tree (`cat ~/.ssh/id_rsa`). Full OS sandbox is out of scope; this gate stops the client from *opening* outside paths (including via symlink) and from *starting* terminals outside the repo.
+### Plan mode & background tasks (GUI)
+
+| Surface | Behavior |
+|---------|----------|
+| `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon). Must not be no-op (agent reports “client disconnected”). |
+| `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal |
+| ACP `fs/*` under session dir | Always allowed for the current session folder (`~/.grok/sessions/<encoded-cwd>/<session-id>/`) so `plan.md` can be written while project path gate stays on |
+| `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** tab |
+| `current_mode_update` | Plan-mode banner when `currentModeId === "plan"` |
+| `/plan` slash | Advertised in composer menu; sent to agent as normal prompt text |
+
+### Terminal process sandbox (default on)
+
+Path gates alone do **not** stop a shell started *inside* the project from opening host paths (`python -c "open('/etc/passwd')"`, `cat ~/.ssh/id_rsa`, `docker system prune`). Desktop therefore wraps ACP **tool terminals** in an OS filesystem jail when **Sandbox terminal** is on (default).
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `sandboxTerminal` | `true` | Jail ACP `terminal/*` spawns (independent of `allowOutsideProject`) |
+
+Implementation: `electron/terminal-sandbox.mjs`, hooked in `AcpTerminalManager` `spawnOnce` (`electron/acp-terminals.mjs`).
+
+| Platform | Backend | Notes |
+|----------|---------|--------|
+| macOS | `sandbox-exec` (Seatbelt) | `(allow default)` then **deny `$HOME` except project** + deny docker sockets; network allowed |
+| Linux | `bwrap` (bubblewrap); Docker fallback | No host `$HOME` bind; **no docker.sock** |
+| Windows | WSL + `bwrap` first; Docker fallback | Project bind only; **never** mounts host docker.sock |
+
+Policy highlights:
+
+- **Fail closed** — if sandbox is on and no backend is available, `terminal/create` errors (does not silently spawn on the bare host).
+- **Network allowed** — `npm install` / `git fetch` still work.
+- **Home jail** — tool shells cannot read/write the rest of `$HOME` (`.ssh`, sibling repos, Docker config). Global user config outside the project may need sandbox off for some workflows.
+- **Does not sandbox** the `grok agent stdio` process, MCP servers under `~/.grok`, or Electron itself.
+- UI: Settings toggle (confirm when turning **off**); topbar chips for **Host shell** / **Outside project** / **Auto-approve**.
+
+Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `ubuntu:24.04`), `GROK_DESKTOP_WSL_DISTRO` (preferred WSL distro).
 
 ---
 

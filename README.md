@@ -117,8 +117,9 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Plugins** | Inherited by agent (little GUI summary) | Install / manage in CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
-| Tool always-approve | Checkbox in sidebar | — |
-| **Project-root safety** | On by default (sidebar: “Allow outside project” off) | Off only if you need host-wide FS |
+| Tool always-approve | Settings → Agent safety | — |
+| **Project-root safety** | On by default (Settings: “Allow outside project” off) | Off only if you need host-wide ACP FS |
+| **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |
 
 **After changing** MCP, skills, or plugins in `~/.grok`, **re-open the project** (or New chat after restart) so a new agent process picks up config. The welcome “N skills · M MCP” strip is a `grok inspect` summary, not a live settings editor.
 
@@ -129,6 +130,8 @@ Optional environment variables:
 | `GROK_BINARY` | Full path to the `grok` executable |
 | `GROK_HOME` | Override config/auth home (default `~/.grok`) |
 | `XAI_API_KEY` | API key fallback when no session token is present |
+| `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox fallback (default `ubuntu:24.04`) |
+| `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
 
 ## Quick start (developers)
 

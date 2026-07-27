@@ -14,10 +14,17 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   cancel: () => ipcRenderer.invoke("agent:cancel"),
   respondPermission: (reqId, outcome) =>
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),
+  respondPlanApproval: (reqId, decision) =>
+    ipcRenderer.invoke("agent:plan-approval-respond", { reqId, decision }),
+  respondUserQuestion: (reqId, decision) =>
+    ipcRenderer.invoke("agent:user-question-respond", { reqId, decision }),
   setAlwaysApprove: (value) =>
     ipcRenderer.invoke("agent:set-always-approve", value),
   setAllowOutsideProject: (value) =>
     ipcRenderer.invoke("agent:set-allow-outside-project", value),
+  setSandboxTerminal: (value) =>
+    ipcRenderer.invoke("agent:set-sandbox-terminal", value),
+  setTheme: (value) => ipcRenderer.invoke("app:set-theme", value),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
@@ -36,10 +43,13 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     const valid = [
       "agent:session-update",
       "agent:permission-request",
+      "agent:plan-approval-request",
+      "agent:user-question-request",
       "agent:stderr",
       "agent:error",
       "agent:exit",
       "agent:ready",
+      "app:open-settings",
     ];
     if (!valid.includes(channel)) return () => {};
     const listener = (_event, payload) => handler(payload);
