@@ -15,16 +15,10 @@ import { MessageList } from "./components/MessageList";
 import { SidePanel } from "./components/SidePanel";
 import { ElevatedSafetyChips } from "./components/ElevatedSafetyChips";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { StatusBar } from "./components/StatusBar";
+import { PlanApprovalDialog } from "./components/PlanApprovalDialog";
+import { AskUserDialog } from "./components/AskUserDialog";
 import {
-  PlanApprovalDialog,
-  type PlanApprovalRequest,
-} from "./components/PlanApprovalDialog";
-import {
-  AskUserDialog,
-  type AskUserRequest,
-} from "./components/AskUserDialog";
-import {
-  agentCommandsFromUpdate,
   DESKTOP_COMMANDS,
   filterCommands,
   formatCommandInsert,
@@ -34,20 +28,21 @@ import {
   slashQuery,
   type SlashCommand,
 } from "./lib/commands";
+import { type PermissionMode } from "./lib/permission-mode";
 import {
-  applyBackgroundUpdate,
-  type BackgroundTask,
-} from "./lib/background-tasks";
-import {
-  normalizePermissionMode,
-  type PermissionMode,
-} from "./lib/permission-mode";
-import { applySessionUpdate, uid } from "./lib/timeline";
+  nextAlwaysApproveMode,
+  runDesktopCommand,
+} from "./lib/desktop-commands";
+import { PrivacyProvider } from "./lib/privacy-context";
+import { redactSensitiveText } from "./lib/privacy";
+import { uid } from "./lib/timeline";
+import { useAgentEvents } from "./hooks/useAgentEvents";
+import { useAgentSafety } from "./hooks/useAgentSafety";
+import { useProjectSession } from "./hooks/useProjectSession";
 import type {
   AppInfo,
   AuthStatus,
   BackboneSummary,
-  PermissionRequest,
   PromptImage,
   SessionSummary,
   TimelineImage,
@@ -146,21 +141,6 @@ export default function App() {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
-  const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
-  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
-  const [sessionMode, setSessionMode] = useState<string | null>(null);
-  const [planApproval, setPlanApproval] =
-    useState<PlanApprovalRequest | null>(null);
-  const [userQuestion, setUserQuestion] = useState<AskUserRequest | null>(
-    null,
-  );
-  const [permissionMode, setPermissionMode] =
-    useState<PermissionMode>("ask");
-  /** Default safe: block ACP fs + terminal cwd outside project */
-  const [allowOutsideProject, setAllowOutsideProject] = useState(false);
-  /** Default safe: OS FS jail for ACP tool shells */
-  const [sandboxTerminal, setSandboxTerminal] = useState(true);
-  const [sandboxStatus, setSandboxStatus] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try {
       const t = localStorage.getItem("grok-desktop-theme");
@@ -169,6 +149,10 @@ export default function App() {
       return "dark";
     }
   });
+  /** Display-only path redaction for screenshots / demos */
+  const [privacyMode, setPrivacyMode] = useState(false);
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Commands advertised by the agent via available_commands_update */
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
@@ -187,6 +171,50 @@ export default function App() {
   const sendNowRef = useRef<QueuedPrompt | null>(null);
   /** True while open/switch IPC is in flight — ignore agent:ready for conn */
   const openingRef = useRef(false);
+
+  const appendSystem = useCallback((text: string) => {
+    setItems((prev) => [
+      ...prev,
+      {
+        id: uid("sys"),
+        kind: "system",
+        text,
+        at: Date.now(),
+      },
+    ]);
+  }, []);
+
+  const {
+    permissionMode,
+    allowOutsideProject,
+    sandboxTerminal,
+    sandboxStatus,
+    hydrateFromInfo,
+    applyPermissionMode,
+    toggleAllowOutside,
+    applySandboxTerminal,
+  } = useAgentSafety({ setError, appendSystem });
+
+  const {
+    permissions,
+    backgroundTasks,
+    sessionMode,
+    planApproval,
+    userQuestion,
+    clearSessionScoped,
+    onPermission,
+    onAllowAllPermissions,
+    onPlanApproval,
+    onUserQuestion,
+  } = useAgentEvents({
+    openingRef,
+    setConn,
+    setError,
+    setSessionId,
+    setItems,
+    setAgentCommands,
+    setSettingsOpen,
+  });
 
   useEffect(() => {
     promptQueueRef.current = promptQueue;
@@ -230,12 +258,8 @@ export default function App() {
   const bootstrap = useCallback(async () => {
     const i = await window.grokDesktop.getInfo();
     setInfo(i);
-    setPermissionMode(
-      normalizePermissionMode(i.permissionMode, i.alwaysApprove),
-    );
-    setAllowOutsideProject(Boolean(i.allowOutsideProject));
-    setSandboxTerminal(i.sandboxTerminal !== false);
-    setSandboxStatus(i.sandboxStatus || "");
+    hydrateFromInfo(i);
+    setPrivacyMode(Boolean(i.privacyMode));
     const nextTheme = i.theme === "light" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
@@ -243,87 +267,11 @@ export default function App() {
     if (i.auth.authenticated && !i.auth.expired) {
       void refreshBackbone(i.lastProject || undefined);
     }
-  }, [refreshBackbone]);
+  }, [refreshBackbone, hydrateFromInfo]);
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
-
-  useEffect(() => {
-    const offs = [
-      window.grokDesktop.on("agent:session-update", (params) => {
-        const update = params?.update ?? params;
-        const kind = update?.sessionUpdate || update?.session_update;
-        if (kind === "available_commands_update") {
-          setAgentCommands(agentCommandsFromUpdate(update));
-          return;
-        }
-        if (kind === "current_mode_update") {
-          const modeId =
-            update?.currentModeId ||
-            update?.modeId ||
-            update?.current_mode_id ||
-            null;
-          setSessionMode(modeId ? String(modeId) : null);
-        }
-        if (
-          kind === "task_backgrounded" ||
-          kind === "task_completed" ||
-          kind === "subagent_spawned" ||
-          kind === "subagent_finished"
-        ) {
-          setBackgroundTasks((prev) => applyBackgroundUpdate(prev, params));
-        }
-        setItems((prev) => applySessionUpdate(prev, params));
-      }),
-      window.grokDesktop.on("agent:permission-request", (payload) => {
-        setPermissions((prev) => [...prev, payload as PermissionRequest]);
-      }),
-      window.grokDesktop.on("agent:plan-approval-request", (payload) => {
-        const p = payload as {
-          reqId: string;
-          params?: { planContent?: string; planFilePath?: string | null };
-        };
-        setPlanApproval({
-          reqId: p.reqId,
-          planContent: p.params?.planContent || "",
-          planFilePath: p.params?.planFilePath,
-        });
-      }),
-      window.grokDesktop.on("agent:user-question-request", (payload) => {
-        const p = payload as {
-          reqId: string;
-          params?: { questions?: AskUserRequest["questions"] };
-        };
-        setUserQuestion({
-          reqId: p.reqId,
-          questions: p.params?.questions || [],
-        });
-      }),
-      window.grokDesktop.on("agent:error", (payload) => {
-        if (openingRef.current) return;
-        setConn("error");
-        setError(payload?.message || "Agent error");
-      }),
-      window.grokDesktop.on("agent:exit", () => {
-        if (openingRef.current) return;
-        setConn("error");
-        setSessionId(null);
-        setError("Agent process exited");
-      }),
-      window.grokDesktop.on("agent:ready", () => {
-        // Session id / online come only from open IPC (applyOpenResult).
-        // Ignoring ready here prevents flash of wrong chat + early composer.
-      }),
-      window.grokDesktop.on("agent:stderr", () => {
-        /* available for debug panel later */
-      }),
-      window.grokDesktop.on("app:open-settings", () => {
-        setSettingsOpen(true);
-      }),
-    ];
-    return () => offs.forEach((off) => off());
-  }, []);
 
   useEffect(() => {
     const el = timelineRef.current;
@@ -333,152 +281,34 @@ export default function App() {
 
   const signedIn = Boolean(auth?.authenticated && !auth?.expired);
 
-  const applyOpenResult = useCallback(
-    async (
-      res: Awaited<ReturnType<typeof window.grokDesktop.openProject>> & {
-        warning?: string | null;
-      },
-      opts?: { note?: string },
-    ) => {
-      setProject(res.cwd);
-      setSessionId(res.sessionId);
-      setSessions(res.sessions || []);
-      setPermissions([]);
-      setBackgroundTasks([]);
-      setSessionMode(null);
-      setPlanApproval(null);
-      setUserQuestion(null);
-      // Agent re-advertises available_commands_update after session setup
-      setAgentCommands([]);
-      setCmdIndex(0);
-      setSlashDismissed(false);
+  const { openProject, openSession, isAuthError } = useProjectSession({
+    auth,
+    project,
+    busyRef,
+    openingRef,
+    promptQueueRef,
+    sendNowRef,
+    clearSessionScoped,
+    hydrateFromInfo,
+    refreshAuth,
+    refreshBackbone,
+    setAuth,
+    setInfo,
+    setProject,
+    setSessionId,
+    setSessions,
+    setConn,
+    setOpeningLabel,
+    setError,
+    setItems,
+    setAgentCommands,
+    setCmdIndex,
+    setSlashDismissed,
+    clearPromptQueue: () => {
       setPromptQueue([]);
       promptQueueRef.current = [];
-      sendNowRef.current = null;
-
-      const history = (res.history || []) as TimelineItem[];
-      const bb = await refreshBackbone(res.cwd);
-      const skillN = bb.ok ? bb.skills.length : "?";
-      const mcpN = bb.ok ? bb.mcpServers.length : "?";
-      const banner: TimelineItem = {
-        id: uid("sys"),
-        kind: "system",
-        text: [
-          opts?.note ||
-            (res.resumed
-              ? "Resumed Grok session (same store as CLI ~/.grok/sessions)"
-              : "New Grok session (same store as CLI)"),
-          res.warning ? `Note: ${res.warning}` : null,
-          `Project: ${res.cwd}`,
-          `Session: ${res.sessionId}`,
-          history.length
-            ? `History: ${history.length} message(s) restored`
-            : "History: empty (fresh chat)",
-          `Binary: ${res.grokBinary}`,
-          `Skills: ${skillN} · MCP: ${mcpN}`,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        at: Date.now(),
-      };
-      // Atomic UI commit: history + online together
-      setItems([banner, ...history]);
-      setConn("online");
-      setOpeningLabel(null);
-      setError(res.warning || null);
-
-      const i = await window.grokDesktop.getInfo();
-      setInfo(i);
-      setAuth(i.auth);
     },
-    [refreshBackbone],
-  );
-
-  const openProject = useCallback(
-    async (
-      cwd: string,
-      opts?: { mode?: "continue" | "new" | "resume"; sessionId?: string },
-    ) => {
-      const status = auth || (await refreshAuth());
-      if (!status.authenticated || status.expired) {
-        setError("Sign in to Grok before opening a project.");
-        return;
-      }
-      if (busyRef.current || openingRef.current) {
-        setError("Wait for the current turn or open to finish.");
-        return;
-      }
-
-      openingRef.current = true;
-      setConn("connecting");
-      setOpeningLabel(basename(cwd));
-      setError(null);
-      setItems([]);
-      setPermissions([]);
-      try {
-        const res = await window.grokDesktop.openProject(cwd, {
-          mode: opts?.mode || "continue",
-          sessionId: opts?.sessionId,
-        });
-        await applyOpenResult(res);
-      } catch (e: any) {
-        const msg = e?.message || String(e);
-        setConn("error");
-        setOpeningLabel(null);
-        setError(msg);
-        if (isAuthError(msg)) {
-          void refreshAuth();
-        }
-      } finally {
-        openingRef.current = false;
-      }
-    },
-    [auth, refreshAuth, applyOpenResult],
-  );
-
-  const openSession = useCallback(
-    async (opts: { sessionId?: string; mode?: "new" | "resume" }) => {
-      if (!project) return;
-      const status = auth || (await refreshAuth());
-      if (!status.authenticated || status.expired) {
-        setError("Sign in to Grok first.");
-        return;
-      }
-      if (busyRef.current) {
-        setError("Stop the current turn before switching chats.");
-        return;
-      }
-      if (openingRef.current) return;
-
-      openingRef.current = true;
-      setConn("connecting");
-      setOpeningLabel(opts.mode === "new" ? "New chat" : "Resuming…");
-      setError(null);
-      setItems([]);
-      setPermissions([]);
-      try {
-        const res = await window.grokDesktop.openSession({
-          cwd: project,
-          sessionId: opts.sessionId,
-          mode: opts.mode || "resume",
-        });
-        await applyOpenResult(res, {
-          note:
-            opts.mode === "new"
-              ? "Started a new chat (CLI /new)"
-              : "Resumed previous chat (CLI /resume)",
-        });
-      } catch (e: any) {
-        const msg = e?.message || String(e);
-        setConn("error");
-        setOpeningLabel(null);
-        setError(msg);
-      } finally {
-        openingRef.current = false;
-      }
-    },
-    [project, auth, refreshAuth, applyOpenResult],
-  );
+  });
 
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
@@ -722,26 +552,12 @@ export default function App() {
       );
       if (local) {
         setInput("");
-        if (name === "new" || name === "clear") {
-          void openSession({ mode: "new" });
-          return;
-        }
-        if (name === "always-approve") {
-          const next: PermissionMode =
-            permissionMode === "always-approve" ? "ask" : "always-approve";
-          const mode = await window.grokDesktop.setPermissionMode(next);
-          setPermissionMode(normalizePermissionMode(mode));
-          setItems((prev) => [
-            ...prev,
-            {
-              id: uid("sys"),
-              kind: "system",
-              text: `Tool permission mode: ${normalizePermissionMode(mode)}`,
-              at: Date.now(),
-            },
-          ]);
-          return;
-        }
+        runDesktopCommand(name, {
+          newChat: () => void openSession({ mode: "new" }),
+          toggleAlwaysApprove: () =>
+            applyPermissionMode(nextAlwaysApproveMode(permissionMode)),
+        });
+        return;
       }
     }
 
@@ -795,28 +611,11 @@ export default function App() {
     (cmd: SlashCommand, mode: "insert" | "run" = "run") => {
       if (cmd.local) {
         setInput("");
-        if (cmd.name === "new" || cmd.name === "clear") {
-          void openSession({ mode: "new" });
-          return;
-        }
-        if (cmd.name === "always-approve") {
-          void (async () => {
-            const next: PermissionMode =
-              permissionMode === "always-approve" ? "ask" : "always-approve";
-            const mode = await window.grokDesktop.setPermissionMode(next);
-            setPermissionMode(normalizePermissionMode(mode));
-            setItems((prev) => [
-              ...prev,
-              {
-                id: uid("sys"),
-                kind: "system",
-                text: `Tool permission mode: ${normalizePermissionMode(mode)}`,
-                at: Date.now(),
-              },
-            ]);
-          })();
-          return;
-        }
+        runDesktopCommand(cmd.name, {
+          newChat: () => void openSession({ mode: "new" }),
+          toggleAlwaysApprove: () =>
+            applyPermissionMode(nextAlwaysApproveMode(permissionMode)),
+        });
         return;
       }
 
@@ -836,7 +635,7 @@ export default function App() {
       // Enter only: run bare skill/agent command (CLI-style)
       void sendPromptRef.current(`/${cmd.name}`);
     },
-    [permissionMode, openSession],
+    [permissionMode, openSession, applyPermissionMode],
   );
 
   const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -938,106 +737,6 @@ export default function App() {
     setPendingImages((prev) => prev.filter((img) => img.id !== id));
   };
 
-  const onPermission = async (
-    reqId: string,
-    optionId: string | "cancelled",
-  ) => {
-    const outcome =
-      optionId === "cancelled"
-        ? { outcome: { outcome: "cancelled" as const } }
-        : {
-            outcome: {
-              outcome: "selected" as const,
-              optionId,
-            },
-          };
-    await window.grokDesktop.respondPermission(reqId, outcome);
-    setPermissions((prev) => prev.filter((p) => p.reqId !== reqId));
-  };
-
-  const onPlanApproval = async (
-    reqId: string,
-    decision:
-      | { type: "approved" }
-      | { type: "request_changes"; feedback: string }
-      | { type: "abandoned" },
-  ) => {
-    await window.grokDesktop.respondPlanApproval(reqId, decision);
-    setPlanApproval(null);
-    if (decision.type === "approved") {
-      setSessionMode(null);
-    } else if (decision.type === "abandoned") {
-      setSessionMode(null);
-    }
-  };
-
-  const onUserQuestion = async (
-    reqId: string,
-    decision:
-      | { type: "answered"; answers: Record<string, string> }
-      | { type: "declined" },
-  ) => {
-    await window.grokDesktop.respondUserQuestion(reqId, decision);
-    setUserQuestion(null);
-  };
-
-  const applyPermissionMode = async (next: PermissionMode) => {
-    if (
-      next === "always-approve" &&
-      permissionMode !== "always-approve" &&
-      !window.confirm(
-        "Enable Always approve?\n\nTools will run without the Approvals panel. Deny rules and plan-mode edit gates still apply.",
-      )
-    ) {
-      return;
-    }
-    const mode = await window.grokDesktop.setPermissionMode(next);
-    setPermissionMode(normalizePermissionMode(mode));
-  };
-
-  const toggleAllowOutside = async () => {
-    const next = !allowOutsideProject;
-    if (
-      next &&
-      !window.confirm(
-        "Allow the agent to read/write files and use working directories outside this project?\n\nThis reduces safety. Prefer leaving it off unless you need it.",
-      )
-    ) {
-      return;
-    }
-    const value = await window.grokDesktop.setAllowOutsideProject(next);
-    setAllowOutsideProject(value);
-  };
-
-  /** Prevent label+checkbox double-change from re-enabling during confirm/IPC. */
-  const sandboxApplyLock = useRef(false);
-
-  /**
-   * Apply an explicit sandbox value (from the checkbox `checked` target).
-   * Do not toggle from current state — label+checkbox can fire change twice;
-   * a toggle would disable then immediately re-enable.
-   */
-  const applySandboxTerminal = async (next: boolean) => {
-    if (sandboxApplyLock.current) return;
-    if (next === sandboxTerminal) return;
-    // Turning OFF is the elevated / dangerous direction
-    if (
-      next === false &&
-      !window.confirm(
-        "Disable terminal sandbox?\n\nTool shells will run with your full user account on the host. The agent can read ~/.ssh, talk to Docker, and wipe containers.\n\nLeave sandbox on unless you need unrestricted host access.",
-      )
-    ) {
-      return;
-    }
-    sandboxApplyLock.current = true;
-    try {
-      const value = await window.grokDesktop.setSandboxTerminal(next);
-      setSandboxTerminal(value);
-    } finally {
-      sandboxApplyLock.current = false;
-    }
-  };
-
   const setAppTheme = async (next: "dark" | "light") => {
     if (next === theme) return;
     applyTheme(next);
@@ -1049,6 +748,62 @@ export default function App() {
     }
     await window.grokDesktop.setTheme(next);
   };
+
+  const applyPrivacyMode = async (next: boolean) => {
+    if (next === privacyMode) return;
+    setPrivacyMode(next);
+    try {
+      const value = await window.grokDesktop.setPrivacyMode(next);
+      setPrivacyMode(Boolean(value));
+    } catch (e: unknown) {
+      setPrivacyMode(!next);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Failed to set privacy mode");
+    }
+  };
+
+  // Git branch in status bar (poll while a project is open)
+  useEffect(() => {
+    if (!project) {
+      setGitBranch(null);
+      setGitDetached(false);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const res = await window.grokDesktop.getGitBranch(project);
+        if (cancelled) return;
+        setGitBranch(res?.branch ?? null);
+        setGitDetached(Boolean(res?.detached));
+      } catch {
+        if (!cancelled) {
+          setGitBranch(null);
+          setGitDetached(false);
+        }
+      }
+    };
+    void refresh();
+    const id = window.setInterval(() => void refresh(), 5000);
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [project]);
+
+  const homeDir = info?.home || null;
+  const redact = useCallback(
+    (text: string | null | undefined) =>
+      redactSensitiveText(
+        text == null ? "" : String(text),
+        homeDir,
+        privacyMode,
+      ),
+    [homeDir, privacyMode],
+  );
 
   const statusLabel = useMemo(() => {
     if (conn === "connecting") return "Starting agent…";
@@ -1080,6 +835,7 @@ export default function App() {
 
   if (!project) {
     return (
+      <PrivacyProvider privacyMode={privacyMode} home={homeDir}>
       <div className={`app no-project ${platformClass}`.trim()}>
         <div className="titlebar-drag welcome-drag" aria-hidden />
         <div className="welcome">
@@ -1166,19 +922,21 @@ export default function App() {
             )}
 
             {error && (
-              <p className="welcome-error">{error}</p>
+              <p className="welcome-error">{redact(error)}</p>
             )}
             <p className="welcome-meta">
               App v{info?.version || "…"} · Backbone:{" "}
-              {info?.grokBinary || auth?.binary || "detecting…"}
+              {redact(info?.grokBinary || auth?.binary || "detecting…")}
             </p>
           </div>
         </div>
       </div>
+      </PrivacyProvider>
     );
   }
 
   return (
+    <PrivacyProvider privacyMode={privacyMode} home={homeDir}>
     <div className={`app ${platformClass}`.trim()}>
       <aside className="sidebar">
         <div className="brand">
@@ -1287,7 +1045,7 @@ export default function App() {
                   onClick={() => void openProject(p, { mode: "continue" })}
                 >
                   <span className="name">{basename(p)}</span>
-                  <span className="path">{p}</span>
+                  <span className="path">{redact(p)}</span>
                 </button>
               ))}
             </div>
@@ -1299,8 +1057,11 @@ export default function App() {
             Session: {sessionId ? sessionId.slice(0, 8) : "—"}…
           </div>
           <div className="sidebar-meta">App v{info?.version || "…"}</div>
-          <div className="sidebar-meta" title={info?.grokBinary}>
-            Binary: {info?.grokBinary}
+          <div
+            className="sidebar-meta"
+            title={redact(info?.grokBinary || "") || undefined}
+          >
+            Binary: {redact(info?.grokBinary)}
           </div>
         </div>
       </aside>
@@ -1309,11 +1070,13 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         theme={theme}
+        privacyMode={privacyMode}
         permissionMode={permissionMode}
         allowOutsideProject={allowOutsideProject}
         sandboxTerminal={sandboxTerminal}
         sandboxStatus={sandboxStatus}
         onSetTheme={(t) => void setAppTheme(t)}
+        onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
         onSetPermissionMode={(m) => void applyPermissionMode(m)}
         onToggleAllowOutside={() => void toggleAllowOutside()}
         onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
@@ -1323,13 +1086,14 @@ export default function App() {
         <div className="topbar">
           <div className="topbar-project">
             <div className="topbar-title">{basename(project)}</div>
-            <div className="cwd" title={project}>
-              {project}
+            <div className="cwd" title={redact(project)}>
+              {redact(project)}
             </div>
             <ElevatedSafetyChips
               sandboxTerminal={sandboxTerminal}
               allowOutsideProject={allowOutsideProject}
               permissionMode={permissionMode}
+              privacyMode={privacyMode}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
@@ -1396,7 +1160,7 @@ export default function App() {
 
         {error && (
           <div className="error-banner">
-            {error}
+            {redact(error)}
             {isAuthError(error) ? (
               <button
                 className="btn"
@@ -1569,6 +1333,13 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        <StatusBar
+          privacyMode={privacyMode}
+          onOpenSettings={() => setSettingsOpen(true)}
+          gitBranch={gitBranch}
+          gitDetached={gitDetached}
+        />
       </main>
 
       <SidePanel
@@ -1577,6 +1348,7 @@ export default function App() {
         backgroundTasks={backgroundTasks}
         sessionMode={sessionMode}
         onPermission={onPermission}
+        onAllowAllPermissions={() => void onAllowAllPermissions()}
       />
 
       <PlanApprovalDialog
@@ -1588,5 +1360,6 @@ export default function App() {
         onRespond={(reqId, decision) => void onUserQuestion(reqId, decision)}
       />
     </div>
+    </PrivacyProvider>
   );
 }

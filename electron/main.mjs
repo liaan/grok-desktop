@@ -33,6 +33,7 @@ import {
 import { assertPathInProject } from "./path-safety.mjs";
 import { probeSandbox, sandboxStatusLabel } from "./terminal-sandbox.mjs";
 import { normalizePermissionMode } from "./permission-mode.mjs";
+import { getGitBranch } from "./git-info.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -56,6 +57,7 @@ function loadState() {
     const raw = JSON.parse(fs.readFileSync(storePath, "utf8"));
     const merged = {
       recentProjects: [],
+      /** @deprecated migrated into permissionMode */
       alwaysApprove: false,
       /** ask | auto | always-approve */
       permissionMode: "ask",
@@ -68,24 +70,31 @@ function loadState() {
       sandboxTerminal: true,
       /** UI theme: "dark" | "light" */
       theme: "dark",
+      /**
+       * When true, display-only: hide $HOME prefixes (→ ~) in the UI for
+       * screenshots / demos. Does not change agent paths or disk.
+       */
+      privacyMode: false,
       lastProject: null,
       ...raw,
     };
+    // One-time migrate legacy alwaysApprove bool → permissionMode
     merged.permissionMode = normalizePermissionMode(
       merged.permissionMode,
-      merged.alwaysApprove,
+      Boolean(merged.alwaysApprove),
     );
-    merged.alwaysApprove = merged.permissionMode === "always-approve";
+    delete merged.alwaysApprove;
+    merged.privacyMode = Boolean(merged.privacyMode);
     return merged;
   } catch {
     return {
-      recentProjects: [],
-      alwaysApprove: false,
       permissionMode: "ask",
       allowOutsideProject: false,
       sandboxTerminal: true,
       theme: "dark",
+      privacyMode: false,
       lastProject: null,
+      recentProjects: [],
     };
   }
 }
@@ -101,31 +110,47 @@ function send(channel, payload) {
   }
 }
 
+function makeReqId(prefix) {
+  if (typeof crypto.randomUUID === "function") {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Clear all pending UI gates. Each stored callback is a main-owned settle
+ * wrapper that also dismisses the renderer modal.
+ */
 function clearPendingPermissions() {
-  for (const [, respond] of pendingPermissions) {
-    try {
-      respond({ outcome: { outcome: "cancelled" } });
-    } catch {
-      /* ignore */
-    }
-  }
+  const perms = [...pendingPermissions.values()];
+  const plans = [...pendingPlanApprovals.values()];
+  const asks = [...pendingUserQuestions.values()];
   pendingPermissions.clear();
-  for (const [, respond] of pendingPlanApprovals) {
-    try {
-      respond({ type: "abandoned" });
-    } catch {
-      /* ignore */
-    }
-  }
   pendingPlanApprovals.clear();
-  for (const [, respond] of pendingUserQuestions) {
+  pendingUserQuestions.clear();
+  for (const settle of perms) {
     try {
-      respond({ type: "declined" });
+      settle({ outcome: { outcome: "cancelled" } });
     } catch {
       /* ignore */
     }
   }
-  pendingUserQuestions.clear();
+  for (const settle of plans) {
+    try {
+      settle({ type: "abandoned" });
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const settle of asks) {
+    try {
+      settle({ type: "declined" });
+    } catch {
+      /* ignore */
+    }
+  }
+  // Drop any leftover modal / approval list state in the renderer
+  send("agent:permissions-cleared", {});
 }
 
 /**
@@ -168,7 +193,6 @@ function ensureAgent(cwd, opts = {}) {
     agent = new GrokAcpClient({
       cwd,
       permissionMode: state.permissionMode,
-      alwaysApprove: state.permissionMode === "always-approve",
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       clientVersion: app.getVersion(),
@@ -179,20 +203,79 @@ function ensureAgent(cwd, opts = {}) {
     });
 
     agent.on("permission-request", ({ params, respond }) => {
-      const reqId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      pendingPermissions.set(reqId, respond);
+      const reqId = makeReqId("perm");
+      let settled = false;
+      const settle = (outcome) => {
+        if (settled) return;
+        settled = true;
+        pendingPermissions.delete(reqId);
+        try {
+          respond(outcome);
+        } catch {
+          /* ignore */
+        }
+        send("agent:permission-dismiss", { reqId });
+      };
+      pendingPermissions.set(reqId, settle);
       send("agent:permission-request", { reqId, params });
     });
 
     agent.on("plan-approval-request", ({ params, respond }) => {
-      const reqId = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      pendingPlanApprovals.set(reqId, respond);
+      const reqId = makeReqId("plan");
+      let settled = false;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let timer = null;
+      const settle = (decision) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        pendingPlanApprovals.delete(reqId);
+        try {
+          respond(decision || { type: "abandoned" });
+        } catch {
+          /* ignore */
+        }
+        send("agent:plan-approval-dismiss", {
+          reqId,
+          timedOut: Boolean(decision?.timedOut),
+        });
+      };
+      // Main owns timeout so map + UI dismiss go through the same settle path
+      timer = setTimeout(
+        () => settle({ type: "abandoned", timedOut: true }),
+        30 * 60_000,
+      );
+      pendingPlanApprovals.set(reqId, settle);
       send("agent:plan-approval-request", { reqId, params });
     });
 
     agent.on("user-question-request", ({ params, respond }) => {
-      const reqId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      pendingUserQuestions.set(reqId, respond);
+      const reqId = makeReqId("ask");
+      let settled = false;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let timer = null;
+      const settle = (decision) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        pendingUserQuestions.delete(reqId);
+        try {
+          respond(decision || { type: "declined" });
+        } catch {
+          /* ignore */
+        }
+        send("agent:user-question-dismiss", {
+          reqId,
+          timedOut: Boolean(decision?.timedOut),
+        });
+      };
+      timer = setTimeout(
+        () => settle({ type: "declined", timedOut: true }),
+        10 * 60_000,
+      );
+      pendingUserQuestions.set(reqId, settle);
       send("agent:user-question-request", { reqId, params });
     });
 
@@ -425,16 +508,15 @@ function registerIpc() {
       grokBinary: resolveGrokBinary(),
       grokHome: grokHomeDir(),
       userData: app.getPath("userData"),
+      /** @deprecated use permissionMode === 'always-approve' */
       alwaysApprove: state.permissionMode === "always-approve",
-      permissionMode: normalizePermissionMode(
-        state.permissionMode,
-        state.alwaysApprove,
-      ),
+      permissionMode: normalizePermissionMode(state.permissionMode),
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       sandboxStatus: sandboxStatusLabel(),
       sandboxBackend: probeSandbox().backend,
       theme: state.theme === "light" ? "light" : "dark",
+      privacyMode: Boolean(state.privacyMode),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -637,55 +719,51 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:permission-respond", async (_e, { reqId, outcome }) => {
-    const respond = pendingPermissions.get(reqId);
-    if (!respond) return false;
-    pendingPermissions.delete(reqId);
-    respond(outcome);
+    const settle = pendingPermissions.get(reqId);
+    if (!settle) return false;
+    settle(outcome);
     return true;
   });
 
   ipcMain.handle("agent:plan-approval-respond", async (_e, { reqId, decision }) => {
-    const respond = pendingPlanApprovals.get(reqId);
-    if (!respond) return false;
-    pendingPlanApprovals.delete(reqId);
-    respond(decision || { type: "abandoned" });
+    const settle = pendingPlanApprovals.get(reqId);
+    if (!settle) return false;
+    settle(decision || { type: "abandoned" });
     return true;
   });
 
   ipcMain.handle("agent:user-question-respond", async (_e, { reqId, decision }) => {
-    const respond = pendingUserQuestions.get(reqId);
-    if (!respond) return false;
-    pendingUserQuestions.delete(reqId);
-    respond(decision || { type: "declined" });
+    const settle = pendingUserQuestions.get(reqId);
+    if (!settle) return false;
+    settle(decision || { type: "declined" });
     return true;
   });
 
+  /** @deprecated prefer agent:set-permission-mode */
   ipcMain.handle("agent:set-always-approve", async (_e, value) => {
     const mode = value ? "always-approve" : "ask";
     const state = loadState();
     state.permissionMode = mode;
-    state.alwaysApprove = mode === "always-approve";
+    delete state.alwaysApprove;
     saveState(state);
     if (agent?.setPermissionMode) {
       await agent.setPermissionMode(mode);
-    } else {
-      agent?.setAlwaysApprove(state.alwaysApprove);
     }
-    return state.alwaysApprove;
+    return mode === "always-approve";
   });
 
   ipcMain.handle("agent:set-permission-mode", async (_e, value) => {
     const mode = normalizePermissionMode(value);
     const state = loadState();
     state.permissionMode = mode;
-    state.alwaysApprove = mode === "always-approve";
+    delete state.alwaysApprove;
     saveState(state);
+    /** @type {{ mode: string, agentSynced: boolean, error?: string }} */
+    let result = { mode, agentSynced: false };
     if (agent?.setPermissionMode) {
-      await agent.setPermissionMode(mode);
-    } else {
-      agent?.setAlwaysApprove(state.alwaysApprove);
+      result = await agent.setPermissionMode(mode);
     }
-    return mode;
+    return result;
   });
 
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {
@@ -711,6 +789,19 @@ function registerIpc() {
     state.theme = theme;
     saveState(state);
     return theme;
+  });
+
+  ipcMain.handle("app:set-privacy-mode", async (_e, value) => {
+    const state = loadState();
+    state.privacyMode = Boolean(value);
+    saveState(state);
+    return state.privacyMode;
+  });
+
+  ipcMain.handle("git:branch", async (_e, cwd) => {
+    const root = typeof cwd === "string" && cwd ? cwd : agent?.cwd;
+    if (!root) return { branch: null, detached: false };
+    return getGitBranch(root);
   });
 
   ipcMain.handle("fs:read-file", async (_e, filePath) => {

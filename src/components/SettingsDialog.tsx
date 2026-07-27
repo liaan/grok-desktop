@@ -12,11 +12,13 @@ export function SettingsDialog({
   open,
   onClose,
   theme,
+  privacyMode,
   permissionMode,
   allowOutsideProject,
   sandboxTerminal,
   sandboxStatus,
   onSetTheme,
+  onSetPrivacyMode,
   onSetPermissionMode,
   onToggleAllowOutside,
   onSetSandboxTerminal,
@@ -24,11 +26,13 @@ export function SettingsDialog({
   open: boolean;
   onClose: () => void;
   theme: "dark" | "light";
+  privacyMode: boolean;
   permissionMode: PermissionMode;
   allowOutsideProject: boolean;
   sandboxTerminal: boolean;
   sandboxStatus: string;
   onSetTheme: (theme: "dark" | "light") => void;
+  onSetPrivacyMode: (next: boolean) => void;
   onSetPermissionMode: (mode: PermissionMode) => void;
   onToggleAllowOutside: () => void;
   /** Desired checked state from the checkbox (not a toggle). */
@@ -105,6 +109,22 @@ export function SettingsDialog({
                   Day
                 </button>
               </div>
+            </label>
+
+            <label className="settings-row">
+              <div className="settings-row-text">
+                <span className="settings-label">Privacy mode</span>
+                <span className="settings-desc">
+                  Hide your home directory in the UI (paths show as ~/…). For
+                  screenshots and demos only — does not change how the agent
+                  works or what is stored on disk.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={privacyMode}
+                onChange={(e) => onSetPrivacyMode(e.target.checked)}
+              />
             </label>
           </section>
 

@@ -145,6 +145,11 @@ export type AppInfo = {
   sandboxBackend: string;
   /** UI appearance */
   theme: "dark" | "light";
+  /**
+   * Display-only: redact $HOME → ~ in the UI (screenshots / demos).
+   * Does not change agent paths or on-disk data.
+   */
+  privacyMode: boolean;
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -191,10 +196,18 @@ declare global {
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
       setPermissionMode: (
         value: "ask" | "auto" | "always-approve",
-      ) => Promise<"ask" | "auto" | "always-approve">;
+      ) => Promise<{
+        mode: "ask" | "auto" | "always-approve";
+        agentSynced: boolean;
+        error?: string;
+      }>;
       setAllowOutsideProject: (value: boolean) => Promise<boolean>;
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
+      setPrivacyMode: (value: boolean) => Promise<boolean>;
+      getGitBranch: (
+        cwd?: string,
+      ) => Promise<{ branch: string | null; detached: boolean }>;
       readFile: (path: string) => Promise<string>;
       listDir: (
         path: string,

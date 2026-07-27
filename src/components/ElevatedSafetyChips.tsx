@@ -11,20 +11,32 @@ export function ElevatedSafetyChips({
   sandboxTerminal,
   allowOutsideProject,
   permissionMode,
+  privacyMode = false,
   onOpenSettings,
 }: {
   sandboxTerminal: boolean;
   allowOutsideProject: boolean;
   permissionMode: PermissionMode;
+  privacyMode?: boolean;
   onOpenSettings: () => void;
 }) {
   const elevatedPerms = permissionMode !== "ask";
   const show =
-    !sandboxTerminal || allowOutsideProject || elevatedPerms;
+    !sandboxTerminal || allowOutsideProject || elevatedPerms || privacyMode;
   if (!show) return null;
 
   return (
     <div className="elevated-chips" aria-label="Elevated safety modes">
+      {privacyMode && (
+        <button
+          type="button"
+          className="elevated-chip privacy"
+          title="Privacy mode — home paths hidden in the UI. Click to open Settings."
+          onClick={onOpenSettings}
+        >
+          Privacy
+        </button>
+      )}
       {!sandboxTerminal && (
         <button
           type="button"

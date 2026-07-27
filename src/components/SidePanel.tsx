@@ -10,6 +10,7 @@ import type { PermissionRequest } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
 import type { BackgroundTask } from "../lib/background-tasks";
 import { runningTaskCount } from "../lib/background-tasks";
+import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 
 type FileEntry = { name: string; isDirectory: boolean; path: string };
@@ -20,6 +21,7 @@ export function SidePanel({
   backgroundTasks,
   sessionMode,
   onPermission,
+  onAllowAllPermissions,
 }: {
   project: string | null;
   permissions: PermissionRequest[];
@@ -27,7 +29,10 @@ export function SidePanel({
   /** e.g. "plan" when plan mode is active */
   sessionMode: string | null;
   onPermission: (reqId: string, optionId: string | "cancelled") => void;
+  /** Approve every open request (multi-edit batches) */
+  onAllowAllPermissions?: () => void;
 }) {
+  const { redact } = usePrivacy();
   const [tab, setTab] = useState<"files" | "approvals" | "tasks">("approvals");
   const running = runningTaskCount(backgroundTasks);
   const [browseCwd, setBrowseCwd] = useState<string | null>(null);
@@ -147,19 +152,19 @@ export function SidePanel({
                       {t.status}
                     </span>
                   </div>
-                  <h3 className="task-title" title={t.title}>
-                    {t.title}
+                  <h3 className="task-title" title={redact(t.title)}>
+                    {redact(t.title)}
                   </h3>
                   {t.detail ? (
-                    <div className="task-detail" title={t.detail}>
-                      {t.detail}
+                    <div className="task-detail" title={redact(t.detail)}>
+                      {redact(t.detail)}
                     </div>
                   ) : null}
                   {t.command && t.command !== t.title ? (
-                    <pre className="task-cmd">{t.command}</pre>
+                    <pre className="task-cmd">{redact(t.command)}</pre>
                   ) : null}
                   {t.outputSnippet ? (
-                    <pre className="task-out">{t.outputSnippet}</pre>
+                    <pre className="task-out">{redact(t.outputSnippet)}</pre>
                   ) : null}
                   {t.exitCode != null ? (
                     <div className="task-meta">exit {t.exitCode}</div>
@@ -176,57 +181,74 @@ export function SidePanel({
                 Tool approvals appear here when the agent needs permission.
               </p>
             ) : (
-              permissions.map((p) => {
-                const tool = p.params?.toolCall;
-                const options = p.params?.options?.length
-                  ? p.params.options
-                  : [
-                      { optionId: "allow-once", name: "Allow once" },
-                      { optionId: "reject", name: "Reject" },
-                    ];
-                const card = buildToolCard({
-                  title: tool?.title,
-                  kind: tool?.kind,
-                  raw: tool?.rawInput,
-                });
-                const meta = [
-                  tool?.kind || "tool",
-                  tool?.toolCallId
-                    ? `${String(tool.toolCallId).slice(0, 18)}…`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ");
-                return (
-                  <div key={p.reqId} className="perm-card">
-                    <ToolCardView card={card} meta={meta} />
-                    <div className="perm-actions">
-                      {options.map((opt) => (
-                        <button
-                          key={opt.optionId}
-                          type="button"
-                          className={
-                            opt.optionId.includes("allow") ||
-                            /yes|proceed|approve/i.test(opt.name || "")
-                              ? "btn primary"
-                              : "btn"
-                          }
-                          onClick={() => onPermission(p.reqId, opt.optionId)}
-                        >
-                          {formatOptionLabel(opt.optionId, opt.name)}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className="btn danger"
-                        onClick={() => onPermission(p.reqId, "cancelled")}
-                      >
-                        Cancel
-                      </button>
-                    </div>
+              <>
+                {permissions.length > 1 && onAllowAllPermissions ? (
+                  <div className="perm-batch-actions">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => onAllowAllPermissions()}
+                    >
+                      Allow all ({permissions.length})
+                    </button>
+                    <p className="perm-batch-hint">
+                      Each tool is a separate approval. Allow all grants every
+                      open request so multi-edit batches do not stall.
+                    </p>
                   </div>
-                );
-              })
+                ) : null}
+                {permissions.map((p) => {
+                  const tool = p.params?.toolCall;
+                  const options = p.params?.options?.length
+                    ? p.params.options
+                    : [
+                        { optionId: "allow-once", name: "Allow once" },
+                        { optionId: "reject", name: "Reject" },
+                      ];
+                  const card = buildToolCard({
+                    title: tool?.title,
+                    kind: tool?.kind,
+                    raw: tool?.rawInput,
+                  });
+                  const meta = [
+                    tool?.kind || "tool",
+                    tool?.toolCallId
+                      ? `${String(tool.toolCallId).slice(0, 18)}…`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <div key={p.reqId} className="perm-card">
+                      <ToolCardView card={card} meta={meta} />
+                      <div className="perm-actions">
+                        {options.map((opt) => (
+                          <button
+                            key={opt.optionId}
+                            type="button"
+                            className={
+                              opt.optionId.includes("allow") ||
+                              /yes|proceed|approve/i.test(opt.name || "")
+                                ? "btn primary"
+                                : "btn"
+                            }
+                            onClick={() => onPermission(p.reqId, opt.optionId)}
+                          >
+                            {formatOptionLabel(opt.optionId, opt.name)}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="btn danger"
+                          onClick={() => onPermission(p.reqId, "cancelled")}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
             )}
           </>
         )}
@@ -238,7 +260,10 @@ export function SidePanel({
               </p>
             ) : (
               <>
-                <div className="file-browser-path" title={browseCwd || project}>
+                <div
+                  className="file-browser-path"
+                  title={redact(browseCwd || project || "")}
+                >
                   {canGoUp ? (
                     <button
                       type="button"
@@ -276,8 +301,8 @@ export function SidePanel({
                       className={`file-item ${f.isDirectory ? "file-item-dir" : "file-item-file"}`}
                       title={
                         f.isDirectory
-                          ? `Open folder: ${f.path}`
-                          : `Open: ${f.path}`
+                          ? `Open folder: ${redact(f.path)}`
+                          : `Open: ${redact(f.path)}`
                       }
                       onClick={() =>
                         f.isDirectory

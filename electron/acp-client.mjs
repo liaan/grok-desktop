@@ -20,7 +20,15 @@ import {
   normalizePermissionMode,
   toAgentPermissionMode,
 } from "./permission-mode.mjs";
-import { normalizeAskUserAnswersMap } from "./ask-user-answers.mjs";
+import {
+  cancelledPermissionResult,
+  pickAllowOptionId,
+  selectedPermissionResult,
+} from "../shared/permission-options.mjs";
+import {
+  handleAskUserQuestion,
+  handleExitPlanMode,
+} from "./acp-ext-methods.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -33,6 +41,7 @@ export class GrokAcpClient extends EventEmitter {
   constructor({
     cwd,
     grokPath,
+    /** @deprecated use permissionMode */
     alwaysApprove = false,
     /** ask | auto | always-approve — see permission-mode.mjs */
     permissionMode,
@@ -49,8 +58,6 @@ export class GrokAcpClient extends EventEmitter {
       permissionMode,
       alwaysApprove,
     );
-    /** Client-side auto-respond to session/request_permission */
-    this.alwaysApprove = this.permissionMode === "always-approve";
     this.allowOutsideProject = Boolean(allowOutsideProject);
     this.sandboxTerminal = sandboxTerminal !== false;
     this.clientVersion = clientVersion;
@@ -339,13 +346,19 @@ export class GrokAcpClient extends EventEmitter {
   async _handleServerRequest(msg) {
     const { method, params, id } = msg;
 
+    const extCtx = {
+      emitter: this,
+      respond: (rid, result, error) => this._respond(rid, result, error),
+      sessionDir: () => this.sessionDir(),
+    };
+
     // Grok extension: plan approval popup (must not auto-approve / no-op)
     if (
       method === EXT_EXIT_PLAN ||
       method === "exit_plan_mode" ||
       method?.endsWith("/exit_plan_mode")
     ) {
-      await this._handleExitPlanMode(id, params);
+      await handleExitPlanMode(extCtx, id, params);
       return;
     }
 
@@ -355,7 +368,7 @@ export class GrokAcpClient extends EventEmitter {
       method === "ask_user_question" ||
       method?.endsWith("/ask_user_question")
     ) {
-      await this._handleAskUserQuestion(id, params);
+      await handleAskUserQuestion(extCtx, id, params);
       return;
     }
 
@@ -366,35 +379,40 @@ export class GrokAcpClient extends EventEmitter {
           params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
           "",
       );
+      // Prefer an optionId the agent actually listed (kind allow_* / name Allow…)
+      const allowId = pickAllowOptionId(params?.options, {
+        // Always-approve mode may use allow-always when that is all the agent offers
+        allowAlwaysOk: this.permissionMode === "always-approve",
+      });
+
       // exit_plan_mode: ACP permission is a formality; real UI is x.ai/exit_plan_mode
       if (/exit_plan/i.test(toolName)) {
-        this._respond(id, {
-          outcome: { outcome: "selected", optionId: "allow-once" },
-        });
-        return;
-      }
-
-      if (this.alwaysApprove) {
-        this._respond(id, {
-          outcome: { outcome: "selected", optionId: "allow-once" },
-        });
-        return;
-      }
-
-      const decision = await new Promise((resolve) => {
-        const timeout = setTimeout(
-          () =>
-            resolve({
-              outcome: { outcome: "cancelled" },
-            }),
-          120_000,
+        this._respond(
+          id,
+          selectedPermissionResult(
+            pickAllowOptionId(params?.options, { allowAlwaysOk: false }),
+          ),
         );
+        return;
+      }
+
+      if (this.permissionMode === "always-approve") {
+        this._respond(id, selectedPermissionResult(allowId));
+        return;
+      }
+
+      // Wait for the UI — do not auto-cancel after 2 minutes (that was cancelling
+      // Write tools while the user still had the Approvals card open / mid-batch).
+      const decision = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (outcome) => {
+          if (settled) return;
+          settled = true;
+          resolve(outcome || cancelledPermissionResult());
+        };
         this.emit("permission-request", {
           params,
-          respond: (outcome) => {
-            clearTimeout(timeout);
-            resolve(outcome);
-          },
+          respond: finish,
         });
       });
       this._respond(id, decision);
@@ -425,144 +443,6 @@ export class GrokAcpClient extends EventEmitter {
       code: -32601,
       message: `Unhandled client method: ${method}`,
     });
-  }
-
-  /**
-   * Plan approval extension. Agent parks until the client responds.
-   * @param {number|string} id
-   * @param {any} params
-   */
-  async _handleExitPlanMode(id, params) {
-    const planContent =
-      params?.planContent ??
-      params?.plan_content ??
-      params?.content ??
-      params?.plan ??
-      "";
-    const planFilePath =
-      params?.planFilePath ??
-      params?.plan_file_path ??
-      params?.planPath ??
-      null;
-
-    let markdown = typeof planContent === "string" ? planContent : "";
-    if (!markdown && planFilePath) {
-      try {
-        markdown = await fs.promises.readFile(String(planFilePath), "utf8");
-      } catch {
-        /* empty plan UI still opens */
-      }
-    }
-    if (!markdown) {
-      const sd = this.sessionDir();
-      if (sd) {
-        try {
-          markdown = await fs.promises.readFile(
-            path.join(sd, "plan.md"),
-            "utf8",
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    const decision = await new Promise((resolve) => {
-      const timeout = setTimeout(
-        () => resolve({ type: "abandoned" }),
-        30 * 60_000,
-      );
-      this.emit("plan-approval-request", {
-        params: {
-          planContent: markdown,
-          planFilePath,
-          raw: params,
-        },
-        respond: (outcome) => {
-          clearTimeout(timeout);
-          resolve(outcome);
-        },
-      });
-    });
-
-    // Prefer `outcome` tag (same pattern as ask_user_question); keep type aliases.
-    const type = decision?.type || decision?.outcome || "abandoned";
-    if (type === "approved" || type === "approve" || type === "Accepted") {
-      this._respond(id, { outcome: "approved", type: "approved" });
-      return;
-    }
-    if (type === "request_changes" || type === "requestChanges") {
-      this._respond(id, {
-        outcome: "request_changes",
-        type: "request_changes",
-        feedback: String(decision?.feedback || decision?.message || ""),
-      });
-      return;
-    }
-    this._respond(id, { outcome: "abandoned", type: "abandoned" });
-  }
-
-  /**
-   * @param {number|string} id
-   * @param {any} params
-   */
-  async _handleAskUserQuestion(id, params) {
-    const questions = Array.isArray(params?.questions)
-      ? params.questions
-      : [];
-
-    const decision = await new Promise((resolve) => {
-      const timeout = setTimeout(
-        () => resolve({ type: "declined" }),
-        10 * 60_000,
-      );
-      this.emit("user-question-request", {
-        params: { questions, raw: params },
-        respond: (outcome) => {
-          clearTimeout(timeout);
-          resolve(outcome);
-        },
-      });
-    });
-
-    // Grok AskUserQuestionExtResponse — tag field `outcome`, lowercase variants:
-    //   accepted | chat_about_this | skip_interview | cancelled
-    // `answers` / `partial_answers` are maps (not arrays) — agent error when list:
-    //   "invalid type: sequence, expected a map"
-    const type = String(decision?.type || decision?.outcome || "declined")
-      .toLowerCase()
-      .replace(/-/g, "_");
-    if (
-      type === "answered" ||
-      type === "answers" ||
-      type === "accepted"
-    ) {
-      this._respond(id, {
-        outcome: "accepted",
-        answers: normalizeAskUserAnswersMap(
-          decision?.answers,
-          questions,
-        ),
-        partial_answers: normalizeAskUserAnswersMap(
-          decision?.partial_answers ?? decision?.partialAnswers,
-          questions,
-        ),
-      });
-      return;
-    }
-    if (type === "chat" || type === "chat_about_this") {
-      this._respond(id, {
-        outcome: "chat_about_this",
-        message: String(decision?.message || decision?.feedback || ""),
-      });
-      return;
-    }
-    if (type === "cancelled" || type === "canceled") {
-      this._respond(id, { outcome: "cancelled" });
-      return;
-    }
-    // Skip / decline
-    this._respond(id, { outcome: "skip_interview" });
   }
 
   /**
@@ -681,27 +561,26 @@ export class GrokAcpClient extends EventEmitter {
     this.notify("session/cancel", { sessionId: this.sessionId });
   }
 
-  setAlwaysApprove(value) {
-    // Legacy boolean API — maps to always-approve vs ask
-    return this.setPermissionMode(value ? "always-approve" : "ask");
-  }
-
   /**
    * Apply permission mode on the client and push it into the live agent session.
+   * Does **not** inject chat prompts as a settings bus.
+   *
    * @param {string} mode
-   * @returns {Promise<'ask'|'auto'|'always-approve'>}
+   * @returns {Promise<{
+   *   mode: 'ask'|'auto'|'always-approve',
+   *   agentSynced: boolean,
+   *   error?: string,
+   * }>}
    */
   async setPermissionMode(mode) {
     this.permissionMode = normalizePermissionMode(mode);
-    this.alwaysApprove = this.permissionMode === "always-approve";
 
+    // No live session yet — client gate is set; agent gets _meta on next session/new|load
     if (!this.sessionId || !this.ready || !this.proc) {
-      return this.permissionMode;
+      return { mode: this.permissionMode, agentSynced: false };
     }
 
     const agentMode = toAgentPermissionMode(this.permissionMode);
-
-    // Prefer ACP session/set_mode (Grok supports it alongside session modes)
     try {
       await this.request(
         "session/set_mode",
@@ -711,27 +590,15 @@ export class GrokAcpClient extends EventEmitter {
         },
         { timeoutMs: 15_000 },
       );
-      return this.permissionMode;
-    } catch {
-      /* fall through — older agents or different mode catalog */
+      return { mode: this.permissionMode, agentSynced: true };
+    } catch (err) {
+      const error = err?.message || String(err);
+      return {
+        mode: this.permissionMode,
+        agentSynced: false,
+        error,
+      };
     }
-
-    // Fallback: CLI slash commands (same as TUI /always-approve and /auto)
-    try {
-      let slash;
-      if (this.permissionMode === "always-approve") {
-        slash = "/always-approve on";
-      } else if (this.permissionMode === "auto") {
-        slash = "/auto";
-      } else {
-        slash = "/always-approve off";
-      }
-      await this.prompt(slash);
-    } catch {
-      /* client-side alwaysApprove still applies for always-approve mode */
-    }
-
-    return this.permissionMode;
   }
 
   setAllowOutsideProject(value) {

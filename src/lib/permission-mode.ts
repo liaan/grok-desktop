@@ -1,6 +1,15 @@
-/** Desktop tool-permission modes (mirrors electron/permission-mode.mjs). */
+/**
+ * Renderer permission-mode surface: re-export shared helpers + UI options.
+ */
+import {
+  normalizePermissionMode as normalizeShared,
+  permissionModeChipLabel as chipShared,
+  permissionModeDescription as descShared,
+  permissionModeLabel as labelShared,
+  type DesktopPermissionMode,
+} from "../../shared/permission-mode.mjs";
 
-export type PermissionMode = "ask" | "auto" | "always-approve";
+export type PermissionMode = DesktopPermissionMode;
 
 export const PERMISSION_MODE_OPTIONS: Array<{
   value: PermissionMode;
@@ -10,20 +19,17 @@ export const PERMISSION_MODE_OPTIONS: Array<{
   {
     value: "ask",
     label: "Ask (manual)",
-    description:
-      "Every tool that needs permission shows in the Approvals panel.",
+    description: descShared("ask"),
   },
   {
     value: "auto",
     label: "Auto",
-    description:
-      "Agent auto-allows routine safe work; escalations still appear in Approvals.",
+    description: descShared("auto"),
   },
   {
     value: "always-approve",
     label: "Always approve",
-    description:
-      "Skip tool approval prompts. Deny rules and plan-mode edit gates still apply.",
+    description: descShared("always-approve"),
   },
 ];
 
@@ -31,27 +37,17 @@ export function normalizePermissionMode(
   value: unknown,
   legacyAlwaysApprove = false,
 ): PermissionMode {
-  const v = String(value ?? "")
-    .toLowerCase()
-    .trim()
-    .replace(/_/g, "-");
-  if (v === "ask" || v === "default" || v === "manual") return "ask";
-  if (v === "auto") return "auto";
-  if (
-    v === "always-approve" ||
-    v === "alwaysapprove" ||
-    v === "bypasspermissions" ||
-    v === "bypass-permissions" ||
-    v === "yolo"
-  ) {
-    return "always-approve";
-  }
-  if (legacyAlwaysApprove) return "always-approve";
-  return "ask";
+  return normalizeShared(value, legacyAlwaysApprove);
 }
 
 export function permissionModeChipLabel(mode: PermissionMode): string {
-  if (mode === "always-approve") return "Always approve";
-  if (mode === "auto") return "Auto";
-  return "Ask";
+  return chipShared(mode);
+}
+
+export function permissionModeLabel(mode: PermissionMode): string {
+  return labelShared(mode);
+}
+
+export function permissionModeDescription(mode: PermissionMode): string {
+  return descShared(mode);
 }
