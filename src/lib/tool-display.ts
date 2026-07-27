@@ -380,19 +380,36 @@ export function formatToolCard(item: {
     }
   }
 
-  let detail = display.input;
-  if (detail && isCommand && !detail.startsWith("$")) {
-    // Keep plain; UI adds $ prefix
-  }
-
   return {
     action,
     summary: summary || undefined,
-    detail: detail || undefined,
+    detail: display.input || undefined,
     fullTitle: item.title ? String(item.title) : undefined,
     isCommand,
     subtitle: display.subtitle,
     input: display.input,
     output: display.output,
   };
+}
+
+/** Shell detail with `$ ` prefix for display (idempotent). */
+export function formatCommandDetail(card: Pick<ToolCard, "detail" | "isCommand">): string | undefined {
+  if (!card.detail) return undefined;
+  if (card.isCommand && !card.detail.startsWith("$")) {
+    return `$ ${card.detail}`;
+  }
+  return card.detail;
+}
+
+/** Short heading under the action label (summary, or truncated title). */
+export function toolCardHeading(
+  card: Pick<ToolCard, "summary" | "fullTitle" | "detail">,
+  maxLen = 100,
+): string | undefined {
+  if (card.summary) return card.summary;
+  const t = card.fullTitle?.trim();
+  if (!t) return undefined;
+  if (commandFromExecuteTitle(t) && card.detail) return undefined;
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, maxLen)}…`;
 }

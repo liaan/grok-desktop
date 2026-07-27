@@ -6,57 +6,30 @@ import {
   parseSlashInvocation,
   type SlashCommand,
 } from "../lib/commands";
-import { formatToolCard } from "../lib/tool-display";
 import {
   formatClock,
   formatDayLabel,
   formatFullTimestamp,
   sameCalendarDay,
 } from "../lib/time";
-import type { TimelineItem } from "../vite-env";
+import type { PermissionRequest, TimelineItem } from "../vite-env";
+import { buildToolCard, ToolCardView } from "./ToolCardView";
 
 function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
-  const card = formatToolCard({
+  const card = buildToolCard({
     title: item.title,
-    kind: undefined,
     raw: item.raw,
     content: item.content,
   });
-  const detail =
-    card.detail &&
-    (card.isCommand && !card.detail.startsWith("$")
-      ? `$ ${card.detail}`
-      : card.detail);
 
   return (
     <div className="tool-body">
       <div className="tool-header">
         <div className="tool-title-wrap">
-          <div className="tool-action-label">{card.action}</div>
-          <div
-            className="tool-title"
-            title={card.fullTitle || item.title}
-          >
-            {card.summary ||
-              (card.fullTitle && card.fullTitle.length < 80
-                ? card.fullTitle
-                : card.detail
-                  ? ""
-                  : item.title)}
-          </div>
-          {card.subtitle && card.subtitle !== card.summary ? (
-            <div className="tool-subtitle" title={card.subtitle}>
-              {card.subtitle}
-            </div>
-          ) : null}
+          <ToolCardView card={card} />
         </div>
         <span className={`tool-status ${item.status}`}>{item.status}</span>
       </div>
-      {detail ? (
-        <pre className="tool-input" title="Input">
-          {detail}
-        </pre>
-      ) : null}
       {card.output ? (
         <pre className="tool-output" title="Output">
           {card.output}
@@ -206,17 +179,55 @@ function UserMessage({
   );
 }
 
+function PendingApprovalCard({
+  request,
+}: {
+  request: PermissionRequest;
+}) {
+  const tool = request.params?.toolCall;
+  const card = buildToolCard({
+    title: tool?.title,
+    kind: tool?.kind,
+    raw: tool?.rawInput,
+  });
+
+  return (
+    <article
+      className="msg pending-approval"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="meta">
+        <span className="meta-role">Approval</span>
+        <span className="pending-approval-pill">Waiting</span>
+      </div>
+      <div className="body pending-approval-body">
+        <div className="pending-approval-title">
+          Waiting for tool approval…
+        </div>
+        <ToolCardView card={card} />
+        <div className="pending-approval-hint">
+          Choose Allow or Reject in the Approvals panel →
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function MessageList({
   items,
   bottomRef,
   knownCommands = [],
+  pendingPermissions = [],
 }: {
   items: TimelineItem[];
   bottomRef: RefObject<HTMLDivElement | null>;
   /** Skills + agent + desktop commands for slash recognition in user bubbles */
   knownCommands?: SlashCommand[];
+  /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
+  pendingPermissions?: PermissionRequest[];
 }) {
-  if (items.length === 0) {
+  if (items.length === 0 && pendingPermissions.length === 0) {
     return (
       <div className="empty-state">
         <h2>What should we build?</h2>
@@ -329,6 +340,9 @@ export function MessageList({
           </Fragment>
         );
       })}
+      {pendingPermissions.map((p) => (
+        <PendingApprovalCard key={p.reqId} request={p} />
+      ))}
       <div ref={bottomRef} />
     </>
   );

@@ -974,7 +974,7 @@ export default function App() {
   const onUserQuestion = async (
     reqId: string,
     decision:
-      | { type: "answered"; answers: Array<Record<string, unknown>> }
+      | { type: "answered"; answers: Record<string, string> }
       | { type: "declined" },
   ) => {
     await window.grokDesktop.respondUserQuestion(reqId, decision);
@@ -1051,12 +1051,17 @@ export default function App() {
   };
 
   const statusLabel = useMemo(() => {
-    if (conn === "online") return "Connected";
-    if (conn === "busy") return "Working…";
     if (conn === "connecting") return "Starting agent…";
     if (conn === "error") return "Error";
+    if (permissions.length > 0) {
+      return permissions.length === 1
+        ? "Waiting for approval…"
+        : `Waiting for approval… (${permissions.length})`;
+    }
+    if (conn === "busy") return "Working…";
+    if (conn === "online") return "Connected";
     return "Idle";
-  }, [conn]);
+  }, [conn, permissions.length]);
 
   // Prefer main-process platform; fall back so macOS padding applies before IPC returns
   const platform =
@@ -1412,6 +1417,7 @@ export default function App() {
             items={items}
             bottomRef={bottomRef}
             knownCommands={allCommands}
+            pendingPermissions={permissions}
           />
         </div>
 

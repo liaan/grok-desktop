@@ -185,7 +185,7 @@ declare global {
       respondUserQuestion: (
         reqId: string,
         decision:
-          | { type: "answered"; answers: Array<Record<string, unknown>> }
+          | { type: "answered"; answers: Record<string, string> }
           | { type: "declined" },
       ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;

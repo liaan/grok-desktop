@@ -29,11 +29,12 @@ export function AskUserDialog({
   onRespond: (
     reqId: string,
     decision:
-      | { type: "answered"; answers: Array<Record<string, unknown>> }
+      | { type: "answered"; answers: Record<string, string> }
       | { type: "declined" },
   ) => void;
 }) {
   const questions = request?.questions || [];
+  /** questionKey → selected option id(s) */
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -65,16 +66,16 @@ export function AskUserDialog({
   };
 
   const submit = () => {
-    const payload = questions.map((q, i) => {
+    // Map form for agent (not an array of rows)
+    /** @type {Record<string, string>} */
+    const map: Record<string, string> = {};
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
       const key = String(q.id ?? i);
-      return {
-        questionId: q.id ?? key,
-        question_id: q.id ?? key,
-        selectedOptionIds: answers[key] || [],
-        selected_option_ids: answers[key] || [],
-      };
-    });
-    onRespond(request.reqId, { type: "answered", answers: payload });
+      const selected = answers[key] || [];
+      if (selected.length) map[key] = selected.join(",");
+    }
+    onRespond(request.reqId, { type: "answered", answers: map });
   };
 
   return (

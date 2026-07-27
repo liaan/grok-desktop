@@ -1143,6 +1143,60 @@ button {
   border-color: rgba(251, 191, 36, 0.35);
 }
 
+/* Transient chat card while session/request_permission is open */
+.msg.pending-approval {
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.msg.pending-approval .meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pending-approval-pill {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: var(--warn);
+  text-transform: lowercase;
+}
+
+.pending-approval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pending-approval-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.pending-approval-action {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-approval-detail {
+  margin: 0;
+  max-height: 100px;
+}
+
+.pending-approval-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .composer {
   border-top: 1px solid var(--border-soft);
   padding: 12px 16px 16px;
@@ -1560,7 +1614,11 @@ button {
   margin-bottom: 12px;
 }
 
-.perm-card-action {
+.tool-card-view {
+  min-width: 0;
+}
+
+.tool-card-action {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1569,7 +1627,7 @@ button {
   margin: 0 0 4px;
 }
 
-.perm-card-summary {
+.tool-card-heading {
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
@@ -1577,7 +1635,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-.perm-card-detail {
+.tool-card-detail {
   margin: 0 0 8px !important;
   max-height: 140px;
   overflow: auto;
@@ -1591,10 +1649,19 @@ button {
   overflow-wrap: anywhere;
 }
 
-.perm-card-meta {
+.tool-card-meta {
   font-size: 11px;
   color: var(--text-muted);
   margin-bottom: 8px;
+}
+
+/* Permission cards use amber action label */
+.perm-card .tool-card-action {
+  color: #fbbf24;
+}
+
+.tool-body .tool-card-action {
+  color: var(--text-muted);
 }
 
 .perm-card h3 {

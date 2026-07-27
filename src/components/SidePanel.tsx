@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatToolCard } from "../lib/tool-display";
 import {
   basen,
   isLexicallyUnder,
@@ -11,6 +10,7 @@ import type { PermissionRequest } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
 import type { BackgroundTask } from "../lib/background-tasks";
 import { runningTaskCount } from "../lib/background-tasks";
+import { buildToolCard, ToolCardView } from "./ToolCardView";
 
 type FileEntry = { name: string; isDirectory: boolean; path: string };
 
@@ -184,44 +184,22 @@ export function SidePanel({
                       { optionId: "allow-once", name: "Allow once" },
                       { optionId: "reject", name: "Reject" },
                     ];
-                const card = formatToolCard({
+                const card = buildToolCard({
                   title: tool?.title,
                   kind: tool?.kind,
                   raw: tool?.rawInput,
                 });
-                const detailText =
-                  card.detail &&
-                  (card.isCommand && !card.detail.startsWith("$")
-                    ? `$ ${card.detail}`
-                    : card.detail);
+                const meta = [
+                  tool?.kind || "tool",
+                  tool?.toolCallId
+                    ? `${String(tool.toolCallId).slice(0, 18)}…`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 return (
                   <div key={p.reqId} className="perm-card">
-                    <div className="perm-card-action">{card.action}</div>
-                    {card.summary ? (
-                      <h3 className="perm-card-summary" title={card.fullTitle}>
-                        {card.summary}
-                      </h3>
-                    ) : card.fullTitle && !card.detail ? (
-                      <h3 className="perm-card-summary" title={card.fullTitle}>
-                        {card.fullTitle.length > 100
-                          ? `${card.fullTitle.slice(0, 100)}…`
-                          : card.fullTitle}
-                      </h3>
-                    ) : null}
-                    {detailText ? (
-                      <pre
-                        className="tool-input perm-card-detail"
-                        title={card.detail}
-                      >
-                        {detailText}
-                      </pre>
-                    ) : null}
-                    <div className="perm-card-meta">
-                      {tool?.kind || "tool"}
-                      {tool?.toolCallId
-                        ? ` · ${String(tool.toolCallId).slice(0, 18)}…`
-                        : ""}
-                    </div>
+                    <ToolCardView card={card} meta={meta} />
                     <div className="perm-actions">
                       {options.map((opt) => (
                         <button

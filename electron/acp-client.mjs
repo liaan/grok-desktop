@@ -20,6 +20,7 @@ import {
   normalizePermissionMode,
   toAgentPermissionMode,
 } from "./permission-mode.mjs";
+import { normalizeAskUserAnswersMap } from "./ask-user-answers.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -526,7 +527,8 @@ export class GrokAcpClient extends EventEmitter {
 
     // Grok AskUserQuestionExtResponse — tag field `outcome`, lowercase variants:
     //   accepted | chat_about_this | skip_interview | cancelled
-    // (PascalCase is rejected: unknown variant `Accepted`)
+    // `answers` / `partial_answers` are maps (not arrays) — agent error when list:
+    //   "invalid type: sequence, expected a map"
     const type = String(decision?.type || decision?.outcome || "declined")
       .toLowerCase()
       .replace(/-/g, "_");
@@ -537,9 +539,14 @@ export class GrokAcpClient extends EventEmitter {
     ) {
       this._respond(id, {
         outcome: "accepted",
-        answers: decision?.answers ?? [],
-        partial_answers:
-          decision?.partial_answers ?? decision?.partialAnswers ?? [],
+        answers: normalizeAskUserAnswersMap(
+          decision?.answers,
+          questions,
+        ),
+        partial_answers: normalizeAskUserAnswersMap(
+          decision?.partial_answers ?? decision?.partialAnswers,
+          questions,
+        ),
       });
       return;
     }
