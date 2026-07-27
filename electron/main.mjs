@@ -24,6 +24,7 @@ import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 import {
   setupAutoUpdater,
   checkForUpdatesInteractive,
+  isQuittingForUpdate,
 } from "./auto-update.mjs";
 import {
   listSessionsForCwd,
@@ -418,7 +419,7 @@ function installApplicationMenu() {
         {
           label: "Check for updates…",
           click: () => {
-            void checkForUpdatesInteractive();
+            void checkForUpdatesInteractive({ disposeAgent: disposeAgentQuick });
           },
         },
         {
@@ -860,24 +861,63 @@ function registerIpc() {
   });
 }
 
+/**
+ * Tear down the agent without blocking quit (used by auto-update restart
+ * and before-quit). Force-kills the child if dispose hangs.
+ */
+function disposeAgentQuick() {
+  const a = agent;
+  agent = null;
+  if (!a) return;
+  try {
+    clearPendingPermissions();
+  } catch {
+    /* ignore */
+  }
+  try {
+    const p = a.dispose();
+    if (p && typeof p.then === "function") {
+      p.catch(() => {});
+    }
+  } catch {
+    /* ignore */
+  }
+  // Force-kill if the child is still around after a short grace period
+  try {
+    if (a.proc && !a.proc.killed) {
+      setTimeout(() => {
+        try {
+          if (a.proc && !a.proc.killed) a.proc.kill("SIGKILL");
+        } catch {
+          /* ignore */
+        }
+      }, 800);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 app.whenReady().then(() => {
   installApplicationMenu();
   registerIpc();
   createWindow();
-  setupAutoUpdater();
+  setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 
   app.on("activate", () => {
+    // Do not recreate a window mid update-install
+    if (isQuittingForUpdate()) return;
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on("window-all-closed", () => {
+  if (isQuittingForUpdate()) return;
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", async () => {
-  if (agent) {
-    await agent.dispose();
-    agent = null;
-  }
+// Do not `await` dispose here — async before-quit handlers can stall
+// electron-updater quitAndInstall so "Restart now" appears to do nothing.
+app.on("before-quit", () => {
+  disposeAgentQuick();
 });

@@ -16,6 +16,12 @@ let updater = null;
 let wired = false;
 /** Prevent double-clicks while a check/download is in flight */
 let busy = false;
+/** True while we are forcing quit to install an update */
+let quittingForUpdate = false;
+
+export function isQuittingForUpdate() {
+  return quittingForUpdate;
+}
 
 function getAutoUpdater() {
   if (updater) return updater;
@@ -41,9 +47,83 @@ async function box(opts) {
 }
 
 /**
- * Wire updater events once. Safe to call from setup + interactive check.
+ * Close every BrowserWindow so quitAndInstall is not blocked by open windows
+ * (especially macOS, where windows can keep the app alive).
  */
-function ensureWired() {
+function destroyAllWindows() {
+  for (const w of BrowserWindow.getAllWindows()) {
+    try {
+      if (!w.isDestroyed()) w.removeAllListeners("close");
+      if (!w.isDestroyed()) w.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Install the downloaded update and relaunch.
+ * Must run after the "Restart now" dialog has fully closed — calling
+ * quitAndInstall synchronously in the dialog callback often no-ops on macOS.
+ *
+ * @param {import('electron-updater').AppUpdater} autoUpdater
+ * @param {{ disposeAgent?: () => void | Promise<void> }} [hooks]
+ */
+export function installUpdateAndRelaunch(autoUpdater, hooks = {}) {
+  if (quittingForUpdate) return;
+  quittingForUpdate = true;
+  console.log("[auto-update] installUpdateAndRelaunch starting");
+
+  // 1) Tear down agent so child processes do not keep the event loop alive
+  const dispose = hooks.disposeAgent;
+  if (typeof dispose === "function") {
+    try {
+      const p = dispose();
+      if (p && typeof p.then === "function") {
+        p.catch((err) =>
+          console.warn("[auto-update] dispose during update:", err?.message || err),
+        );
+      }
+    } catch (err) {
+      console.warn("[auto-update] dispose during update:", err?.message || err);
+    }
+  }
+
+  // 2) After a tick (dialog gone), destroy windows and quitAndInstall
+  setTimeout(() => {
+    destroyAllWindows();
+
+    setTimeout(() => {
+      try {
+        // isSilent=false, isForceRunAfter=true (relaunch after install)
+        autoUpdater.quitAndInstall(false, true);
+        console.log("[auto-update] quitAndInstall called");
+      } catch (err) {
+        console.warn(
+          "[auto-update] quitAndInstall failed:",
+          err?.message || err,
+        );
+      }
+
+      // 3) Hard fallback — if the app is still alive, force exit so the
+      //    downloaded update can still apply on next launch (autoInstallOnAppQuit)
+      setTimeout(() => {
+        console.warn("[auto-update] force app.exit(0) after quitAndInstall");
+        try {
+          app.exit(0);
+        } catch {
+          process.exit(0);
+        }
+      }, 2500);
+    }, 150);
+  }, 250);
+}
+
+/**
+ * Wire updater events once. Safe to call from setup + interactive check.
+ * @param {{ disposeAgent?: () => void | Promise<void> }} [hooks]
+ */
+function ensureWired(hooks = {}) {
   if (wired) return getAutoUpdater();
   let autoUpdater;
   try {
@@ -90,11 +170,7 @@ function ensureWired() {
         "The update was downloaded in the background. Restart to apply it, or keep working and restart later (it installs on quit).",
     });
     if (response === 0) {
-      try {
-        autoUpdater.quitAndInstall(false, true);
-      } catch (err) {
-        console.warn("[auto-update] quitAndInstall failed:", err?.message || err);
-      }
+      installUpdateAndRelaunch(autoUpdater, hooks);
     }
   });
 
@@ -104,10 +180,11 @@ function ensureWired() {
 
 /**
  * Background check a few seconds after launch (packaged only).
+ * @param {{ disposeAgent?: () => void | Promise<void> }} [hooks]
  */
-export function setupAutoUpdater() {
+export function setupAutoUpdater(hooks = {}) {
   if (!app.isPackaged) return;
-  const autoUpdater = ensureWired();
+  const autoUpdater = ensureWired(hooks);
   if (!autoUpdater) return;
 
   setTimeout(() => {
@@ -120,8 +197,9 @@ export function setupAutoUpdater() {
 /**
  * Menu / UI: “Check for updates…” with user-visible status dialogs.
  * Does not open the browser unless the user asks for the Releases page.
+ * @param {{ disposeAgent?: () => void | Promise<void> }} [hooks]
  */
-export async function checkForUpdatesInteractive() {
+export async function checkForUpdatesInteractive(hooks = {}) {
   if (!app.isPackaged) {
     await box({
       type: "info",
@@ -145,7 +223,7 @@ export async function checkForUpdatesInteractive() {
     return { ok: false, reason: "busy" };
   }
 
-  const autoUpdater = ensureWired();
+  const autoUpdater = ensureWired(hooks);
   if (!autoUpdater) {
     await box({
       type: "error",
