@@ -126,9 +126,9 @@ export function AuthGate({
     <div className="auth-card">
       <h3>{auth.expired ? "Session expired" : "Sign in to Grok"}</h3>
       <p>
-        Uses the official Grok browser login (same as <code>grok login</code>).
-        Your skills, MCP servers, and config stay in{" "}
-        <code>~/.grok</code> — this app only opens the sign-in flow.
+        Uses the official Grok browser login (same credentials as the CLI).
+        Your skills, MCP servers, and config stay in <code>~/.grok</code> —
+        this app only opens the sign-in flow.
       </p>
 
       <div className="auth-actions">

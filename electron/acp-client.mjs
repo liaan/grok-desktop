@@ -1,6 +1,6 @@
 /**
  * Minimal ACP (Agent Client Protocol) client over `grok agent stdio`.
- * Backbone: xAI Grok Build agent runtime — same path as IDE / grok-desktop embeds.
+ * Backbone: Grok Build agent runtime via ACP (same path as other embeds).
  *
  * Skills, MCP servers, plugins, and auth all come from the installed Grok CLI
  * (`~/.grok`). We pass `mcpServers: []` on session/new the same way VS Code /

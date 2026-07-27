@@ -301,7 +301,7 @@ export default function App() {
               <div className="brand-mark" />
               <div>
                 <h1 style={{ fontSize: 22 }}>Grok Desktop</h1>
-                <p>Codex-style GUI · Grok agent backbone</p>
+                <p>Desktop GUI · Grok agent backbone</p>
               </div>
             </div>
             <p style={{ marginTop: 16 }}>

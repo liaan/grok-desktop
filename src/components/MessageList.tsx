@@ -46,7 +46,7 @@ export function MessageList({
       <div className="empty-state">
         <h2>What should we build?</h2>
         <p>
-          This desktop app is a Codex-style GUI on top of the Grok agent backbone
+          This desktop app is a GUI on top of the Grok agent backbone
           (<code>grok agent stdio</code> + ACP). Skills, MCP, auth, and models still
           come from your Grok install.
         </p>

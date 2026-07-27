@@ -1,44 +1,35 @@
-# Fork / product relationship
+# How this relates to Grok Build
 
-## What we forked conceptually
+## Layers
 
-| Layer | Source | Location |
-|-------|--------|----------|
-| Agent backbone (models, tools, skills, MCP, auth, sandbox) | [xai-org/grok-build](https://github.com/xai-org/grok-build) | Installed `grok` binary + optional local clone `../grok-build` |
-| Desktop GUI | **This repo** | Electron + React ACP client |
+| Layer | What it is | Where it lives |
+|-------|------------|----------------|
+| Agent (models, tools, skills, MCP, auth) | Official Grok Build CLI | Installed `grok` binary + `~/.grok` |
+| Desktop GUI | This project | Electron + React ACP client |
 
-Upstream Grok Build ships a **TUI** (`xai-grok-pager`). Official docs already describe embedding via:
+Grok Build already supports embedding via:
 
 ```bash
 grok agent stdio
 ```
 
-and mention clients such as VS Code and **grok-desktop**. This project is an open desktop shell that takes that same path.
+This app is a graphical client on that interface. It does not replace or patch the agent monorepo UI.
 
-## Local backbone clone
+## Optional: local agent source
 
-```powershell
-git clone https://github.com/xai-org/grok-build.git G:\Development\grok-build
+Useful if you want to read ACP behaviour or rebuild the CLI yourself:
+
+```bash
+git clone https://github.com/xai-org/grok-build.git
+# place next to this repo, e.g. ../grok-build
 ```
 
-Use it for:
+You do **not** need a local clone to run Grok Desktop if the official `grok` binary is installed.
 
-- reading ACP / shell implementation
-- rebuilding `grok` from source (requires Rust + DotSlash)
-- understanding tool / permission behaviour
+## Why a separate repo?
 
-You do **not** need to rebuild Grok to run Grok Desktop if the official binary is installed.
+1. The agent project is maintained separately; this is a product shell around ACP.
+2. Replacing the terminal UI inside that tree is a large effort; ACP is the supported boundary for alternate clients.
+3. Keeps this UI’s license (**MIT**) clean of vendored agent source.
 
-## Why not patch the monorepo UI?
-
-1. Upstream states external contributions are not accepted.
-2. Replacing ratatui with a full desktop toolkit inside that monorepo is a multi-month product effort.
-3. ACP already is the supported boundary for alternate UIs.
-
-So the durable approach is:
-
-**Fork the product experience (GUI) · reuse the backbone process.**
-
-## License note
-
-This desktop shell is **MIT**. Upstream Grok Build is **Apache-2.0**. Because this repository does not copy Grok Build source into the tree, the shell can use MIT; the installed `grok` binary stays under its own license.
+**GUI product layer · reuse the agent process.**

@@ -46,8 +46,7 @@ export function SidePanel({
           <>
             {permissions.length === 0 ? (
               <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                Tool approvals appear here when the agent needs permission
-                (Codex-style review).
+                Tool approvals appear here when the agent needs permission.
               </p>
             ) : (
               permissions.map((p) => {

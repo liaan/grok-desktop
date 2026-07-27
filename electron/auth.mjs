@@ -1,6 +1,6 @@
 /**
  * Grok auth for the desktop shell — reuses the official CLI:
- *   grok login --oauth   (browser / SpaceXAI OAuth → ~/.grok/auth.json)
+ *   grok login --oauth   (browser OAuth → ~/.grok/auth.json)
  *   grok logout
  *   XAI_API_KEY fallback for this process only
  *

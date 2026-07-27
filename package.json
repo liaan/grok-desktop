@@ -1,10 +1,10 @@
 {
   "name": "grok-desktop",
   "version": "0.1.0",
-  "description": "Desktop GUI for Grok Build — Codex-style app on the Grok agent backbone (ACP)",
+  "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",
-  "author": "liaan",
+  "author": "Karman de Lange",
   "license": "MIT",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
