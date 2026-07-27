@@ -4,23 +4,24 @@ Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding a
 
 ## Install for the team (no npm)
 
-**Nobody needs Node or npm to use this app.** Download from the latest
-[GitHub Release](https://github.com/liaan/grok-desktop/releases/latest):
+**Nobody needs Node or npm.** Open the latest
+[GitHub Release](https://github.com/liaan/grok-desktop/releases/latest)
+and download **one** file:
 
-| OS | File pattern | What to do |
-|----|--------------|------------|
-| **Windows** | `GrokDesktop-…-win-…-Setup.exe` | Double-click installer. Or use `…-portable.exe` (no install). |
-| **macOS (Apple Silicon)** | `GrokDesktop-…-mac-arm64.dmg` | Open DMG → drag **Grok Desktop** to Applications. First launch: right-click → **Open**. |
-| **macOS (Intel)** | `GrokDesktop-…-mac-x64.dmg` | Same as above. |
-| **Linux** | `GrokDesktop-…-linux-….AppImage` | `chmod +x GrokDesktop-*.AppImage` then run it. |
+| You have… | File | What to do |
+|-----------|------|------------|
+| **Windows** | `…-Windows-Setup.exe` | Double-click → install |
+| **Mac (M1/M2/M3/M4)** | `…-Mac-AppleSilicon.dmg` | Open → drag app to Applications → first time: right-click → **Open** |
+| **Mac (Intel)** | `…-Mac-Intel.dmg` | Same as above |
+| **Source code** | GitHub **Source code (zip)** | Only if you want to build from source |
 
-Also install the **Grok Build CLI** (`grok`) on each machine — this app is only the GUI and talks to that CLI.
+That’s it. Skip anything named blockmap, yaml, AppImage, portable, or zip (except GitHub’s source zip).
 
-Then: open **Grok Desktop** → **Sign in with browser** → **Open project…**
+Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
-**Updates:** after the first install (prefer the Windows **Setup** installer, not portable), the app checks GitHub Releases in the background and offers to restart when a new version is ready. You do not need to re-download by hand each time.
+Then: **Grok Desktop** → **Sign in with browser** → **Open project…**
 
-> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned internal build). That’s expected — **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
+> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned). **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
 
 ---
 
