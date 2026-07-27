@@ -11,7 +11,7 @@ and download **one** file:
 | You have… | File | What to do |
 |-----------|------|------------|
 | **Windows** | `…-Windows-Setup.exe` | Double-click → install |
-| **Mac (M1/M2/M3/M4)** | `…-Mac-AppleSilicon.dmg` | Open → drag app to Applications → first time: right-click → **Open** |
+| **Mac (M1/M2/M3/M4)** | `…-Mac-AppleSilicon.dmg` | Open DMG → drag app to **Applications** → then see Mac note below |
 | **Mac (Intel)** | `…-Mac-Intel.dmg` | Same as above |
 | **Source code** | GitHub **Source code (zip)** | Only if you want to build from source |
 
@@ -21,7 +21,27 @@ Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
 Then: **Grok Desktop** → **Sign in with browser** → **Open project…**
 
-> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned). **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
+### Mac: “damaged and can’t be opened”
+
+The app is **not** actually broken. macOS marks unsigned downloads from the internet as quarantined and shows that scary dialog (especially after Safari).
+
+**Fix (once per install):**
+
+1. Drag **Grok Desktop** into **Applications** (not only run from the DMG).
+2. Eject the DMG.
+3. Open **Terminal** and run:
+
+```bash
+xattr -cr "/Applications/Grok Desktop.app"
+```
+
+4. Open **Grok Desktop** from Applications (double-click or Spotlight).
+
+If it still complains: right-click the app → **Open** → **Open**.
+
+Until the company signs + notarizes with an Apple Developer ID, this step is normal for internal team builds.
+
+> **Windows:** SmartScreen → **More info → Run anyway**.
 
 ---
 

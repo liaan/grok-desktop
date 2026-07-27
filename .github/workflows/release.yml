@@ -129,9 +129,12 @@ jobs:
             Ignore anything else. You do **not** need AppImage, blockmap, yaml, or portable builds.
 
             ### After download
-            1. Install **Grok Build CLI** (`grok`) on the machine — this app is only the GUI.
-            2. Open the app → **Sign in with browser** → **Open project…**
-            3. Windows may show SmartScreen → **More info → Run anyway**. Mac → right-click → **Open** the first time.
+            1. Install **Grok Build CLI** (`grok`) — this app is only the GUI.
+            2. **Windows:** run Setup → if SmartScreen: More info → Run anyway.
+            3. **Mac:** drag app to Applications, eject DMG, then in Terminal:
+               `xattr -cr "/Applications/Grok Desktop.app"`
+               (macOS says “damaged” for unsigned Safari downloads — that command clears quarantine; app is fine.)
+            4. Open app → **Sign in with browser** → **Open project…**
           files: |
             dist-installers/**
         env:
