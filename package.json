@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",
@@ -18,8 +18,7 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",
@@ -42,9 +41,9 @@
   "build": {
     "appId": "com.karman.grok-desktop",
     "productName": "Grok Desktop",
-    "artifactName": "GrokDesktop-${version}-${os}-${arch}.${ext}",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -52,60 +51,37 @@
       "package.json"
     ],
     "asar": true,
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "liaan",
-        "repo": "grok-desktop"
-      }
-    ],
+    "publish": null,
     "win": {
       "target": [
         {
           "target": "nsis",
           "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
         }
-      ]
+      ],
+      "artifactName": "GrokDesktop-${version}-Windows-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "GrokDesktop-${version}-win-${arch}-Setup.${ext}"
-    },
-    "portable": {
-      "artifactName": "GrokDesktop-${version}-win-${arch}-portable.${ext}"
+      "differentialPackage": false
     },
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": ["arm64", "x64"]
-        },
-        {
-          "target": "zip",
-          "arch": ["arm64", "x64"]
         }
       ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "GrokDesktop-${version}-mac-${arch}.${ext}"
+      "artifactName": "GrokDesktop-${version}-Mac-${arch}.${ext}"
     },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": ["x64"]
-        }
-      ],
-      "category": "Development",
-      "artifactName": "GrokDesktop-${version}-linux-${arch}.${ext}"
+    "dmg": {
+      "writeUpdateInfo": false
     }
   }
 }

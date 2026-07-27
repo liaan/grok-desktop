@@ -1,9 +1,6 @@
-# Builds installers for Windows, macOS, and Linux.
-# Release process for agents: see AGENTS.md (canonical).
-# Team install: see README.md.
-#
-# Auto-update needs: installers + latest*.yml (+ blockmaps, mac zip).
-# CI still uses --publish never; softprops uploads those files to the Release.
+# Builds simple installers only: Windows Setup.exe + macOS DMGs.
+# GitHub also offers Source code (zip) on every tag automatically.
+# Release process: AGENTS.md. Team install: README.md.
 
 name: Build & Release
 
@@ -33,9 +30,6 @@ jobs:
           - os: macos-latest
             label: macOS
             args: --mac
-          - os: ubuntu-latest
-            label: Linux
-            args: --linux
 
     runs-on: ${{ matrix.os }}
 
@@ -67,21 +61,35 @@ jobs:
       - name: Build installers
         run: npm run build && npx electron-builder ${{ matrix.args }} --publish never
         env:
-          # Unsigned builds for internal team use (SmartScreen / Gatekeeper one-time warning).
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Upload build artifacts
+      - name: Keep only human installers
+        shell: bash
+        run: |
+          # Drop blockmaps, yml, zips, and any other electron-builder noise
+          cd release
+          rm -f *.blockmap latest*.yml *.zip *.AppImage 2>/dev/null || true
+          # mac: friendlier names (arm64 = Apple Silicon, x64 = Intel)
+          if ls GrokDesktop-*-Mac-arm64.dmg 1>/dev/null 2>&1; then
+            for f in GrokDesktop-*-Mac-arm64.dmg; do
+              mv "$f" "${f%-Mac-arm64.dmg}-Mac-AppleSilicon.dmg"
+            done
+          fi
+          if ls GrokDesktop-*-Mac-x64.dmg 1>/dev/null 2>&1; then
+            for f in GrokDesktop-*-Mac-x64.dmg; do
+              mv "$f" "${f%-Mac-x64.dmg}-Mac-Intel.dmg"
+            done
+          fi
+          echo "=== Release files ==="
+          ls -la
+
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: grok-desktop-${{ matrix.label }}
-          # Installers for humans + yml/blockmap/zip for electron-updater
           path: |
             release/*.exe
             release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.blockmap
-            release/latest*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -92,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download all installers
+      - name: Download installers
         uses: actions/download-artifact@v4
         with:
           path: dist-installers
@@ -109,21 +117,21 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            ## Install (no npm)
+            ## Download one file for your computer
 
-            Download the file for your OS below. After the first install, the app checks GitHub Releases and can update itself.
+            | You have… | Download |
+            |-----------|----------|
+            | **Windows** | `GrokDesktop-…-Windows-Setup.exe` |
+            | **Mac (M1 / M2 / M3 / M4)** | `GrokDesktop-…-Mac-AppleSilicon.dmg` |
+            | **Mac (Intel)** | `GrokDesktop-…-Mac-Intel.dmg` |
+            | **Source code** | Use GitHub’s **Source code (zip)** under Assets |
 
-            | OS | Look for |
-            |----|----------|
-            | **Windows** | `GrokDesktop-…-win-…-Setup.exe` (installer; preferred for auto-update) |
-            | **macOS** | `GrokDesktop-…-mac-arm64.dmg` (Apple Silicon) or `…-mac-x64.dmg` (Intel) |
-            | **Linux** | `GrokDesktop-…-linux-….AppImage` — `chmod +x` then run |
+            Ignore anything else. You do **not** need AppImage, blockmap, yaml, or portable builds.
 
-            Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
-
-            Unsigned build: Windows → More info → Run anyway. macOS → right-click → Open.
-
-            Full team instructions: repository README.
+            ### After download
+            1. Install **Grok Build CLI** (`grok`) on the machine — this app is only the GUI.
+            2. Open the app → **Sign in with browser** → **Open project…**
+            3. Windows may show SmartScreen → **More info → Run anyway**. Mac → right-click → **Open** the first time.
           files: |
             dist-installers/**
         env:

@@ -1,10 +1,10 @@
 /**
- * GitHub Releases auto-update (electron-updater).
+ * Optional GitHub Releases auto-update (electron-updater).
  * Only runs in packaged apps. Dev (`npm run dev`) skips this.
  *
- * Requires release assets to include electron-builder update metadata:
- *   latest.yml / latest-mac.yml / latest-linux.yml + installers (+ blockmaps).
- * See AGENTS.md shipping checklist.
+ * Releases intentionally publish only human installers (exe/dmg) so the
+ * team is not flooded with blockmaps/yml. Without latest*.yml on the Release,
+ * checkForUpdates fails softly — manual download from Releases is the path.
  */
 import { createRequire } from "node:module";
 import { app, dialog } from "electron";

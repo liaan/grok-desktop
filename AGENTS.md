@@ -90,19 +90,17 @@ Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts
    ```
 4. Wait for **Build & Release** (`.github/workflows/release.yml`).
 5. Verify assets at https://github.com/liaan/grok-desktop/releases  
-   Expect installers **plus** auto-update metadata:
-   - Windows: `*-Setup.exe`, `latest.yml`, `*.blockmap`
-   - macOS: `*.dmg`, `*.zip` (required for updates), `latest-mac.yml`
-   - Linux: `*.AppImage`, `latest-linux.yml`
-6. Point the team at **Releases → latest** (README already links there).
+   **Only** these should appear (plus GitHub’s automatic Source code zip/tar):
+   - `GrokDesktop-*-Windows-Setup.exe`
+   - `GrokDesktop-*-Mac-AppleSilicon.dmg`
+   - `GrokDesktop-*-Mac-Intel.dmg`
+   No blockmaps, yml, AppImage, portable, or updater zips. CI renames/strips noise on purpose.
+6. Point the team at **Releases → latest**.
 
-### Auto-update (electron-updater)
+### Releases stay simple
 
-- Packaged apps call `setupAutoUpdater()` in `electron/auto-update.mjs` and read **GitHub Releases** via `build.publish` (owner/repo).
-- CI still uses `--publish never` + softprops; it must **upload** `latest*.yml`, blockmaps, and mac **zip** (not only DMG).
-- Windows **NSIS Setup** supports in-place updates best. Portable `.exe` is fine for one-off installs, not the update path.
-- Dev mode (`npm run dev`) never checks for updates.
-- Do **not** remove `publish.provider: github` from `package.json` — that is how the built app finds Releases (not the same as CI uploading via electron-builder publish).
+- Ship **installers only**. Auto-update metadata (blockmap / latest.yml / mac zip) is intentionally **not** published — it confuses non-dev users. Manual download of new releases is fine for the team.
+- `electron/auto-update.mjs` may still run in packaged apps; without `latest*.yml` on the Release it quietly no-ops (safe).
 
 ### Manual / test build without a release
 
@@ -131,10 +129,17 @@ Artifacts only; no Release page unless ref is a `v*` tag.
 
 ## ACP surface (do not break casually)
 
-Client → agent: `initialize`, `session/new`, `session/prompt`, `session/cancel`  
+Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`  
 Agent → client: `session/update`, `session/request_permission`, optional `fs/*`
 
-`session/new` uses empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
+`session/new` / `session/load` use empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
+
+### Session continuity (same as CLI)
+
+- Sessions live under `~/.grok/sessions/<encoded-cwd>/<session-id>/` (shared with TUI).
+- Desktop **continues** the latest session on open (`session/load` + history from `updates.jsonl`).
+- **New chat** → `session/new`. Sidebar lists chats from disk (`electron/sessions.mjs`).
+- Do not invent a parallel chat store; always use the CLI session layout.
 
 ---
 
@@ -153,5 +158,4 @@ Agent → client: `session/update`, `session/request_permission`, optional `fs/*
 - [ ] Tag `vX.Y.Z` matches `package.json` version (CI enforces)
 - [ ] Release assets use `GrokDesktop-…` names (no spaces)
 - [ ] README team install still points at Releases with correct name patterns
-- [ ] `publish.provider: github` present so packaged app can auto-update; CI uploads via softprops (not electron-builder `--publish`)
-- [ ] Release includes `latest*.yml` (+ mac zip) for electron-updater
+- [ ] Release assets are only Setup.exe + two DMGs (no blockmap/yml/AppImage noise)

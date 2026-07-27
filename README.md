@@ -56,7 +56,8 @@ Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI i
 | Cancel in-flight turn | Done |
 | Simple file list peek | Basic |
 | Diff review pane | Planned |
-| Multi-session tabs | Planned |
+| Resume CLI sessions with history | Done (same `~/.grok/sessions`) |
+| Multi-session tabs | Basic (sidebar chat list) |
 | Settings UI (model / MCP) | Planned |
 | Native installers (Windows / macOS / Linux) | Done — [Releases](https://github.com/liaan/grok-desktop/releases) |
 
