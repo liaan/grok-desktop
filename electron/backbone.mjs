@@ -75,6 +75,13 @@ export function inspectBackbone(cwd = process.cwd()) {
           grokVersion: data.grokVersion || data.version,
           skills: (data.skills || []).map((s) => ({
             name: s.name,
+            description:
+              s.description ||
+              s.shortDescription ||
+              s.short_description ||
+              s.whenToUse ||
+              s["when-to-use"] ||
+              undefined,
             source: s.source?.type || s.source || undefined,
           })),
           mcpServers: (data.mcpServers || []).map((m) => ({

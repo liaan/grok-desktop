@@ -144,8 +144,8 @@ button {
   display: block;
   border-radius: 9px;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 28px rgba(124, 58, 237, 0.4);
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 22px rgba(255, 255, 255, 0.12);
 }
 
 .brand-text {
@@ -451,11 +451,52 @@ button {
   gap: 14px;
 }
 
+.day-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  align-self: stretch;
+  margin: 4px 0 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.day-divider::before,
+.day-divider::after {
+  content: "";
+  flex: 1;
+  max-width: 120px;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.day-divider span {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(20, 20, 26, 0.7);
+}
+
 .msg,
 .msg .body {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Badges / chrome must never inherit character-level wrapping */
+.msg .meta,
+.tool-status,
+.tool-title,
+.command-menu-name,
+.command-menu-badge,
+.status-pill {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .msg .body pre {
@@ -485,6 +526,7 @@ button {
 
 .msg {
   max-width: min(860px, 100%);
+  width: 100%;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: 12px 14px;
@@ -499,30 +541,181 @@ button {
 
 .msg .meta {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 6px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.msg .meta-role {
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.msg .meta-time {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.9;
+  white-space: nowrap;
 }
 
 .msg .body {
   font-size: 14px;
-  line-height: 1.55;
-  white-space: pre-wrap;
+  line-height: 1.5;
   word-break: break-word;
 }
 
-.msg .body p {
-  margin: 0 0 0.7em;
+/* Plain-text bubbles (user / thought / system) keep newlines */
+.msg .body:not(.markdown) {
+  white-space: pre-wrap;
 }
 
-.msg .body p:last-child {
-  margin-bottom: 0;
+/* Compact markdown — kill browser default heading/hr spacing */
+.msg .body.markdown {
+  white-space: normal;
 }
 
+.msg .body.markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.msg .body.markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.msg .body.markdown p {
+  margin: 0 0 0.45em;
+}
+
+.msg .body.markdown h1,
+.msg .body.markdown h2,
+.msg .body.markdown h3,
+.msg .body.markdown h4,
+.msg .body.markdown h5,
+.msg .body.markdown h6 {
+  margin: 0.65em 0 0.3em;
+  line-height: 1.25;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.msg .body.markdown h1 {
+  font-size: 1.28em;
+}
+
+.msg .body.markdown h2 {
+  font-size: 1.14em;
+}
+
+.msg .body.markdown h3 {
+  font-size: 1.05em;
+}
+
+.msg .body.markdown h4,
+.msg .body.markdown h5,
+.msg .body.markdown h6 {
+  font-size: 1em;
+}
+
+.msg .body.markdown hr {
+  margin: 0.65em 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.msg .body.markdown ul,
+.msg .body.markdown ol {
+  margin: 0.3em 0 0.5em;
+  padding-left: 1.35em;
+}
+
+.msg .body.markdown li {
+  margin: 0.12em 0;
+}
+
+.msg .body.markdown li > p {
+  margin: 0.15em 0;
+}
+
+.msg .body.markdown blockquote {
+  margin: 0.4em 0;
+  padding: 0.15em 0 0.15em 0.8em;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+
+.msg .body.markdown blockquote p {
+  margin: 0.2em 0;
+}
+
+.msg .body.markdown table {
+  border-collapse: collapse;
+  margin: 0.45em 0;
+  font-size: 13px;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.msg .body.markdown th,
+.msg .body.markdown td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.msg .body.markdown th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+}
+
+.msg .body.markdown pre {
+  margin: 0.4em 0;
+  background: #0a0a0e;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.msg .body.markdown pre code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+.msg .body.markdown :not(pre) > code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.msg .body.markdown a {
+  color: var(--accent-2);
+}
+
+.msg .body.markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.35em 0;
+}
+
+/* Fallback for non-markdown bodies that still contain <pre>/<code> */
 .msg .body pre {
   background: #0a0a0e;
   border: 1px solid var(--border);
@@ -553,17 +746,35 @@ button {
   background: #14101c;
 }
 
+.tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
 .tool-title {
   font-weight: 600;
   font-size: 13px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tool-status {
+  flex: 0 0 auto;
+  display: inline-block;
   font-size: 11px;
+  line-height: 1.2;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
   text-transform: lowercase;
+  white-space: nowrap;
+  max-width: none;
 }
 
 .tool-status.completed {
@@ -587,6 +798,7 @@ button {
   border-top: 1px solid var(--border-soft);
   padding: 12px 16px 16px;
   background: linear-gradient(180deg, transparent, rgba(12, 12, 15, 0.95));
+  position: relative;
 }
 
 .composer-box {
@@ -598,6 +810,176 @@ button {
   flex-direction: column;
   gap: 8px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  position: relative;
+}
+
+/* Mid-turn follow-up queue (CLI-style interject / queue) */
+.prompt-queue {
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  background: rgba(124, 58, 237, 0.08);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prompt-queue-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.prompt-queue-hint {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.prompt-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.prompt-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.prompt-queue-idx {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 1.2em;
+}
+
+.prompt-queue-text {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Slash command palette (above composer input) */
+.command-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  max-height: min(320px, 42vh);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #12121a;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+
+.command-menu-hint {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.command-menu-empty {
+  padding: 14px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.command-menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.command-menu-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.command-menu-item:hover,
+.command-menu-item.active {
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.command-menu-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.command-menu-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.command-menu-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.command-menu-badge.skill {
+  border-color: rgba(96, 165, 250, 0.35);
+  color: var(--accent-2);
+}
+
+.command-menu-badge.desktop {
+  border-color: rgba(52, 211, 153, 0.35);
+  color: var(--success);
+}
+
+.command-menu-badge.agent {
+  border-color: rgba(167, 139, 250, 0.35);
+  color: var(--accent);
 }
 
 .composer textarea {

@@ -83,7 +83,7 @@ export type AuthStatus = {
 
 export type BackboneSummary = {
   ok: boolean;
-  skills: Array<{ name: string; source?: string }>;
+  skills: Array<{ name: string; description?: string; source?: string }>;
   mcpServers: Array<{
     name: string;
     transport?: string;
@@ -92,6 +92,14 @@ export type BackboneSummary = {
   plugins: Array<{ name: string }>;
   grokVersion?: string;
   error?: string;
+};
+
+export type SlashCommand = {
+  name: string;
+  description: string;
+  source: "agent" | "skill" | "desktop";
+  inputHint?: string;
+  local?: boolean;
 };
 
 export type SessionSummary = {

@@ -1,5 +1,12 @@
+import { Fragment, type ReactNode, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  formatClock,
+  formatDayLabel,
+  formatFullTimestamp,
+  sameCalendarDay,
+} from "../lib/time";
 import type { TimelineItem } from "../vite-env";
 
 function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
@@ -18,8 +25,10 @@ function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
 
   return (
     <div>
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <div className="tool-title">{item.title}</div>
+      <div className="tool-header">
+        <div className="tool-title" title={item.title}>
+          {item.title}
+        </div>
         <span className={`tool-status ${item.status}`}>{item.status}</span>
       </div>
       {raw && (
@@ -34,12 +43,62 @@ function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
   );
 }
 
+function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href && /^https?:\/\//i.test(href)) {
+          void window.grokDesktop.openExternal(href);
+        }
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function MsgMeta({ role, at }: { role: string; at?: number }) {
+  const clock = formatClock(at);
+  return (
+    <div className="meta">
+      <span className="meta-role">{role}</span>
+      {clock ? (
+        <time
+          className="meta-time"
+          dateTime={at ? new Date(at).toISOString() : undefined}
+          title={formatFullTimestamp(at)}
+        >
+          {clock}
+        </time>
+      ) : null}
+    </div>
+  );
+}
+
+function DayDivider({ at }: { at: number }) {
+  const label = formatDayLabel(at);
+  if (!label) return null;
+  return (
+    <div className="day-divider" role="separator">
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function MessageList({
   items,
   bottomRef,
 }: {
   items: TimelineItem[];
-  bottomRef: React.RefObject<HTMLDivElement | null>;
+  bottomRef: RefObject<HTMLDivElement | null>;
 }) {
   if (items.length === 0) {
     return (
@@ -56,94 +115,115 @@ export function MessageList({
 
   return (
     <>
-      {items.map((item) => {
+      {items.map((item, i) => {
+        const prev = i > 0 ? items[i - 1] : null;
+        const showDay =
+          typeof item.at === "number" &&
+          (!prev ||
+            typeof prev.at !== "number" ||
+            !sameCalendarDay(prev.at, item.at));
+
+        const day =
+          showDay && typeof item.at === "number" ? (
+            <DayDivider at={item.at} />
+          ) : null;
+
         if (item.kind === "user") {
           return (
-            <article key={item.id} className="msg user">
-              <div className="meta">
-                <span>You</span>
-              </div>
-              {item.images && item.images.length > 0 && (
-                <div className="msg-images">
-                  {item.images.map((img, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="msg-image"
-                      title="Image attachment"
-                      onClick={(e) => e.preventDefault()}
-                    >
-                      <img src={img.previewUrl} alt={`Attachment ${i + 1}`} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              {item.text ? <div className="body">{item.text}</div> : null}
-            </article>
+            <Fragment key={item.id}>
+              {day}
+              <article className="msg user">
+                <MsgMeta role="You" at={item.at} />
+                {item.images && item.images.length > 0 && (
+                  <div className="msg-images">
+                    {item.images.map((img, j) => (
+                      <button
+                        key={j}
+                        type="button"
+                        className="msg-image"
+                        title="Image attachment"
+                        onClick={(e) => e.preventDefault()}
+                      >
+                        <img src={img.previewUrl} alt={`Attachment ${j + 1}`} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {item.text ? <div className="body">{item.text}</div> : null}
+              </article>
+            </Fragment>
           );
         }
         if (item.kind === "assistant") {
           return (
-            <article key={item.id} className="msg">
-              <div className="meta">
-                <span>Grok</span>
-              </div>
-              <div className="body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {item.text}
-                </ReactMarkdown>
-              </div>
-            </article>
+            <Fragment key={item.id}>
+              {day}
+              <article className="msg">
+                <MsgMeta role="Grok" at={item.at} />
+                <div className="body markdown">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{ a: MarkdownLink }}
+                  >
+                    {item.text}
+                  </ReactMarkdown>
+                </div>
+              </article>
+            </Fragment>
           );
         }
         if (item.kind === "thought") {
           return (
-            <article key={item.id} className="msg thought">
-              <div className="meta">
-                <span>Thinking</span>
-              </div>
-              <div className="body">{item.text}</div>
-            </article>
+            <Fragment key={item.id}>
+              {day}
+              <article className="msg thought">
+                <MsgMeta role="Thinking" at={item.at} />
+                <div className="body">{item.text}</div>
+              </article>
+            </Fragment>
           );
         }
         if (item.kind === "tool") {
           return (
-            <article key={item.id} className="msg tool">
-              <div className="meta">
-                <span>Tool</span>
-              </div>
-              <ToolBody item={item} />
-            </article>
+            <Fragment key={item.id}>
+              {day}
+              <article className="msg tool">
+                <MsgMeta role="Tool" at={item.at} />
+                <ToolBody item={item} />
+              </article>
+            </Fragment>
           );
         }
         if (item.kind === "plan") {
           return (
-            <article key={item.id} className="msg plan">
-              <div className="meta">
-                <span>Plan</span>
-              </div>
-              <div className="body">
-                <ol>
-                  {(item.entries as any[]).map((e, i) => (
-                    <li key={i}>
-                      {typeof e === "string"
-                        ? e
-                        : e?.content || JSON.stringify(e)}
-                      {e?.status ? ` — ${e.status}` : ""}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </article>
+            <Fragment key={item.id}>
+              {day}
+              <article className="msg plan">
+                <MsgMeta role="Plan" at={item.at} />
+                <div className="body">
+                  <ol>
+                    {(item.entries as any[]).map((e, j) => (
+                      <li key={j}>
+                        {typeof e === "string"
+                          ? e
+                          : e?.content || JSON.stringify(e)}
+                        {e?.status ? ` — ${e.status}` : ""}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </article>
+            </Fragment>
           );
         }
         return (
-          <article key={item.id} className="msg">
-            <div className="meta">
-              <span>System</span>
-            </div>
-            <div className="body">{item.text}</div>
-          </article>
+          <Fragment key={item.id}>
+            {day}
+            <article className="msg">
+              <MsgMeta role="System" at={item.at} />
+              <div className="body">{item.text}</div>
+            </article>
+          </Fragment>
         );
       })}
       <div ref={bottomRef} />

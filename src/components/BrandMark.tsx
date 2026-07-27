@@ -1,6 +1,4 @@
-import { useId } from "react";
-
-/** App mark: Grok / xAI desktop shell — window chrome + spark constellation. */
+/** App mark: monochrome Grok / AI spark (black + white). */
 export function BrandMark({
   size = 32,
   className = "brand-mark",
@@ -10,11 +8,6 @@ export function BrandMark({
   className?: string;
   title?: string;
 }) {
-  const uid = useId().replace(/:/g, "");
-  const shellId = `gd-shell-${uid}`;
-  const glowId = `gd-glow-${uid}`;
-  const softId = `gd-soft-${uid}`;
-
   return (
     <svg
       className={className}
@@ -26,64 +19,50 @@ export function BrandMark({
       role="img"
       aria-label={title}
     >
-      <defs>
-        <linearGradient id={shellId} x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#C4B5FD" />
-          <stop offset="0.45" stopColor="#7C3AED" />
-          <stop offset="1" stopColor="#1E1B4B" />
-        </linearGradient>
-        <linearGradient id={glowId} x1="16" y1="10" x2="16" y2="26" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#E9D5FF" stopOpacity="0.95" />
-          <stop offset="1" stopColor="#A78BFA" stopOpacity="0.55" />
-        </linearGradient>
-        <filter id={softId} x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="0.6" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      {/* Desktop app shell */}
-      <rect x="1.5" y="1.5" width="29" height="29" rx="8" fill={`url(#${shellId})`} />
+      {/* Plate */}
+      <rect width="32" height="32" rx="7.5" fill="#0A0A0A" />
       <rect
-        x="1.5"
-        y="1.5"
-        width="29"
-        height="29"
-        rx="8"
-        stroke="rgba(255,255,255,0.18)"
+        x="0.5"
+        y="0.5"
+        width="31"
+        height="31"
+        rx="7.25"
+        stroke="#FFFFFF"
+        strokeOpacity="0.14"
         strokeWidth="1"
       />
 
-      {/* Title-bar chrome (GUI cue) */}
-      <rect x="5" y="5.5" width="22" height="6" rx="2" fill="rgba(12,12,18,0.45)" />
-      <circle cx="8.2" cy="8.5" r="1.05" fill="#F87171" opacity="0.9" />
-      <circle cx="11.4" cy="8.5" r="1.05" fill="#FBBF24" opacity="0.9" />
-      <circle cx="14.6" cy="8.5" r="1.05" fill="#34D399" opacity="0.9" />
-
-      {/* Content pane */}
-      <rect
-        x="5"
-        y="13"
-        width="22"
-        height="13.5"
-        rx="2.5"
-        fill="rgba(12,12,18,0.5)"
-        stroke="rgba(255,255,255,0.08)"
+      {/* Outer orbit */}
+      <circle
+        cx="16"
+        cy="16"
+        r="10"
+        stroke="#FFFFFF"
+        strokeOpacity="0.22"
+        strokeWidth="1"
+      />
+      {/* Arc highlight */}
+      <path
+        d="M16 6 A10 10 0 0 1 26 16"
+        stroke="#FFFFFF"
+        strokeOpacity="0.85"
+        strokeWidth="1.35"
+        strokeLinecap="round"
       />
 
-      {/* Grok spark / constellation (xAI geometric feel) */}
-      <g filter={`url(#${softId})`} transform="translate(16 19.5)">
-        <path
-          d="M0 -5.2 L1.15 -1.15 L5.2 0 L1.15 1.15 L0 5.2 L-1.15 1.15 L-5.2 0 L-1.15 -1.15 Z"
-          fill={`url(#${glowId})`}
-        />
-        <circle cx="0" cy="0" r="1.35" fill="#F8FAFC" />
-        <circle cx="4.2" cy="-3.1" r="0.7" fill="#E9D5FF" opacity="0.85" />
-        <circle cx="-3.8" cy="3.2" r="0.55" fill="#C4B5FD" opacity="0.8" />
-      </g>
+      {/* Grok spark */}
+      <path
+        d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z"
+        fill="#FFFFFF"
+      />
+      {/* Core node */}
+      <circle cx="16" cy="15" r="1.55" fill="#0A0A0A" />
+      <circle cx="16" cy="15" r="0.85" fill="#FFFFFF" />
+
+      {/* Constellation nodes */}
+      <circle cx="26" cy="16" r="1.15" fill="#FFFFFF" />
+      <circle cx="9.5" cy="23.2" r="0.85" fill="#FFFFFF" fillOpacity="0.9" />
+      <circle cx="11.2" cy="8.6" r="0.7" fill="#FFFFFF" fillOpacity="0.75" />
     </svg>
   );
 }

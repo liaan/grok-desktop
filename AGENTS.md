@@ -130,9 +130,26 @@ Artifacts only; no Release page unless ref is a `v*` tag.
 ## ACP surface (do not break casually)
 
 Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`  
-Agent → client: `session/update`, `session/request_permission`, optional `fs/*`
+Agent → client: `session/update`, `session/request_permission`, `fs/*`, `terminal/*`
 
 `session/new` / `session/load` use empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
+
+### Client capabilities
+
+| Capability | Status | Notes |
+|------------|--------|--------|
+| `fs.readTextFile` / `fs.writeTextFile` | Implemented | `electron/acp-client.mjs` |
+| `terminal` | Implemented | `electron/acp-terminals.mjs` — create / output / wait_for_exit / kill / release |
+| Permissions | Implemented | UI + optional always-approve |
+| Slash commands | Implemented | Composer `/` menu — ACP `available_commands_update` + skills from `grok inspect` + desktop `/new` `/clear` `/always-approve` |
+
+Terminals spawn in the project `cwd` (or the path the agent passes). Output is buffered (default 1 MiB, truncated from the start). Dispose / cwd change releases all terminals.
+
+**Shell packaging:** Agents often send `command: "/bin/bash -lc '…'"` as one string. The client **must** unwrap that into `spawn("/bin/bash", ["-lc", script])` — never spawn the multi-word string as an executable (ENOENT). PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **Electron main does not hot-reload** — quit the app fully after changing `acp-terminals.mjs`.
+
+**Slash commands:** Type `/` in the composer. Agent skills (`/review`, `/code-review`, `/design`, `/implement`, …) are sent as normal `session/prompt` text (same as CLI). Desktop-local commands are handled in the GUI and never reach the agent.
+
+**Mid-turn interject (CLI-style):** While a turn is running, **Enter** queues a follow-up (shown above the composer). **Ctrl/⌘+Enter** or **Send now** cancels the current turn and sends that message next. Empty Enter with a non-empty queue force-sends the top item. Queue drains FIFO when each turn ends.
 
 ### Session continuity (same as CLI)
 

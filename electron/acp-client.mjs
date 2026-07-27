@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
+import { AcpTerminalManager } from "./acp-terminals.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -40,6 +41,11 @@ export class GrokAcpClient extends EventEmitter {
     this.stderrBuf = "";
     /** @type {Record<string, any>} */
     this.agentCapabilities = {};
+    this.terminals = new AcpTerminalManager({ defaultCwd: this.cwd });
+    // Forward terminal lifecycle for optional UI live-output later
+    for (const ev of ["created", "output", "exit", "released"]) {
+      this.terminals.on(ev, (payload) => this.emit(`terminal:${ev}`, payload));
+    }
   }
 
   /**
@@ -63,6 +69,11 @@ export class GrokAcpClient extends EventEmitter {
 
     this.proc.on("exit", (code, signal) => {
       this.ready = false;
+      try {
+        this.terminals.disposeAll();
+      } catch {
+        /* ignore */
+      }
       this._rejectAllPending(
         new Error(`Agent exited (code=${code}, signal=${signal})`),
       );
@@ -104,6 +115,12 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   async newSession() {
+    // Drop prior chat's processes so /new and session switch don't leak shells
+    try {
+      this.terminals.disposeAll();
+    } catch {
+      /* ignore */
+    }
     const session = await this.request(
       "session/new",
       {
@@ -113,6 +130,7 @@ export class GrokAcpClient extends EventEmitter {
       { timeoutMs: LOAD_TIMEOUT_MS },
     );
     this.sessionId = session.sessionId;
+    this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
     this.emit("ready", {
       sessionId: this.sessionId,
@@ -133,6 +151,12 @@ export class GrokAcpClient extends EventEmitter {
       throw new Error("This Grok agent does not support session/load");
     }
 
+    try {
+      this.terminals.disposeAll();
+    } catch {
+      /* ignore */
+    }
+
     const result = await this.request(
       "session/load",
       {
@@ -145,6 +169,7 @@ export class GrokAcpClient extends EventEmitter {
 
     this.sessionId =
       result?.sessionId || result?._meta?.sessionId || sessionId;
+    this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
     this.emit("ready", {
       sessionId: this.sessionId,
@@ -253,10 +278,7 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (method?.startsWith("terminal/")) {
-      this._respond(id, null, {
-        code: -32601,
-        message: `Method not implemented in desktop client yet: ${method}`,
-      });
+      await this._handleTerminal(method, params, id);
       return;
     }
 
@@ -264,6 +286,51 @@ export class GrokAcpClient extends EventEmitter {
       code: -32601,
       message: `Unhandled client method: ${method}`,
     });
+  }
+
+  /**
+   * ACP terminal/* — agent runs commands in the desktop client's environment.
+   * @param {string} method
+   * @param {any} params
+   * @param {number|string} id
+   */
+  async _handleTerminal(method, params, id) {
+    try {
+      switch (method) {
+        case "terminal/create": {
+          const result = this.terminals.create(params || {});
+          this._respond(id, result);
+          return;
+        }
+        case "terminal/output": {
+          this._respond(id, this.terminals.output(params || {}));
+          return;
+        }
+        case "terminal/wait_for_exit": {
+          const status = await this.terminals.waitForExit(params || {});
+          this._respond(id, status);
+          return;
+        }
+        case "terminal/kill": {
+          this._respond(id, this.terminals.kill(params || {}));
+          return;
+        }
+        case "terminal/release": {
+          this._respond(id, this.terminals.release(params || {}));
+          return;
+        }
+        default:
+          this._respond(id, null, {
+            code: -32601,
+            message: `Unhandled terminal method: ${method}`,
+          });
+      }
+    } catch (err) {
+      this._respond(id, null, {
+        code: err?.code ?? -32000,
+        message: err?.message || String(err),
+      });
+    }
   }
 
   _respond(id, result, error) {
@@ -343,11 +410,18 @@ export class GrokAcpClient extends EventEmitter {
 
   async setCwd(cwd) {
     this.cwd = cwd;
+    this.terminals.setDefaultCwd(cwd);
+    this.terminals.disposeAll();
     return this.newSession();
   }
 
   async dispose() {
     this._rejectAllPending(new Error("Agent disposed"));
+    try {
+      this.terminals.disposeAll();
+    } catch {
+      /* ignore */
+    }
     try {
       this.rl?.close();
     } catch {

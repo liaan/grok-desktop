@@ -326,6 +326,19 @@ function createWindow() {
     }
     return { action: "deny" };
   });
+
+  // Keep navigation inside the app shell; open http(s) externally
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const allowed =
+      url.startsWith("http://127.0.0.1:") ||
+      url.startsWith("http://localhost:") ||
+      url.startsWith("file://");
+    if (allowed) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url);
+    }
+  });
 }
 
 function registerIpc() {
