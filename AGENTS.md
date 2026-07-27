@@ -90,8 +90,19 @@ Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts
    ```
 4. Wait for **Build & Release** (`.github/workflows/release.yml`).
 5. Verify assets at https://github.com/liaan/grok-desktop/releases  
-   Expect only installers (`.exe` / `.dmg` / `.AppImage`) — no blockmaps.
+   Expect installers **plus** auto-update metadata:
+   - Windows: `*-Setup.exe`, `latest.yml`, `*.blockmap`
+   - macOS: `*.dmg`, `*.zip` (required for updates), `latest-mac.yml`
+   - Linux: `*.AppImage`, `latest-linux.yml`
 6. Point the team at **Releases → latest** (README already links there).
+
+### Auto-update (electron-updater)
+
+- Packaged apps call `setupAutoUpdater()` in `electron/auto-update.mjs` and read **GitHub Releases** via `build.publish` (owner/repo).
+- CI still uses `--publish never` + softprops; it must **upload** `latest*.yml`, blockmaps, and mac **zip** (not only DMG).
+- Windows **NSIS Setup** supports in-place updates best. Portable `.exe` is fine for one-off installs, not the update path.
+- Dev mode (`npm run dev`) never checks for updates.
+- Do **not** remove `publish.provider: github` from `package.json` — that is how the built app finds Releases (not the same as CI uploading via electron-builder publish).
 
 ### Manual / test build without a release
 
@@ -142,4 +153,5 @@ Agent → client: `session/update`, `session/request_permission`, optional `fs/*
 - [ ] Tag `vX.Y.Z` matches `package.json` version (CI enforces)
 - [ ] Release assets use `GrokDesktop-…` names (no spaces)
 - [ ] README team install still points at Releases with correct name patterns
-- [ ] No dead electron-builder `publish` config; release via softprops only
+- [ ] `publish.provider: github` present so packaged app can auto-update; CI uploads via softprops (not electron-builder `--publish`)
+- [ ] Release includes `latest*.yml` (+ mac zip) for electron-updater

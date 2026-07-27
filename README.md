@@ -18,6 +18,8 @@ Also install the **Grok Build CLI** (`grok`) on each machine — this app is onl
 
 Then: open **Grok Desktop** → **Sign in with browser** → **Open project…**
 
+**Updates:** after the first install (prefer the Windows **Setup** installer, not portable), the app checks GitHub Releases in the background and offers to restart when a new version is ready. You do not need to re-download by hand each time.
+
 > Windows SmartScreen / macOS Gatekeeper may warn once (unsigned internal build). That’s expected — **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
 
 ---

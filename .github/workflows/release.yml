@@ -1,6 +1,9 @@
 # Builds installers for Windows, macOS, and Linux.
 # Release process for agents: see AGENTS.md (canonical).
 # Team install: see README.md.
+#
+# Auto-update needs: installers + latest*.yml (+ blockmaps, mac zip).
+# CI still uses --publish never; softprops uploads those files to the Release.
 
 name: Build & Release
 
@@ -71,10 +74,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: grok-desktop-${{ matrix.label }}
+          # Installers for humans + yml/blockmap/zip for electron-updater
           path: |
             release/*.exe
             release/*.dmg
+            release/*.zip
             release/*.AppImage
+            release/*.blockmap
+            release/latest*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -104,11 +111,11 @@ jobs:
           body: |
             ## Install (no npm)
 
-            Download the file for your OS below.
+            Download the file for your OS below. After the first install, the app checks GitHub Releases and can update itself.
 
             | OS | Look for |
             |----|----------|
-            | **Windows** | `GrokDesktop-…-win-…-Setup.exe` (installer) or `…-portable.exe` |
+            | **Windows** | `GrokDesktop-…-win-…-Setup.exe` (installer; preferred for auto-update) |
             | **macOS** | `GrokDesktop-…-mac-arm64.dmg` (Apple Silicon) or `…-mac-x64.dmg` (Intel) |
             | **Linux** | `GrokDesktop-…-linux-….AppImage` — `chmod +x` then run |
 

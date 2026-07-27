@@ -20,6 +20,7 @@ import {
 } from "./auth.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
+import { setupAutoUpdater } from "./auto-update.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -277,6 +278,7 @@ function registerIpc() {
 app.whenReady().then(() => {
   registerIpc();
   createWindow();
+  setupAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
