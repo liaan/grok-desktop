@@ -524,36 +524,38 @@ export class GrokAcpClient extends EventEmitter {
       });
     });
 
-    // Grok expects AskUserQuestionExtResponse with tag field `outcome`:
-    //   Accepted { answers, partial_answers } | SkipInterview | ChatAboutThis
-    // (error when missing: "invalid response to user question / missing field `outcome`")
-    const type = decision?.type || decision?.outcome || "declined";
+    // Grok AskUserQuestionExtResponse — tag field `outcome`, lowercase variants:
+    //   accepted | chat_about_this | skip_interview | cancelled
+    // (PascalCase is rejected: unknown variant `Accepted`)
+    const type = String(decision?.type || decision?.outcome || "declined")
+      .toLowerCase()
+      .replace(/-/g, "_");
     if (
       type === "answered" ||
       type === "answers" ||
-      type === "Accepted" ||
       type === "accepted"
     ) {
       this._respond(id, {
-        outcome: "Accepted",
+        outcome: "accepted",
         answers: decision?.answers ?? [],
-        partial_answers: decision?.partial_answers ?? decision?.partialAnswers ?? [],
+        partial_answers:
+          decision?.partial_answers ?? decision?.partialAnswers ?? [],
       });
       return;
     }
-    if (
-      type === "chat" ||
-      type === "ChatAboutThis" ||
-      type === "chat_about_this"
-    ) {
+    if (type === "chat" || type === "chat_about_this") {
       this._respond(id, {
-        outcome: "ChatAboutThis",
+        outcome: "chat_about_this",
         message: String(decision?.message || decision?.feedback || ""),
       });
       return;
     }
+    if (type === "cancelled" || type === "canceled") {
+      this._respond(id, { outcome: "cancelled" });
+      return;
+    }
     // Skip / decline
-    this._respond(id, { outcome: "SkipInterview" });
+    this._respond(id, { outcome: "skip_interview" });
   }
 
   /**
