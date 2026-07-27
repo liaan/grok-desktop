@@ -13,9 +13,11 @@ import {
   sameCalendarDay,
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
+import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 
 function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
+  const { redact } = usePrivacy();
   const card = buildToolCard({
     title: item.title,
     raw: item.raw,
@@ -32,7 +34,7 @@ function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
       </div>
       {card.output ? (
         <pre className="tool-output" title="Output">
-          {card.output}
+          {redact(card.output)}
         </pre>
       ) : null}
     </div>
@@ -120,6 +122,8 @@ function UserMessage({
   at?: number;
   knownCommands: SlashCommand[];
 }) {
+  const { redact } = usePrivacy();
+  const displayText = redact(text);
   const inv = parseSlashInvocation(text);
   const isCmd = Boolean(inv);
   const matched = inv
@@ -127,7 +131,9 @@ function UserMessage({
     : undefined;
   const badge = sourceBadgeLabel(matched);
   const restLines =
-    inv && text.includes("\n") ? text.slice(text.indexOf("\n") + 1) : "";
+    inv && displayText.includes("\n")
+      ? displayText.slice(displayText.indexOf("\n") + 1)
+      : "";
 
   return (
     <article className={`msg user ${isCmd ? "user-command" : ""}`}>
@@ -147,7 +153,7 @@ function UserMessage({
           ))}
         </div>
       )}
-      {text ? (
+      {displayText ? (
         inv ? (
           <div className="body body-command">
             <div
@@ -168,11 +174,13 @@ function UserMessage({
                 <span className="cmd-picked cmd-picked-soft">slash</span>
               )}
             </div>
-            {inv.args ? <div className="cmd-args">{inv.args}</div> : null}
+            {inv.args ? (
+              <div className="cmd-args">{redact(inv.args)}</div>
+            ) : null}
             {restLines ? <div className="cmd-rest">{restLines}</div> : null}
           </div>
         ) : (
-          <div className="body">{text}</div>
+          <div className="body">{displayText}</div>
         )
       ) : null}
     </article>
@@ -241,6 +249,29 @@ export function MessageList({
   }
 
   return (
+    <MessageListBody
+      items={items}
+      bottomRef={bottomRef}
+      knownCommands={knownCommands}
+      pendingPermissions={pendingPermissions}
+    />
+  );
+}
+
+function MessageListBody({
+  items,
+  bottomRef,
+  knownCommands,
+  pendingPermissions,
+}: {
+  items: TimelineItem[];
+  bottomRef: RefObject<HTMLDivElement | null>;
+  knownCommands: SlashCommand[];
+  pendingPermissions: PermissionRequest[];
+}) {
+  const { redact } = usePrivacy();
+
+  return (
     <>
       {items.map((item, i) => {
         const prev = i > 0 ? items[i - 1] : null;
@@ -279,7 +310,7 @@ export function MessageList({
                     remarkPlugins={[remarkGfm]}
                     components={{ a: MarkdownLink, img: MarkdownImage }}
                   >
-                    {item.text}
+                    {redact(item.text)}
                   </ReactMarkdown>
                 </div>
               </article>
@@ -292,7 +323,7 @@ export function MessageList({
               {day}
               <article className="msg thought">
                 <MsgMeta role="Thinking" at={item.at} />
-                <div className="body">{item.text}</div>
+                <div className="body">{redact(item.text)}</div>
               </article>
             </Fragment>
           );
@@ -318,9 +349,11 @@ export function MessageList({
                   <ol>
                     {(item.entries as any[]).map((e, j) => (
                       <li key={j}>
-                        {typeof e === "string"
-                          ? e
-                          : e?.content || JSON.stringify(e)}
+                        {redact(
+                          typeof e === "string"
+                            ? e
+                            : e?.content || JSON.stringify(e),
+                        )}
                         {e?.status ? ` — ${e.status}` : ""}
                       </li>
                     ))}
@@ -335,7 +368,7 @@ export function MessageList({
             {day}
             <article className="msg">
               <MsgMeta role="System" at={item.at} />
-              <div className="body">{item.text}</div>
+              <div className="body">{redact(item.text)}</div>
             </article>
           </Fragment>
         );

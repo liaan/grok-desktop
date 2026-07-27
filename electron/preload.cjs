@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setSandboxTerminal: (value) =>
     ipcRenderer.invoke("agent:set-sandbox-terminal", value),
   setTheme: (value) => ipcRenderer.invoke("app:set-theme", value),
+  setPrivacyMode: (value) => ipcRenderer.invoke("app:set-privacy-mode", value),
+  getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
@@ -45,8 +47,12 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     const valid = [
       "agent:session-update",
       "agent:permission-request",
+      "agent:permission-dismiss",
       "agent:plan-approval-request",
+      "agent:plan-approval-dismiss",
       "agent:user-question-request",
+      "agent:user-question-dismiss",
+      "agent:permissions-cleared",
       "agent:stderr",
       "agent:error",
       "agent:exit",

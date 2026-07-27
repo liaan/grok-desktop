@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { usePrivacy } from "../lib/privacy-context";
 
 export type PlanApprovalRequest = {
   reqId: string;
@@ -35,11 +36,16 @@ export function PlanApprovalDialog({
     closeRef.current?.focus();
   }, [request?.reqId]);
 
+  const { redact } = usePrivacy();
+
   if (!request) return null;
 
   const body = request.planContent?.trim()
-    ? request.planContent
+    ? redact(request.planContent)
     : "_No plan was written yet. You can still approve to start implementing, request changes, or abandon plan mode._";
+  const planPath = request.planFilePath
+    ? redact(request.planFilePath)
+    : null;
 
   return (
     <div className="modal-backdrop plan-approval-backdrop" role="presentation">
@@ -63,9 +69,9 @@ export function PlanApprovalDialog({
         </div>
 
         <div className="modal-body plan-approval-body">
-          {request.planFilePath ? (
-            <div className="plan-approval-path" title={request.planFilePath}>
-              {request.planFilePath}
+          {planPath ? (
+            <div className="plan-approval-path" title={planPath}>
+              {planPath}
             </div>
           ) : null}
           <div className="plan-approval-markdown markdown-body">

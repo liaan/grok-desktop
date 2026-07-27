@@ -98,7 +98,15 @@ export function applySessionUpdate(items, params) {
       if (last?.kind === "user" && last.optimistic) {
         next[next.length - 1] = { ...last, optimistic: false };
       }
-      const toolCallId = update.toolCallId || update.tool_call_id || uid("tool");
+      const rawId =
+        update.toolCallId ??
+        update.tool_call_id ??
+        update.id ??
+        null;
+      const toolCallId =
+        rawId != null && String(rawId) !== ""
+          ? String(rawId)
+          : uid("tool");
       next.push({
         id: uid("tool"),
         kind: "tool",
@@ -111,9 +119,13 @@ export function applySessionUpdate(items, params) {
       return next;
     }
     case "tool_call_update": {
-      const toolCallId = update.toolCallId || update.tool_call_id;
+      const rawId =
+        update.toolCallId ?? update.tool_call_id ?? update.id ?? null;
+      const toolCallId =
+        rawId != null && String(rawId) !== "" ? String(rawId) : null;
+      if (!toolCallId) return next;
       const idx = next.findIndex(
-        (i) => i.kind === "tool" && i.toolCallId === toolCallId,
+        (i) => i.kind === "tool" && String(i.toolCallId) === toolCallId,
       );
       if (idx >= 0 && next[idx].kind === "tool") {
         next[idx] = {
