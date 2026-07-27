@@ -1,3 +1,8 @@
+import {
+  permissionModeChipLabel,
+  type PermissionMode,
+} from "../lib/permission-mode";
+
 /**
  * Persistent topbar indicators when elevated / reduced-safety modes are on.
  * Click opens Settings so the operator can turn them off.
@@ -5,16 +10,17 @@
 export function ElevatedSafetyChips({
   sandboxTerminal,
   allowOutsideProject,
-  alwaysApprove,
+  permissionMode,
   onOpenSettings,
 }: {
   sandboxTerminal: boolean;
   allowOutsideProject: boolean;
-  alwaysApprove: boolean;
+  permissionMode: PermissionMode;
   onOpenSettings: () => void;
 }) {
+  const elevatedPerms = permissionMode !== "ask";
   const show =
-    !sandboxTerminal || allowOutsideProject || alwaysApprove;
+    !sandboxTerminal || allowOutsideProject || elevatedPerms;
   if (!show) return null;
 
   return (
@@ -39,14 +45,14 @@ export function ElevatedSafetyChips({
           Outside project
         </button>
       )}
-      {alwaysApprove && (
+      {elevatedPerms && (
         <button
           type="button"
-          className="elevated-chip"
-          title="Tool permissions auto-approved — click to open Settings"
+          className={`elevated-chip ${permissionMode === "always-approve" ? "warn" : ""}`}
+          title="Tool permission mode — click to open Settings"
           onClick={onOpenSettings}
         >
-          Auto-approve
+          {permissionModeChipLabel(permissionMode)}
         </button>
       )}
     </div>

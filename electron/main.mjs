@@ -21,7 +21,10 @@ import {
 } from "./auth.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
-import { setupAutoUpdater } from "./auto-update.mjs";
+import {
+  setupAutoUpdater,
+  checkForUpdatesInteractive,
+} from "./auto-update.mjs";
 import {
   listSessionsForCwd,
   loadTimelineFromDisk,
@@ -29,6 +32,7 @@ import {
 } from "./sessions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
 import { probeSandbox, sandboxStatusLabel } from "./terminal-sandbox.mjs";
+import { normalizePermissionMode } from "./permission-mode.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -50,9 +54,11 @@ const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 function loadState() {
   try {
     const raw = JSON.parse(fs.readFileSync(storePath, "utf8"));
-    return {
+    const merged = {
       recentProjects: [],
       alwaysApprove: false,
+      /** ask | auto | always-approve */
+      permissionMode: "ask",
       /** When false (default), agent FS + terminal cwd cannot leave project root */
       allowOutsideProject: false,
       /**
@@ -65,10 +71,17 @@ function loadState() {
       lastProject: null,
       ...raw,
     };
+    merged.permissionMode = normalizePermissionMode(
+      merged.permissionMode,
+      merged.alwaysApprove,
+    );
+    merged.alwaysApprove = merged.permissionMode === "always-approve";
+    return merged;
   } catch {
     return {
       recentProjects: [],
       alwaysApprove: false,
+      permissionMode: "ask",
       allowOutsideProject: false,
       sandboxTerminal: true,
       theme: "dark",
@@ -154,7 +167,8 @@ function ensureAgent(cwd, opts = {}) {
     const state = loadState();
     agent = new GrokAcpClient({
       cwd,
-      alwaysApprove: state.alwaysApprove,
+      permissionMode: state.permissionMode,
+      alwaysApprove: state.permissionMode === "always-approve",
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       clientVersion: app.getVersion(),
@@ -321,15 +335,13 @@ function installApplicationMenu() {
         {
           label: "Check for updates…",
           click: () => {
-            shell.openExternal(
-              "https://github.com/liaan/grok-desktop/releases/latest",
-            );
+            void checkForUpdatesInteractive();
           },
         },
         {
           label: "Open Releases page",
           click: () => {
-            shell.openExternal(
+            void shell.openExternal(
               "https://github.com/liaan/grok-desktop/releases",
             );
           },
@@ -413,7 +425,11 @@ function registerIpc() {
       grokBinary: resolveGrokBinary(),
       grokHome: grokHomeDir(),
       userData: app.getPath("userData"),
-      alwaysApprove: state.alwaysApprove,
+      alwaysApprove: state.permissionMode === "always-approve",
+      permissionMode: normalizePermissionMode(
+        state.permissionMode,
+        state.alwaysApprove,
+      ),
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       sandboxStatus: sandboxStatusLabel(),
@@ -645,11 +661,31 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:set-always-approve", async (_e, value) => {
+    const mode = value ? "always-approve" : "ask";
     const state = loadState();
-    state.alwaysApprove = Boolean(value);
+    state.permissionMode = mode;
+    state.alwaysApprove = mode === "always-approve";
     saveState(state);
-    agent?.setAlwaysApprove(state.alwaysApprove);
+    if (agent?.setPermissionMode) {
+      await agent.setPermissionMode(mode);
+    } else {
+      agent?.setAlwaysApprove(state.alwaysApprove);
+    }
     return state.alwaysApprove;
+  });
+
+  ipcMain.handle("agent:set-permission-mode", async (_e, value) => {
+    const mode = normalizePermissionMode(value);
+    const state = loadState();
+    state.permissionMode = mode;
+    state.alwaysApprove = mode === "always-approve";
+    saveState(state);
+    if (agent?.setPermissionMode) {
+      await agent.setPermissionMode(mode);
+    } else {
+      agent?.setAlwaysApprove(state.alwaysApprove);
+    }
+    return mode;
   });
 
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {

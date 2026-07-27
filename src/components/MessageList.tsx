@@ -6,7 +6,7 @@ import {
   parseSlashInvocation,
   type SlashCommand,
 } from "../lib/commands";
-import { formatToolDisplay } from "../lib/tool-display";
+import { formatToolCard } from "../lib/tool-display";
 import {
   formatClock,
   formatDayLabel,
@@ -16,31 +16,50 @@ import {
 import type { TimelineItem } from "../vite-env";
 
 function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
-  const { subtitle, input, output } = formatToolDisplay(item);
+  const card = formatToolCard({
+    title: item.title,
+    kind: undefined,
+    raw: item.raw,
+    content: item.content,
+  });
+  const detail =
+    card.detail &&
+    (card.isCommand && !card.detail.startsWith("$")
+      ? `$ ${card.detail}`
+      : card.detail);
 
   return (
     <div className="tool-body">
       <div className="tool-header">
         <div className="tool-title-wrap">
-          <div className="tool-title" title={item.title}>
-            {item.title}
+          <div className="tool-action-label">{card.action}</div>
+          <div
+            className="tool-title"
+            title={card.fullTitle || item.title}
+          >
+            {card.summary ||
+              (card.fullTitle && card.fullTitle.length < 80
+                ? card.fullTitle
+                : card.detail
+                  ? ""
+                  : item.title)}
           </div>
-          {subtitle ? (
-            <div className="tool-subtitle" title={subtitle}>
-              {subtitle}
+          {card.subtitle && card.subtitle !== card.summary ? (
+            <div className="tool-subtitle" title={card.subtitle}>
+              {card.subtitle}
             </div>
           ) : null}
         </div>
         <span className={`tool-status ${item.status}`}>{item.status}</span>
       </div>
-      {input ? (
+      {detail ? (
         <pre className="tool-input" title="Input">
-          {input}
+          {detail}
         </pre>
       ) : null}
-      {output ? (
+      {card.output ? (
         <pre className="tool-output" title="Output">
-          {output}
+          {card.output}
         </pre>
       ) : null}
     </div>

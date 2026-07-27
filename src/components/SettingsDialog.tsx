@@ -1,4 +1,8 @@
 import { useEffect, useRef } from "react";
+import {
+  PERMISSION_MODE_OPTIONS,
+  type PermissionMode,
+} from "../lib/permission-mode";
 
 /**
  * App settings modal — appearance + agent safety.
@@ -8,24 +12,24 @@ export function SettingsDialog({
   open,
   onClose,
   theme,
-  alwaysApprove,
+  permissionMode,
   allowOutsideProject,
   sandboxTerminal,
   sandboxStatus,
   onSetTheme,
-  onToggleAlwaysApprove,
+  onSetPermissionMode,
   onToggleAllowOutside,
   onSetSandboxTerminal,
 }: {
   open: boolean;
   onClose: () => void;
   theme: "dark" | "light";
-  alwaysApprove: boolean;
+  permissionMode: PermissionMode;
   allowOutsideProject: boolean;
   sandboxTerminal: boolean;
   sandboxStatus: string;
   onSetTheme: (theme: "dark" | "light") => void;
-  onToggleAlwaysApprove: () => void;
+  onSetPermissionMode: (mode: PermissionMode) => void;
   onToggleAllowOutside: () => void;
   /** Desired checked state from the checkbox (not a toggle). */
   onSetSandboxTerminal: (next: boolean) => void;
@@ -43,6 +47,10 @@ export function SettingsDialog({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const modeMeta =
+    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode) ||
+    PERMISSION_MODE_OPTIONS[0];
 
   return (
     <div
@@ -102,6 +110,28 @@ export function SettingsDialog({
 
           <section className="settings-section">
             <h3>Agent safety</h3>
+
+            <label className="settings-row settings-row-stack">
+              <div className="settings-row-text">
+                <span className="settings-label">Tool permission mode</span>
+                <span className="settings-desc">{modeMeta.description}</span>
+              </div>
+              <select
+                className="settings-select"
+                value={permissionMode}
+                aria-label="Tool permission mode"
+                onChange={(e) =>
+                  onSetPermissionMode(e.target.value as PermissionMode)
+                }
+              >
+                {PERMISSION_MODE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="settings-row">
               <div className="settings-row-text">
                 <span className="settings-label">Sandbox terminal</span>
@@ -115,19 +145,6 @@ export function SettingsDialog({
                 type="checkbox"
                 checked={sandboxTerminal}
                 onChange={(e) => onSetSandboxTerminal(e.target.checked)}
-              />
-            </label>
-            <label className="settings-row">
-              <div className="settings-row-text">
-                <span className="settings-label">Always approve tools</span>
-                <span className="settings-desc">
-                  Skip the approvals panel and allow tool runs automatically.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={alwaysApprove}
-                onChange={onToggleAlwaysApprove}
               />
             </label>
             <label className="settings-row">

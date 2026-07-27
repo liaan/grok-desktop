@@ -38,6 +38,10 @@ import {
   applyBackgroundUpdate,
   type BackgroundTask,
 } from "./lib/background-tasks";
+import {
+  normalizePermissionMode,
+  type PermissionMode,
+} from "./lib/permission-mode";
 import { applySessionUpdate, uid } from "./lib/timeline";
 import type {
   AppInfo,
@@ -150,7 +154,8 @@ export default function App() {
   const [userQuestion, setUserQuestion] = useState<AskUserRequest | null>(
     null,
   );
-  const [alwaysApprove, setAlwaysApprove] = useState(false);
+  const [permissionMode, setPermissionMode] =
+    useState<PermissionMode>("ask");
   /** Default safe: block ACP fs + terminal cwd outside project */
   const [allowOutsideProject, setAllowOutsideProject] = useState(false);
   /** Default safe: OS FS jail for ACP tool shells */
@@ -225,7 +230,9 @@ export default function App() {
   const bootstrap = useCallback(async () => {
     const i = await window.grokDesktop.getInfo();
     setInfo(i);
-    setAlwaysApprove(i.alwaysApprove);
+    setPermissionMode(
+      normalizePermissionMode(i.permissionMode, i.alwaysApprove),
+    );
     setAllowOutsideProject(Boolean(i.allowOutsideProject));
     setSandboxTerminal(i.sandboxTerminal !== false);
     setSandboxStatus(i.sandboxStatus || "");
@@ -720,17 +727,16 @@ export default function App() {
           return;
         }
         if (name === "always-approve") {
-          const next = !alwaysApprove;
-          await window.grokDesktop.setAlwaysApprove(next);
-          setAlwaysApprove(next);
+          const next: PermissionMode =
+            permissionMode === "always-approve" ? "ask" : "always-approve";
+          const mode = await window.grokDesktop.setPermissionMode(next);
+          setPermissionMode(normalizePermissionMode(mode));
           setItems((prev) => [
             ...prev,
             {
               id: uid("sys"),
               kind: "system",
-              text: next
-                ? "Always approve tools: on"
-                : "Always approve tools: off",
+              text: `Tool permission mode: ${normalizePermissionMode(mode)}`,
               at: Date.now(),
             },
           ]);
@@ -795,17 +801,16 @@ export default function App() {
         }
         if (cmd.name === "always-approve") {
           void (async () => {
-            const next = !alwaysApprove;
-            await window.grokDesktop.setAlwaysApprove(next);
-            setAlwaysApprove(next);
+            const next: PermissionMode =
+              permissionMode === "always-approve" ? "ask" : "always-approve";
+            const mode = await window.grokDesktop.setPermissionMode(next);
+            setPermissionMode(normalizePermissionMode(mode));
             setItems((prev) => [
               ...prev,
               {
                 id: uid("sys"),
                 kind: "system",
-                text: next
-                  ? "Always approve tools: on"
-                  : "Always approve tools: off",
+                text: `Tool permission mode: ${normalizePermissionMode(mode)}`,
                 at: Date.now(),
               },
             ]);
@@ -831,7 +836,7 @@ export default function App() {
       // Enter only: run bare skill/agent command (CLI-style)
       void sendPromptRef.current(`/${cmd.name}`);
     },
-    [alwaysApprove, openSession],
+    [permissionMode, openSession],
   );
 
   const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -976,10 +981,18 @@ export default function App() {
     setUserQuestion(null);
   };
 
-  const toggleAlways = async () => {
-    const next = !alwaysApprove;
-    await window.grokDesktop.setAlwaysApprove(next);
-    setAlwaysApprove(next);
+  const applyPermissionMode = async (next: PermissionMode) => {
+    if (
+      next === "always-approve" &&
+      permissionMode !== "always-approve" &&
+      !window.confirm(
+        "Enable Always approve?\n\nTools will run without the Approvals panel. Deny rules and plan-mode edit gates still apply.",
+      )
+    ) {
+      return;
+    }
+    const mode = await window.grokDesktop.setPermissionMode(next);
+    setPermissionMode(normalizePermissionMode(mode));
   };
 
   const toggleAllowOutside = async () => {
@@ -1291,12 +1304,12 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         theme={theme}
-        alwaysApprove={alwaysApprove}
+        permissionMode={permissionMode}
         allowOutsideProject={allowOutsideProject}
         sandboxTerminal={sandboxTerminal}
         sandboxStatus={sandboxStatus}
         onSetTheme={(t) => void setAppTheme(t)}
-        onToggleAlwaysApprove={() => void toggleAlways()}
+        onSetPermissionMode={(m) => void applyPermissionMode(m)}
         onToggleAllowOutside={() => void toggleAllowOutside()}
         onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
       />
@@ -1311,11 +1324,26 @@ export default function App() {
             <ElevatedSafetyChips
               sandboxTerminal={sandboxTerminal}
               allowOutsideProject={allowOutsideProject}
-              alwaysApprove={alwaysApprove}
+              permissionMode={permissionMode}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
           <div className="topbar-actions row">
+            <label className="perm-mode-topbar" title="Tool permission mode">
+              <span className="perm-mode-topbar-label">Perms</span>
+              <select
+                className="perm-mode-select"
+                value={permissionMode}
+                aria-label="Tool permission mode"
+                onChange={(e) =>
+                  void applyPermissionMode(e.target.value as PermissionMode)
+                }
+              >
+                <option value="ask">Ask</option>
+                <option value="auto">Auto</option>
+                <option value="always-approve">Always</option>
+              </select>
+            </label>
             <span
               className={`status-pill ${isOpening ? "status-pill-loading" : ""}`}
             >

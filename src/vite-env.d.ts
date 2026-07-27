@@ -131,6 +131,8 @@ export type AppInfo = {
   grokHome: string;
   userData: string;
   alwaysApprove: boolean;
+  /** ask | auto | always-approve */
+  permissionMode: "ask" | "auto" | "always-approve";
   /** When false (default), ACP fs + terminal cwd cannot leave project root */
   allowOutsideProject: boolean;
   /**
@@ -187,6 +189,9 @@ declare global {
           | { type: "declined" },
       ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
+      setPermissionMode: (
+        value: "ask" | "auto" | "always-approve",
+      ) => Promise<"ask" | "auto" | "always-approve">;
       setAllowOutsideProject: (value: boolean) => Promise<boolean>;
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;

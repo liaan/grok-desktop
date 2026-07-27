@@ -28,7 +28,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   },
   {
     name: "always-approve",
-    description: "Toggle always-approve for tool permissions",
+    description: "Toggle Always-approve permission mode (or use Settings / Perms)",
     source: "desktop",
     local: true,
   },

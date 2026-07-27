@@ -27,11 +27,13 @@ and download **one** file:
 | **Mac (Intel)** | `…-Mac-Intel.dmg` | Same as above |
 | **Source code** | GitHub **Source code (zip)** | Only if you want to build from source |
 
-That’s it. Skip anything named blockmap, yaml, AppImage, portable, or zip (except GitHub’s source zip).
+**Team install:** use Setup.exe or a DMG only. Files named `latest.yml`, `latest-mac.yml`, Mac `.zip`, or blockmap are for **in-app auto-update** (not hand install). Skip AppImage/portable.
 
 Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
 Then: **Grok Desktop** → **Sign in with browser** → **Open project…**
+
+**Updates:** in a packaged install, **Help → Check for updates…** checks GitHub Releases and downloads the next version in-app (restart when prompted). You only need a fresh installer from Releases if auto-update metadata is missing for that build.
 
 ### Mac: “damaged and can’t be opened”
 
@@ -117,7 +119,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Plugins** | Inherited by agent (little GUI summary) | Install / manage in CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
-| Tool always-approve | Settings → Agent safety | — |
+| Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | Agent `session/set_mode` + `_meta.yoloMode` / `permissionMode` on session start |
 | **Project-root safety** | On by default (Settings: “Allow outside project” off) | Off only if you need host-wide ACP FS |
 | **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |
 

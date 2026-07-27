@@ -16,6 +16,10 @@ import { resolveGrokBinary } from "./grok-home.mjs";
 import { AcpTerminalManager } from "./acp-terminals.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
 import { sessionsRootForCwd } from "./sessions.mjs";
+import {
+  normalizePermissionMode,
+  toAgentPermissionMode,
+} from "./permission-mode.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -29,6 +33,8 @@ export class GrokAcpClient extends EventEmitter {
     cwd,
     grokPath,
     alwaysApprove = false,
+    /** ask | auto | always-approve — see permission-mode.mjs */
+    permissionMode,
     /** When false (default), ACP fs/* and terminal cwd stay inside project */
     allowOutsideProject = false,
     /** When true (default), wrap ACP tool shells in an OS FS jail */
@@ -38,7 +44,12 @@ export class GrokAcpClient extends EventEmitter {
     super();
     this.cwd = cwd || process.cwd();
     this.grokPath = grokPath || resolveGrokBinary();
-    this.alwaysApprove = alwaysApprove;
+    this.permissionMode = normalizePermissionMode(
+      permissionMode,
+      alwaysApprove,
+    );
+    /** Client-side auto-respond to session/request_permission */
+    this.alwaysApprove = this.permissionMode === "always-approve";
     this.allowOutsideProject = Boolean(allowOutsideProject);
     this.sandboxTerminal = sandboxTerminal !== false;
     this.clientVersion = clientVersion;
@@ -192,6 +203,18 @@ export class GrokAcpClient extends EventEmitter {
     return this;
   }
 
+  /**
+   * Meta passed on session/new and session/load so the agent starts in the
+   * same permission mode the Desktop UI shows.
+   */
+  _sessionPermissionMeta() {
+    const mode = this.permissionMode || "ask";
+    return {
+      yoloMode: mode === "always-approve",
+      permissionMode: toAgentPermissionMode(mode),
+    };
+  }
+
   async newSession() {
     // Drop prior chat's processes so /new and session switch don't leak shells
     try {
@@ -204,6 +227,7 @@ export class GrokAcpClient extends EventEmitter {
       {
         cwd: this.cwd,
         mcpServers: [],
+        _meta: this._sessionPermissionMeta(),
       },
       { timeoutMs: LOAD_TIMEOUT_MS },
     );
@@ -241,6 +265,7 @@ export class GrokAcpClient extends EventEmitter {
         sessionId,
         cwd: this.cwd,
         mcpServers: [],
+        _meta: this._sessionPermissionMeta(),
       },
       { timeoutMs: LOAD_TIMEOUT_MS },
     );
@@ -459,20 +484,21 @@ export class GrokAcpClient extends EventEmitter {
       });
     });
 
-    // Internally-tagged response variants the agent accepts
+    // Prefer `outcome` tag (same pattern as ask_user_question); keep type aliases.
     const type = decision?.type || decision?.outcome || "abandoned";
-    if (type === "approved" || type === "approve") {
-      this._respond(id, { type: "approved" });
+    if (type === "approved" || type === "approve" || type === "Accepted") {
+      this._respond(id, { outcome: "approved", type: "approved" });
       return;
     }
     if (type === "request_changes" || type === "requestChanges") {
       this._respond(id, {
+        outcome: "request_changes",
         type: "request_changes",
         feedback: String(decision?.feedback || decision?.message || ""),
       });
       return;
     }
-    this._respond(id, { type: "abandoned" });
+    this._respond(id, { outcome: "abandoned", type: "abandoned" });
   }
 
   /**
@@ -498,15 +524,36 @@ export class GrokAcpClient extends EventEmitter {
       });
     });
 
-    const type = decision?.type || "declined";
-    if (type === "answered" || type === "answers") {
+    // Grok expects AskUserQuestionExtResponse with tag field `outcome`:
+    //   Accepted { answers, partial_answers } | SkipInterview | ChatAboutThis
+    // (error when missing: "invalid response to user question / missing field `outcome`")
+    const type = decision?.type || decision?.outcome || "declined";
+    if (
+      type === "answered" ||
+      type === "answers" ||
+      type === "Accepted" ||
+      type === "accepted"
+    ) {
       this._respond(id, {
-        type: "answered",
+        outcome: "Accepted",
         answers: decision?.answers ?? [],
+        partial_answers: decision?.partial_answers ?? decision?.partialAnswers ?? [],
       });
       return;
     }
-    this._respond(id, { type: "declined" });
+    if (
+      type === "chat" ||
+      type === "ChatAboutThis" ||
+      type === "chat_about_this"
+    ) {
+      this._respond(id, {
+        outcome: "ChatAboutThis",
+        message: String(decision?.message || decision?.feedback || ""),
+      });
+      return;
+    }
+    // Skip / decline
+    this._respond(id, { outcome: "SkipInterview" });
   }
 
   /**
@@ -626,7 +673,56 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   setAlwaysApprove(value) {
-    this.alwaysApprove = Boolean(value);
+    // Legacy boolean API — maps to always-approve vs ask
+    return this.setPermissionMode(value ? "always-approve" : "ask");
+  }
+
+  /**
+   * Apply permission mode on the client and push it into the live agent session.
+   * @param {string} mode
+   * @returns {Promise<'ask'|'auto'|'always-approve'>}
+   */
+  async setPermissionMode(mode) {
+    this.permissionMode = normalizePermissionMode(mode);
+    this.alwaysApprove = this.permissionMode === "always-approve";
+
+    if (!this.sessionId || !this.ready || !this.proc) {
+      return this.permissionMode;
+    }
+
+    const agentMode = toAgentPermissionMode(this.permissionMode);
+
+    // Prefer ACP session/set_mode (Grok supports it alongside session modes)
+    try {
+      await this.request(
+        "session/set_mode",
+        {
+          sessionId: this.sessionId,
+          modeId: agentMode,
+        },
+        { timeoutMs: 15_000 },
+      );
+      return this.permissionMode;
+    } catch {
+      /* fall through — older agents or different mode catalog */
+    }
+
+    // Fallback: CLI slash commands (same as TUI /always-approve and /auto)
+    try {
+      let slash;
+      if (this.permissionMode === "always-approve") {
+        slash = "/always-approve on";
+      } else if (this.permissionMode === "auto") {
+        slash = "/auto";
+      } else {
+        slash = "/always-approve off";
+      }
+      await this.prompt(slash);
+    } catch {
+      /* client-side alwaysApprove still applies for always-approve mode */
+    }
+
+    return this.permissionMode;
   }
 
   setAllowOutsideProject(value) {

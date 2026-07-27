@@ -505,6 +505,52 @@ button {
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  align-items: center;
+  gap: 8px;
+}
+
+.perm-mode-topbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.perm-mode-topbar-label {
+  font-weight: 600;
+}
+
+.perm-mode-select,
+.settings-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--code-bg, rgba(20, 20, 26, 0.85));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  max-width: 11rem;
+}
+
+.settings-select {
+  font-size: 13px;
+  padding: 6px 10px;
+  max-width: 16rem;
+  align-self: flex-start;
+}
+
+.settings-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+[data-theme="light"] .perm-mode-select,
+[data-theme="light"] .settings-select {
+  background: #fff;
 }
 
 .status-pill {
@@ -1514,6 +1560,43 @@ button {
   margin-bottom: 12px;
 }
 
+.perm-card-action {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  margin: 0 0 4px;
+}
+
+.perm-card-summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.perm-card-detail {
+  margin: 0 0 8px !important;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.perm-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
 .perm-card h3 {
   margin: 0 0 6px;
   font-size: 13px;
@@ -1528,6 +1611,18 @@ button {
   background: var(--code-bg);
   border-radius: 8px;
   padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tool-action-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
 .mode-banner {

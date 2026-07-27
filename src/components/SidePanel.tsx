@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatToolDisplay } from "../lib/tool-display";
+import { formatToolCard } from "../lib/tool-display";
 import {
   basen,
   isLexicallyUnder,
@@ -184,33 +184,52 @@ export function SidePanel({
                       { optionId: "allow-once", name: "Allow once" },
                       { optionId: "reject", name: "Reject" },
                     ];
-                const display = formatToolDisplay({
+                const card = formatToolCard({
                   title: tool?.title,
+                  kind: tool?.kind,
                   raw: tool?.rawInput,
                 });
+                const detailText =
+                  card.detail &&
+                  (card.isCommand && !card.detail.startsWith("$")
+                    ? `$ ${card.detail}`
+                    : card.detail);
                 return (
                   <div key={p.reqId} className="perm-card">
-                    <h3>{tool?.title || "Permission required"}</h3>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {tool?.kind || "tool"} · {tool?.toolCallId || p.reqId}
-                    </div>
-                    {display.subtitle ? (
-                      <div className="tool-subtitle" style={{ marginTop: 6 }}>
-                        {display.subtitle}
-                      </div>
+                    <div className="perm-card-action">{card.action}</div>
+                    {card.summary ? (
+                      <h3 className="perm-card-summary" title={card.fullTitle}>
+                        {card.summary}
+                      </h3>
+                    ) : card.fullTitle && !card.detail ? (
+                      <h3 className="perm-card-summary" title={card.fullTitle}>
+                        {card.fullTitle.length > 100
+                          ? `${card.fullTitle.slice(0, 100)}…`
+                          : card.fullTitle}
+                      </h3>
                     ) : null}
-                    {display.input ? (
-                      <pre className="tool-input" style={{ marginTop: 8 }}>
-                        {display.input}
+                    {detailText ? (
+                      <pre
+                        className="tool-input perm-card-detail"
+                        title={card.detail}
+                      >
+                        {detailText}
                       </pre>
                     ) : null}
+                    <div className="perm-card-meta">
+                      {tool?.kind || "tool"}
+                      {tool?.toolCallId
+                        ? ` · ${String(tool.toolCallId).slice(0, 18)}…`
+                        : ""}
+                    </div>
                     <div className="perm-actions">
                       {options.map((opt) => (
                         <button
                           key={opt.optionId}
                           type="button"
                           className={
-                            opt.optionId.includes("allow")
+                            opt.optionId.includes("allow") ||
+                            /yes|proceed|approve/i.test(opt.name || "")
                               ? "btn primary"
                               : "btn"
                           }

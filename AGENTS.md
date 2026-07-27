@@ -90,17 +90,23 @@ Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts
    ```
 4. Wait for **Build & Release** (`.github/workflows/release.yml`).
 5. Verify assets at https://github.com/liaan/grok-desktop/releases  
-   **Only** these should appear (plus GitHub’s automatic Source code zip/tar):
+   **Team installers** (what humans download):
    - `GrokDesktop-*-Windows-Setup.exe`
    - `GrokDesktop-*-Mac-AppleSilicon.dmg`
    - `GrokDesktop-*-Mac-Intel.dmg`
-   No blockmaps, yml, AppImage, portable, or updater zips. CI renames/strips noise on purpose.
+   **Auto-update metadata** (for Help → Check for updates; not for hand install):
+   - `latest.yml` (Windows)
+   - `latest-mac.yml` + `GrokDesktop-*-Mac-arm64.zip` / `…-Mac-x64.zip`
+   - optional `*.blockmap`
+   No AppImage/portable. CI renames DMGs for friendlier names; **mac zips keep arch names** so yml paths stay valid.
 6. Point the team at **Releases → latest**.
 
-### Releases stay simple
+### Releases and auto-update
 
-- Ship **installers only**. Auto-update metadata (blockmap / latest.yml / mac zip) is intentionally **not** published — it confuses non-dev users. Manual download of new releases is fine for the team.
-- `electron/auto-update.mjs` may still run in packaged apps; without `latest*.yml` on the Release it quietly no-ops (safe).
+- Softprops still owns the Release page — **do not** enable electron-builder `--publish`.
+- CI **does** upload `latest*.yml` + mac zip so `electron-updater` works in packaged apps.
+- Help → **Check for updates…** runs `checkForUpdatesInteractive()` (download + restart dialog). **Open Releases page** is the manual fallback.
+- First install after enabling auto-update still needs a normal installer once; later upgrades can be in-app.
 
 ### Manual / test build without a release
 
@@ -200,6 +206,18 @@ Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolvePr
 
 Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
 
+### Tool permission mode (Ask / Auto / Always approve)
+
+Desktop stores `permissionMode` in `desktop-state.json` (`ask` default; migrates legacy `alwaysApprove: true` → `always-approve`).
+
+| Mode | Client | Agent |
+|------|--------|--------|
+| `ask` | Show every `session/request_permission` | `_meta.permissionMode: default` |
+| `auto` | Show only escalations the agent still requests | `_meta.permissionMode: auto` |
+| `always-approve` | Auto-respond allow-once (except plan exit formality) | `_meta.yoloMode: true` + `permissionMode: bypassPermissions` |
+
+Live changes call `session/set_mode` when available, else slash `/always-approve on|off` or `/auto`. UI: topbar **Perms** select + Settings dropdown.
+
 ### Plan mode & background tasks (GUI)
 
 | Surface | Behavior |
@@ -245,4 +263,5 @@ Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `ubuntu:24.04
 - [ ] Tag `vX.Y.Z` matches `package.json` version (CI enforces)
 - [ ] Release assets use `GrokDesktop-…` names (no spaces)
 - [ ] README team install still points at Releases with correct name patterns
-- [ ] Release assets are only Setup.exe + two DMGs (no blockmap/yml/AppImage noise)
+- [ ] Team installers: Setup.exe + two DMGs; auto-update assets (latest*.yml, mac zip) also present
+- [ ] Help → Check for updates uses electron-updater (not only a browser link)

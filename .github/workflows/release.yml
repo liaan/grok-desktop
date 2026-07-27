@@ -63,13 +63,15 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Keep only human installers
+      - name: Prepare release artifacts
         shell: bash
         run: |
-          # Drop blockmaps, yml, zips, and any other electron-builder noise
+          # Keep human installers + auto-update metadata (yml/zip/blockmap).
+          # Drop Linux noise if any. Do NOT delete latest*.yml or mac zip —
+          # electron-updater needs them for Help → Check for updates.
           cd release
-          rm -f *.blockmap latest*.yml *.zip *.AppImage 2>/dev/null || true
-          # mac: friendlier names (arm64 = Apple Silicon, x64 = Intel)
+          rm -f *.AppImage 2>/dev/null || true
+          # mac: friendlier DMG names (zip keeps -arm64 / -x64 for latest-mac.yml)
           if ls GrokDesktop-*-Mac-arm64.dmg 1>/dev/null 2>&1; then
             for f in GrokDesktop-*-Mac-arm64.dmg; do
               mv "$f" "${f%-Mac-arm64.dmg}-Mac-AppleSilicon.dmg"
@@ -90,6 +92,9 @@ jobs:
           path: |
             release/*.exe
             release/*.dmg
+            release/*.zip
+            release/latest*.yml
+            release/*.blockmap
           if-no-files-found: error
           retention-days: 14
 
@@ -126,7 +131,9 @@ jobs:
             | **Mac (Intel)** | `GrokDesktop-…-Mac-Intel.dmg` |
             | **Source code** | Use GitHub’s **Source code (zip)** under Assets |
 
-            Ignore anything else. You do **not** need AppImage, blockmap, yaml, or portable builds.
+            **Team install:** use Setup.exe or a DMG only.
+
+            Other assets (`latest.yml`, `latest-mac.yml`, Mac `.zip`, blockmaps) are for **in-app auto-update** (Help → Check for updates). You do not need to download them by hand.
 
             ### After download
             1. Install **Grok Build CLI** (`grok`) — this app is only the GUI.
@@ -135,6 +142,7 @@ jobs:
                `xattr -cr "/Applications/Grok Desktop.app"`
                (macOS says “damaged” for unsigned Safari downloads — that command clears quarantine; app is fine.)
             4. Open app → **Sign in with browser** → **Open project…**
+            5. Later: **Help → Check for updates…** downloads and installs in-app (no browser).
           files: |
             dist-installers/**
         env:

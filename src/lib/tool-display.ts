@@ -12,6 +12,22 @@ export type ToolDisplay = {
   output?: string;
 };
 
+/**
+ * Structured card for Approvals / tool rows — readable action + body.
+ */
+export type ToolCard = {
+  /** Short verb: Execute, Read, Search… */
+  action: string;
+  /** Why / human description (not the full shell line) */
+  summary?: string;
+  /** Command, path, or pattern block */
+  detail?: string;
+  /** Full original title for tooltip */
+  fullTitle?: string;
+  /** Prefix detail with $ when it's a shell command */
+  isCommand?: boolean;
+};
+
 const INPUT_BODY_CAP = 2000;
 const OUTPUT_CAP = 24_000; // ~24 KiB — keep React timeline light
 
@@ -209,7 +225,10 @@ export function formatToolInput(raw: unknown): {
     if (Array.isArray(raw.args) && raw.args.length) {
       parts.push(raw.args.map(String).join(" "));
     }
-    return { subtitle, input: parts.filter(Boolean).join(" ") };
+    return {
+      subtitle,
+      input: truncate(parts.filter(Boolean).join(" "), INPUT_BODY_CAP),
+    };
   }
 
   // Grep / search BEFORE path (raw often has both pattern + path)
@@ -251,7 +270,14 @@ export function formatToolDisplay(item: {
   content?: unknown;
   title?: string;
 }): ToolDisplay {
-  const { subtitle, input } = formatToolInput(item.raw);
+  let { subtitle, input } = formatToolInput(item.raw);
+
+  // Title often is `Execute \`long command\`` when rawInput is thin
+  if (!input && item.title) {
+    const fromTitle = commandFromExecuteTitle(item.title);
+    if (fromTitle) input = truncate(fromTitle, INPUT_BODY_CAP);
+  }
+
   let output = extractTextFromContent(item.content);
 
   if (
@@ -277,5 +303,96 @@ export function formatToolDisplay(item: {
     subtitle,
     input: input || undefined,
     output: output || undefined,
+  };
+}
+
+const KIND_LABELS: Record<string, string> = {
+  execute: "Execute",
+  read: "Read",
+  edit: "Edit",
+  delete: "Delete",
+  move: "Move",
+  search: "Search",
+  fetch: "Fetch",
+  think: "Think",
+  other: "Tool",
+  switch_mode: "Switch mode",
+};
+
+/**
+ * Pull shell command out of agent titles like:
+ *   Execute `ls -la`
+ *   Execute ls -la && …
+ */
+export function commandFromExecuteTitle(title: string): string | undefined {
+  const t = String(title || "").trim();
+  if (!t) return undefined;
+  const tick = t.match(/^Execute\s+`([\s\S]+)`\s*$/i);
+  if (tick?.[1]) return tick[1].trim();
+  const plain = t.match(/^Execute\s+(.+)$/i);
+  if (plain?.[1] && plain[1].length > 12) return plain[1].trim();
+  return undefined;
+}
+
+/**
+ * Short human action label for permission / tool cards.
+ */
+export function prettyToolAction(
+  kind?: string | null,
+  title?: string | null,
+): string {
+  const k = String(kind || "")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  if (KIND_LABELS[k]) return KIND_LABELS[k];
+  const t = String(title || "").trim();
+  const m = t.match(/^([A-Za-z][\w /-]{0,24}?)(?:\s*[`:]|\s*$)/);
+  if (m && !m[1].includes("/")) return m[1].trim();
+  return "Permission required";
+}
+
+/**
+ * Approval-friendly layout: action + why + command/path (not one giant heading).
+ */
+export function formatToolCard(item: {
+  title?: string | null;
+  kind?: string | null;
+  raw?: unknown;
+  content?: unknown;
+}): ToolCard & ToolDisplay {
+  const display = formatToolDisplay({
+    title: item.title || undefined,
+    raw: item.raw,
+    content: item.content,
+  });
+  const action = prettyToolAction(item.kind, item.title);
+  const rawObj = isPlainObject(item.raw) ? item.raw : null;
+  const isCommand =
+    Boolean(rawObj && typeof rawObj.command === "string") ||
+    Boolean(item.title && /^Execute\b/i.test(String(item.title)));
+
+  let summary = display.subtitle;
+  if (!summary) {
+    const t = String(item.title || "").trim();
+    // Don't use the full Execute `…` line as the summary
+    if (t && !commandFromExecuteTitle(t) && t.length < 120) {
+      summary = t;
+    }
+  }
+
+  let detail = display.input;
+  if (detail && isCommand && !detail.startsWith("$")) {
+    // Keep plain; UI adds $ prefix
+  }
+
+  return {
+    action,
+    summary: summary || undefined,
+    detail: detail || undefined,
+    fullTitle: item.title ? String(item.title) : undefined,
+    isCommand,
+    subtitle: display.subtitle,
+    input: display.input,
+    output: display.output,
   };
 }
