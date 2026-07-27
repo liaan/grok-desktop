@@ -1,16 +1,6 @@
 # Builds installers for Windows, macOS, and Linux.
-#
-# How to ship a release to the team:
-#   1. Bump "version" in package.json (e.g. 0.1.0 → 0.1.1)
-#   2. Commit, push to master
-#   3. Tag and push:
-#        git tag v0.1.1
-#        git push origin v0.1.1
-#   4. Wait for this workflow → GitHub → Releases
-#   5. Send the guys the download links from that release
-#
-# You can also run it manually (Actions → Build & Release → Run workflow)
-# to get downloadable artifacts without creating a tagged release.
+# Release process for agents: see AGENTS.md (canonical).
+# Team install: see README.md.
 
 name: Build & Release
 
@@ -56,14 +46,25 @@ jobs:
           node-version: "20"
           cache: npm
 
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "OK: tag v$TAG matches package.json $PKG"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build installers
-        run: npx vite build && npx electron-builder ${{ matrix.args }} --publish never
+        run: npm run build && npx electron-builder ${{ matrix.args }} --publish never
         env:
-          # Unsigned builds are fine for internal team use.
-          # (Windows SmartScreen / macOS Gatekeeper may show a one-time warning.)
+          # Unsigned builds for internal team use (SmartScreen / Gatekeeper one-time warning).
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload build artifacts
@@ -74,15 +75,12 @@ jobs:
             release/*.exe
             release/*.dmg
             release/*.AppImage
-            release/*.zip
-            release/*.blockmap
           if-no-files-found: error
           retention-days: 14
 
   publish-release:
     name: Publish GitHub Release
     needs: build
-    # Only create a Release page when a version tag was pushed
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
@@ -104,22 +102,21 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            ## Install (no npm needed)
+            ## Install (no npm)
 
-            | OS | What to download |
-            |----|------------------|
-            | **Windows** | `Grok Desktop Setup … .exe` (installer) — or the portable `.exe` if you prefer no install |
-            | **macOS** | `.dmg` — open it, drag **Grok Desktop** to Applications |
-            | **Linux** | `.AppImage` — make executable and run (`chmod +x …AppImage && ./…AppImage`) |
+            Download the file for your OS below.
 
-            ### First-time notes
+            | OS | Look for |
+            |----|----------|
+            | **Windows** | `GrokDesktop-…-win-…-Setup.exe` (installer) or `…-portable.exe` |
+            | **macOS** | `GrokDesktop-…-mac-arm64.dmg` (Apple Silicon) or `…-mac-x64.dmg` (Intel) |
+            | **Linux** | `GrokDesktop-…-linux-….AppImage` — `chmod +x` then run |
 
-            1. You still need the **Grok Build CLI** (`grok`) installed on the machine — this app is only the GUI.
-            2. Unsigned build: Windows may show SmartScreen (“Windows protected your PC”) → **More info** → **Run anyway**. On macOS, right-click the app → **Open** the first time.
-            3. Open the app → **Sign in with browser** → **Open project…**
+            Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
-            ---
-            Built automatically from tag `${{ github.ref_name }}`.
+            Unsigned build: Windows → More info → Run anyway. macOS → right-click → Open.
+
+            Full team instructions: repository README.
           files: |
             dist-installers/**
         env:

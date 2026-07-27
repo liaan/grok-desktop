@@ -14,7 +14,8 @@ User → Grok Desktop (this repo) → grok agent stdio (ACP/JSON-RPC) → ~/.gro
 Upstream agent: https://github.com/xai-org/grok-build  
 This GUI: https://github.com/liaan/grok-desktop  
 
-See also: `FORK.md`, `README.md`.
+Team-facing install docs: **`README.md` only** (do not restate them elsewhere).  
+Agent/maintainer process: **this file only**.
 
 ---
 
@@ -24,8 +25,8 @@ The human owner (**liaan**) wants agents to **run the show**: package, release, 
 
 | Who | Does what |
 |-----|-----------|
-| **Team users** | Download installer from GitHub Releases. No npm. |
-| **Agents / maintainers** | Code, `npm run dist` / CI, bump version, tag, push, verify Release assets. |
+| **Team users** | Download installer from GitHub Releases. No npm. See README. |
+| **Agents / maintainers** | Code, CI, bump version, tag, push, verify Release assets. |
 | **Human** | Product direction only. |
 
 ---
@@ -42,10 +43,6 @@ grok-desktop/
     backbone.mjs      # grok inspect (skills, MCP summary)
     grok-home.mjs     # resolve grok binary + GROK_HOME
   src/                # Renderer (React + Vite + TS)
-    App.tsx
-    components/
-    lib/
-    styles/
   dist/               # Vite build output (gitignored)
   release/            # electron-builder output (gitignored)
   .github/workflows/
@@ -54,6 +51,7 @@ grok-desktop/
 
 - **Main** loads UI from Vite in dev (`http://127.0.0.1:5173`); when packaged (`app.isPackaged`) loads `dist/index.html`.
 - Vite `base` is `./` so `file://` packaging works.
+- Installer filenames: `GrokDesktop-${version}-${os}-${arch}…` (see `package.json` `build.artifactName` / platform overrides). No spaces.
 
 ---
 
@@ -72,56 +70,51 @@ grok-desktop/
 
 **End users never run these.** They use GitHub Release installers.
 
-Runtime dependency (all environments): **`grok` CLI** on PATH or known install paths (`~/.grok/bin/…`), override with `GROK_BINARY` / `GROK_HOME` / `XAI_API_KEY`.
+Runtime dependency: **`grok` CLI** (`GROK_BINARY` / `GROK_HOME` / `XAI_API_KEY` overrides).
 
 ---
 
-## Shipping installers (agent checklist)
+## Shipping installers (canonical checklist)
 
-Preferred path is **CI**, not local cross-builds.
+Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts own the GitHub Release page — do **not** enable electron-builder `--publish`.
 
 ### Cut a release
 
-1. Ensure `package.json` `version` matches the tag you will push (e.g. `0.1.0` → tag `v0.1.0`).
-2. Commit all release-related changes on `master`.
-3. Push `master`.
-4. Create and push an annotated or lightweight tag:
+1. Bump `version` in `package.json` (e.g. `0.1.1` → `0.1.2`). Tag **must** be `v` + that version; CI fails otherwise.
+2. Commit all release-related changes on `master` and push.
+3. Tag and push:
    ```bash
-   git tag v0.1.0
+   git tag v0.1.2
    git push origin master
-   git push origin v0.1.0
+   git push origin v0.1.2
    ```
-5. Workflow **Build & Release** (`.github/workflows/release.yml`) builds:
-   - Windows: NSIS setup + portable `.exe`
-   - macOS: `.dmg` (x64 + arm64)
-   - Linux: `.AppImage` (x64)
-6. On tag `v*`, the workflow publishes a **GitHub Release** with those assets.
-7. Verify: https://github.com/liaan/grok-desktop/releases  
-8. Point the team at **Releases → latest**. They need Grok CLI separately.
+4. Wait for **Build & Release** (`.github/workflows/release.yml`).
+5. Verify assets at https://github.com/liaan/grok-desktop/releases  
+   Expect only installers (`.exe` / `.dmg` / `.AppImage`) — no blockmaps.
+6. Point the team at **Releases → latest** (README already links there).
 
 ### Manual / test build without a release
 
-- GitHub → **Actions → Build & Release → Run workflow**  
-  Artifacts upload; no Release page unless ref is a `v*` tag.
+GitHub → **Actions → Build & Release → Run workflow**  
+Artifacts only; no Release page unless ref is a `v*` tag.
 
 ### Local packaging notes
 
-- Build Windows installers on Windows (or CI). Do not rely on macOS cross-compile for shipping.
-- Builds are **unsigned** by design for now (`CSC_IDENTITY_AUTO_DISCOVERY=false` in CI). Expect SmartScreen / Gatekeeper one-time warnings; document that for users (already in release body + README).
+- Ship Windows installers via CI (or a Windows machine). Do not rely on macOS cross-compile.
+- Builds are **unsigned** (`CSC_IDENTITY_AUTO_DISCOVERY=false` in CI).
 - Never commit `dist/`, `release/`, or `node_modules/`.
+- If you change installer naming or platforms, update **README** team-install table and `artifactName` together.
 
 ---
 
 ## Coding conventions
 
-- **Electron main**: ESM (`.mjs`). Keep `preload` as **`.cjs`** (Electron preload constraints).
-- **Renderer**: React function components + TypeScript. Prefer small focused components under `src/components/`.
-- Do **not** reimplement the agent, tools, or skill runner inside this repo. Extend the GUI / ACP client only.
-- Prefer reusing CLI behavior via spawn + IPC over duplicating auth or config parsing.
-- Match existing style: plain JSDoc where useful in main process; TS in renderer.
-- No drive-by refactors. No new deps unless needed for the task.
-- Keep README user-facing install section accurate whenever packaging changes.
-- Keep this `AGENTS.md` accurate when architecture or release process changes.
+- **Electron main**: ESM (`.mjs`). Keep `preload` as **`.cjs`**.
+- **Renderer**: React function components + TypeScript under `src/`.
+- Do **not** reimplement the agent, tools, or skill runner here. GUI / ACP client only.
+- Prefer CLI via spawn + IPC over duplicating auth or config parsing.
+- Match existing style. No drive-by refactors. No new deps unless needed.
+- Keep **README** accurate for team install. Keep **this file** accurate for release process. Do not duplicate those sections into the workflow or release body beyond a short pointer.
 
 ---
 
@@ -136,16 +129,17 @@ Agent → client: `session/update`, `session/request_permission`, optional `fs/*
 
 ## Security / product boundaries
 
-- `contextIsolation: true`, `nodeIntegration: false` in the BrowserWindow — keep it that way.
-- External links open via `shell.openExternal`, not in-app.
-- Auth is delegated to the Grok CLI flows; do not invent a parallel token store unless product requires it.
-- This app is MIT; the `grok` binary has its own license — do not vendor agent source here.
+- `contextIsolation: true`, `nodeIntegration: false` — keep it that way.
+- External links via `shell.openExternal`.
+- Auth via Grok CLI flows; no parallel token store unless product requires it.
+- MIT GUI; do not vendor agent source here.
 
 ---
 
 ## What “done” looks like for packaging work
 
-- [ ] `npm run pack` (or CI matrix) succeeds for the platforms you claim
-- [ ] README “Install for the team” points at GitHub Releases
-- [ ] Tag `vX.Y.Z` exists, matches `package.json` version, Release has Win/mac/Linux assets
-- [ ] `AGENTS.md` still describes the real release path
+- [ ] CI matrix builds Win / mac / Linux installers
+- [ ] Tag `vX.Y.Z` matches `package.json` version (CI enforces)
+- [ ] Release assets use `GrokDesktop-…` names (no spaces)
+- [ ] README team install still points at Releases with correct name patterns
+- [ ] No dead electron-builder `publish` config; release via softprops only

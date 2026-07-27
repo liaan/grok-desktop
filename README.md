@@ -4,20 +4,21 @@ Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding a
 
 ## Install for the team (no npm)
 
-**Nobody needs Node or npm to use this app.** Download the installer from the latest
+**Nobody needs Node or npm to use this app.** Download from the latest
 [GitHub Release](https://github.com/liaan/grok-desktop/releases/latest):
 
-| OS | Download | What to do |
-|----|----------|------------|
-| **Windows** | `Grok Desktop Setup ….exe` | Double-click → Next → finish. Optional: portable `.exe` needs no install. |
-| **macOS** | `….dmg` | Open DMG → drag **Grok Desktop** into Applications. First launch: right-click → **Open**. |
-| **Linux** | `….AppImage` | `chmod +x "Grok Desktop-….AppImage"` then run it. |
+| OS | File pattern | What to do |
+|----|--------------|------------|
+| **Windows** | `GrokDesktop-…-win-…-Setup.exe` | Double-click installer. Or use `…-portable.exe` (no install). |
+| **macOS (Apple Silicon)** | `GrokDesktop-…-mac-arm64.dmg` | Open DMG → drag **Grok Desktop** to Applications. First launch: right-click → **Open**. |
+| **macOS (Intel)** | `GrokDesktop-…-mac-x64.dmg` | Same as above. |
+| **Linux** | `GrokDesktop-…-linux-….AppImage` | `chmod +x GrokDesktop-*.AppImage` then run it. |
 
 Also install the **Grok Build CLI** (`grok`) on each machine — this app is only the GUI and talks to that CLI.
 
 Then: open **Grok Desktop** → **Sign in with browser** → **Open project…**
 
-> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned internal build). That’s expected — choose **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
+> Windows SmartScreen / macOS Gatekeeper may warn once (unsigned internal build). That’s expected — **More info → Run anyway** (Windows) or right-click → **Open** (macOS).
 
 ---
 
@@ -55,13 +56,13 @@ Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI i
 | Diff review pane | Planned |
 | Multi-session tabs | Planned |
 | Settings UI (model / MCP) | Planned |
-| Native installers (Windows / macOS / Linux) | Done (`npm run dist`) |
+| Native installers (Windows / macOS / Linux) | Done — [Releases](https://github.com/liaan/grok-desktop/releases) |
 
 ## Requirements
 
-1. **Node.js 20+** — only for building/running from source (`npm run dev`)
-2. **Grok Build CLI** installed (`grok` on `PATH`, or `~/.grok/bin/grok` / `grok.exe`)
-3. **Sign-in** from the app (browser OAuth), or an API key / `XAI_API_KEY`
+1. **Grok Build CLI** installed (`grok` on `PATH`, or `~/.grok/bin/grok` / `grok.exe`)
+2. **Sign-in** from the app (browser OAuth), or an API key / `XAI_API_KEY`
+3. **Node.js 20+** — only if building/running from source (`npm run dev`)
 
 Install the CLI with the official installer for your OS (see [Grok Build](https://github.com/xai-org/grok-build) / project docs), then start this app and use **Sign in with browser**.
 
@@ -75,7 +76,7 @@ Optional environment variables:
 | `GROK_HOME` | Override config/auth home (default `~/.grok`) |
 | `XAI_API_KEY` | API key fallback when no session token is present |
 
-## Quick start
+## Quick start (developers)
 
 ```bash
 git clone https://github.com/liaan/grok-desktop.git
@@ -94,41 +95,22 @@ npm run build
 npm start
 ```
 
-## Ship a release (maintainer only)
-
-GitHub Actions builds Windows / macOS / Linux installers automatically. The team only downloads from **Releases** — they never touch npm.
-
-### Easy path (recommended)
+Local installer smoke-test (current OS only):
 
 ```bash
-# 1. Bump version in package.json (e.g. 0.1.0 → 0.1.1), commit & push
-
-# 2. Tag and push the tag
-git tag v0.1.1
-git push origin v0.1.1
+npm run pack    # unpacked app under release/
+npm run dist    # installer for this machine
 ```
-
-Wait a few minutes → open **GitHub → Releases** → send the guys the download links.
-
-You can also trigger **Actions → Build & Release → Run workflow** for a test build (artifacts only, no release page unless you pushed a `v*` tag).
-
-### Local build (optional)
-
-```bash
-npm install
-npm run dist:win    # Windows machine
-npm run dist:mac    # Mac
-npm run dist:linux  # Linux
-npm run pack        # unpackaged folder for a quick smoke test
-```
-
-**Important:** packaging only ships the GUI. Users still need the **Grok Build CLI** (`grok` / `grok.exe`), or set `GROK_BINARY`.
 
 ### First launch
 
 1. If Grok Build is missing, use **Open install guide** in the app.
 2. Click **Sign in with browser** (or device code / API key).
 3. **Open project…** and chat — the agent uses the same skills and MCP as the CLI.
+
+## Maintainers / agents
+
+How to cut a release, CI, packaging invariants: **`AGENTS.md`** (canonical). Do not duplicate that process here.
 
 ## Architecture
 

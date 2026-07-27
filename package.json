@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",
@@ -10,12 +10,12 @@
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build",
     "start": "electron .",
-    "preview": "vite build && electron .",
-    "pack": "vite build && electron-builder --dir",
-    "dist": "vite build && electron-builder",
-    "dist:win": "vite build && electron-builder --win",
-    "dist:mac": "vite build && electron-builder --mac",
-    "dist:linux": "vite build && electron-builder --linux"
+    "preview": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -37,6 +37,7 @@
   "build": {
     "appId": "com.karman.grok-desktop",
     "productName": "Grok Desktop",
+    "artifactName": "GrokDesktop-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -62,7 +63,11 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "GrokDesktop-${version}-win-${arch}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "GrokDesktop-${version}-win-${arch}-portable.${ext}"
     },
     "mac": {
       "target": [
@@ -73,7 +78,8 @@
       ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "artifactName": "GrokDesktop-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -82,11 +88,8 @@
           "arch": ["x64"]
         }
       ],
-      "category": "Development"
-    },
-    "publish": {
-      "provider": "github",
-      "releaseType": "release"
+      "category": "Development",
+      "artifactName": "GrokDesktop-${version}-linux-${arch}.${ext}"
     }
   }
 }
