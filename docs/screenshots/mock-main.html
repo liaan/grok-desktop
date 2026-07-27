@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Grok Desktop — main</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c0c0f;
+      --bg-elevated: #14141a;
+      --bg-soft: #1a1a22;
+      --border: #2a2a35;
+      --border-soft: #22222c;
+      --text: #f2f2f5;
+      --text-muted: #9a9aab;
+      --accent: #a78bfa;
+      --accent-2: #60a5fa;
+      --success: #34d399;
+      --warn: #fbbf24;
+      --user-bubble: #1e293b;
+      --radius: 12px;
+      --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: #050508;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    .window {
+      width: 1280px;
+      height: 780px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #2e2e3a;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04),
+        0 40px 100px rgba(0,0,0,0.65),
+        0 0 80px rgba(124, 58, 237, 0.12);
+      display: grid;
+      grid-template-columns: 260px 1fr 300px;
+      background: var(--bg);
+    }
+    /* sidebar */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, #101016 0%, #0c0c0f 100%);
+      display: flex;
+      flex-direction: column;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .brand-mark {
+      border-radius: 9px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 22px rgba(255,255,255,0.12);
+    }
+    .brand h1 { margin: 0; font-size: 15px; font-weight: 650; }
+    .brand p { margin: 3px 0 0; font-size: 11px; color: var(--text-muted); }
+    .sec { padding: 12px; }
+    .sec h2 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .session {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(167, 139, 250, 0.12);
+      border: 1px solid rgba(167, 139, 250, 0.35);
+      margin-bottom: 6px;
+    }
+    .session .name { font-size: 13px; font-weight: 600; }
+    .session .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .session.idle {
+      background: transparent;
+      border-color: transparent;
+    }
+    .session.idle:hover { background: var(--bg-soft); }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      width: 100%;
+      text-align: left;
+      margin-bottom: 8px;
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+      border-color: #6d28d9;
+      color: white;
+      font-weight: 600;
+      text-align: center;
+    }
+    .recent {
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+    }
+    .recent .n { font-size: 13px; display: block; }
+    .recent .p { font-size: 11px; color: var(--text-muted); }
+    .recent.active {
+      background: rgba(167, 139, 250, 0.1);
+      border: 1px solid rgba(167, 139, 250, 0.25);
+    }
+    .footer {
+      margin-top: auto;
+      padding: 12px;
+      border-top: 1px solid var(--border-soft);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .footer label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    /* main */
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--bg);
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-soft);
+      min-height: 52px;
+    }
+    .topbar-project {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .topbar-project strong { color: var(--text); font-weight: 600; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--success);
+    }
+    .status .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    .timeline {
+      flex: 1;
+      overflow: hidden;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .msg {
+      max-width: 92%;
+      border-radius: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-soft);
+      background: #15151c;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user-bubble);
+      border-color: #334155;
+    }
+    .msg.user-command {
+      border-color: rgba(167, 139, 250, 0.45);
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.14) 0%, var(--user-bubble) 55%);
+    }
+    .meta {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .meta-role { font-weight: 600; color: #c4b5fd; }
+    .msg.user .meta-role { color: #93c5fd; }
+    .body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .cmd-invocation { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .cmd-badge {
+      font-size: 10px;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 165, 250, 0.4);
+      color: var(--accent-2);
+      background: rgba(96, 165, 250, 0.1);
+    }
+    .cmd-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--accent);
+      background: rgba(0,0,0,0.25);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .cmd-args { font-size: 14px; margin-top: 4px; }
+    .tool {
+      border: 1px solid #2a2a38;
+      background: #12121a;
+      border-radius: 12px;
+      padding: 10px 12px;
+      max-width: 92%;
+    }
+    .tool-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .tool-status {
+      font-size: 11px;
+      color: var(--success);
+      font-weight: 500;
+      text-transform: lowercase;
+    }
+    .tool-input {
+      margin: 8px 0 0;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: pre-wrap;
+    }
+    .tool-output {
+      margin: 8px 0 0;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: #0a0a0e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+    .composer {
+      border-top: 1px solid var(--border-soft);
+      padding: 12px 16px 16px;
+    }
+    .composer-box {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--bg-elevated);
+      padding: 12px 14px;
+      min-height: 72px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .composer-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .composer-actions .btn {
+      width: auto;
+      padding: 8px 16px;
+    }
+    /* right panel */
+    .panel {
+      border-left: 1px solid var(--border);
+      background: #0e0e14;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-soft);
+      min-height: 52px;
+      align-items: flex-end;
+      padding: 0 8px;
+    }
+    .panel-tabs span {
+      padding: 12px 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+    }
+    .panel-tabs span.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+    }
+    .panel-body { padding: 12px; flex: 1; overflow: hidden; }
+    .path {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .file-row.dir { color: var(--text); font-weight: 650; }
+    .file-row.file { color: var(--text-muted); font-weight: 400; }
+    .caption {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: #666;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <aside class="sidebar">
+      <div class="brand">
+        <svg class="brand-mark" width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="7.5" fill="#0A0A0A"/>
+          <rect x="0.5" y="0.5" width="31" height="31" rx="7.25" stroke="#FFFFFF" stroke-opacity="0.14"/>
+          <circle cx="16" cy="16" r="10" stroke="#FFFFFF" stroke-opacity="0.22"/>
+          <path d="M16 6 A10 10 0 0 1 26 16" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1.35" stroke-linecap="round"/>
+          <path d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z" fill="#FFFFFF"/>
+          <circle cx="16" cy="15" r="1.55" fill="#0A0A0A"/>
+          <circle cx="16" cy="15" r="0.85" fill="#FFFFFF"/>
+          <circle cx="26" cy="16" r="1.15" fill="#FFFFFF"/>
+        </svg>
+        <div>
+          <h1>Grok Desktop</h1>
+          <p>12 skills · 3 MCP</p>
+        </div>
+      </div>
+      <div class="sec">
+        <button class="btn primary">Open project…</button>
+        <button class="btn" style="text-align:center">New chat</button>
+      </div>
+      <div class="sec">
+        <h2>Chats</h2>
+        <div class="session">
+          <div class="name">Harden path safety gate</div>
+          <div class="meta">Active · just now</div>
+        </div>
+        <div class="session idle">
+          <div class="name">Release packaging</div>
+          <div class="meta">Yesterday</div>
+        </div>
+      </div>
+      <div class="sec">
+        <h2>Recent projects</h2>
+        <div class="recent active">
+          <span class="n">grok-desktop</span>
+          <span class="p">~/Development/grok-desktop</span>
+        </div>
+        <div class="recent">
+          <span class="n">api-service</span>
+          <span class="p">~/Development/api-service</span>
+        </div>
+      </div>
+      <div class="footer">
+        <label><input type="checkbox" /> Always approve tools</label>
+        <label><input type="checkbox" /> Allow outside project</label>
+        <div style="margin-top:6px">Session: a3f8c2…</div>
+        <div>App v0.1.7</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-project">Project: <strong>grok-desktop</strong></div>
+        <div class="status"><span class="dot"></span> Connected</div>
+      </div>
+      <div class="timeline">
+        <div class="msg user user-command">
+          <div class="meta"><span class="meta-role">You · command</span><span>14:02</span></div>
+          <div class="cmd-invocation">
+            <span class="cmd-badge">skill</span>
+            <code class="cmd-name">/review</code>
+          </div>
+          <div class="cmd-args">local changes — path safety + file browser</div>
+        </div>
+        <div class="tool">
+          <div class="tool-header">
+            <span>run_terminal_command</span>
+            <span class="tool-status">completed</span>
+          </div>
+          <div class="tool-input">git status --short</div>
+          <div class="tool-output">M  electron/path-safety.mjs
+M  src/components/SidePanel.tsx
+A  src/lib/tool-display.ts</div>
+        </div>
+        <div class="msg">
+          <div class="meta"><span class="meta-role">Grok</span><span>14:02</span></div>
+          <div class="body">Looks solid. Project-root safety is centralized, tool cards are readable, and the file browser uses theme weight (bold folders, muted files) instead of yellow highlights.
+
+Ready to ship as <strong>v0.1.7</strong>.</div>
+        </div>
+      </div>
+      <div class="composer">
+        <div class="composer-box">Message Grok…  (type / for skills)</div>
+        <div class="composer-actions">
+          <button class="btn">Cancel</button>
+          <button class="btn primary">Send</button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <div class="panel-tabs">
+        <span>Approvals</span>
+        <span class="active">Files</span>
+      </div>
+      <div class="panel-body">
+        <div class="path">grok-desktop</div>
+        <div class="file-row file"><span>📄</span> AGENTS.md</div>
+        <div class="file-row file"><span>📄</span> README.md</div>
+        <div class="file-row dir"><span>📁</span> electron</div>
+        <div class="file-row dir"><span>📁</span> src</div>
+        <div class="file-row file"><span>📄</span> package.json</div>
+        <div class="file-row dir"><span>📁</span> shared</div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Grok Desktop — welcome</title>
+  <style>
+    :root {
+      --bg: #0c0c0f;
+      --bg-soft: #1a1a22;
+      --border: #2a2a35;
+      --text: #f2f2f5;
+      --text-muted: #9a9aab;
+      --accent: #a78bfa;
+      --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: #050508;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    .window {
+      width: 960px;
+      height: 640px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #2e2e3a;
+      box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 100px rgba(124, 58, 237, 0.15);
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.22), transparent 55%),
+        linear-gradient(180deg, #12121a 0%, #0c0c0f 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px;
+      text-align: center;
+    }
+    .mark {
+      border-radius: 16px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.12);
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .tagline {
+      margin: 10px 0 0;
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 420px;
+      line-height: 1.5;
+    }
+    .chips {
+      display: flex;
+      gap: 8px;
+      margin: 22px 0 28px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .chip {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text-muted);
+    }
+    .chip strong { color: var(--accent); font-weight: 600; }
+    .btn {
+      border: 1px solid #6d28d9;
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+      color: white;
+      border-radius: 12px;
+      padding: 12px 28px;
+      font-size: 15px;
+      font-weight: 650;
+      box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
+    }
+    .secondary {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .secondary a { color: var(--accent); text-decoration: none; }
+    .flow {
+      margin-top: 40px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .flow .box {
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .flow .arrow { opacity: 0.4; }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <svg class="mark" width="56" height="56" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="7.5" fill="#0A0A0A"/>
+      <rect x="0.5" y="0.5" width="31" height="31" rx="7.25" stroke="#FFFFFF" stroke-opacity="0.14"/>
+      <circle cx="16" cy="16" r="10" stroke="#FFFFFF" stroke-opacity="0.22"/>
+      <path d="M16 6 A10 10 0 0 1 26 16" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1.35" stroke-linecap="round"/>
+      <path d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z" fill="#FFFFFF"/>
+      <circle cx="16" cy="15" r="1.55" fill="#0A0A0A"/>
+      <circle cx="16" cy="15" r="0.85" fill="#FFFFFF"/>
+      <circle cx="26" cy="16" r="1.15" fill="#FFFFFF"/>
+    </svg>
+    <h1>Grok Desktop</h1>
+    <p class="tagline">
+      GUI for the Grok Build coding agent — same skills, MCP, and sessions as the CLI.
+    </p>
+    <div class="chips">
+      <span class="chip"><strong>12</strong> skills</span>
+      <span class="chip"><strong>3</strong> MCP servers</span>
+      <span class="chip">CLI detected</span>
+    </div>
+    <button class="btn">Sign in with browser</button>
+    <p class="secondary">or use an API key · <a href="#">Install Grok CLI</a></p>
+    <div class="flow">
+      <span class="box">Sign in</span>
+      <span class="arrow">→</span>
+      <span class="box">Open project</span>
+      <span class="arrow">→</span>
+      <span class="box">Chat · tools · approvals</span>
+    </div>
+  </div>
+</body>
+</html>

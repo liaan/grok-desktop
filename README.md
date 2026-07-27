@@ -1,6 +1,18 @@
 # Grok Desktop
 
-Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding agent.
+Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding agent — chat, tools, approvals, and project sessions over ACP.
+
+<p align="center">
+  <img src="docs/screenshots/main.png" alt="Grok Desktop main window: chats, tool cards, and project files" width="920" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/welcome.png" alt="Sign-in welcome screen" width="440" />
+  &nbsp;
+  <img src="docs/screenshots/approvals.png" alt="Tool permission approvals panel" width="440" />
+</p>
+
+<p align="center"><sub>Chat + slash skills · browser sign-in · tool approvals with readable input</sub></p>
 
 ## Install for the team (no npm)
 
