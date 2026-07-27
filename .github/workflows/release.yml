@@ -114,6 +114,11 @@ jobs:
       - name: List files
         run: find dist-installers -type f | sort
 
+      # Tag is vX.Y.Z; installer names use X.Y.Z (no "v")
+      - name: Version for asset URLs
+        id: ver
+        run: echo "app_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -122,18 +127,17 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            ## Download one file for your computer
+            ## Download (click your platform)
 
-            | You have… | Download |
-            |-----------|----------|
-            | **Windows** | `GrokDesktop-…-Windows-Setup.exe` |
-            | **Mac (M1 / M2 / M3 / M4)** | `GrokDesktop-…-Mac-AppleSilicon.dmg` |
-            | **Mac (Intel)** | `GrokDesktop-…-Mac-Intel.dmg` |
-            | **Source code** | Use GitHub’s **Source code (zip)** under Assets |
+            | You have… | Installer (click to download) |
+            |-----------|-------------------------------|
+            | **Windows** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Windows-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Windows-Setup.exe) |
+            | **Mac (M1 / M2 / M3 / M4)** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-AppleSilicon.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-AppleSilicon.dmg) |
+            | **Mac (Intel)** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-Intel.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-Intel.dmg) |
 
-            **Team install:** use Setup.exe or a DMG only.
+            **Team install = one of those three links only.**
 
-            Other assets (`latest.yml`, `latest-mac.yml`, Mac `.zip`, blockmaps) are for **in-app auto-update** (Help → Check for updates). You do not need to download them by hand.
+            Other Assets (`latest.yml`, `latest-mac.yml`, Mac `.zip`, blockmaps) are for **in-app auto-update** (Help → Check for updates). You do not need them by hand. GitHub’s **Source code** zip is only if you build from source.
 
             ### After download
             1. Install **Grok Build CLI** (`grok`) — this app is only the GUI.
