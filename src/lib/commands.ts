@@ -164,3 +164,33 @@ export function formatCommandInsert(cmd: SlashCommand): string {
   if (cmd.source === "skill" || cmd.source === "agent") return `/${cmd.name} `;
   return `/${cmd.name}`;
 }
+
+/**
+ * Detect a slash invocation in a user message (first line only).
+ * `/review code stack` → { name: "review", args: "code stack" }
+ */
+export function parseSlashInvocation(text: string): {
+  name: string;
+  args: string;
+  raw: string;
+} | null {
+  const first = String(text || "")
+    .split(/\r?\n/, 1)[0]
+    .trim();
+  const m = first.match(/^\/([a-zA-Z][\w:-]*)(?:\s+(.*))?$/);
+  if (!m) return null;
+  return {
+    name: m[1],
+    args: (m[2] || "").trim(),
+    raw: first,
+  };
+}
+
+/** Resolve a slash name against known commands (case-insensitive). */
+export function matchSlashCommand(
+  name: string,
+  commands: SlashCommand[],
+): SlashCommand | undefined {
+  const key = name.toLowerCase();
+  return commands.find((c) => c.name.toLowerCase() === key);
+}

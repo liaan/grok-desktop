@@ -131,6 +131,8 @@ export type AppInfo = {
   grokHome: string;
   userData: string;
   alwaysApprove: boolean;
+  /** When false (default), ACP fs + terminal cwd cannot leave project root */
+  allowOutsideProject: boolean;
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -162,6 +164,7 @@ declare global {
         outcome: PermissionOutcome,
       ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
+      setAllowOutsideProject: (value: boolean) => Promise<boolean>;
       readFile: (path: string) => Promise<string>;
       listDir: (
         path: string,

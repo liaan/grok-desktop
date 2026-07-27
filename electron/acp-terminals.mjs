@@ -15,6 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildGrokEnv } from "./grok-home.mjs";
+import { resolveProjectPath } from "./path-safety.mjs";
 
 const DEFAULT_OUTPUT_BYTE_LIMIT = 1_048_576; // 1 MiB
 const KILL_ESCALATE_MS = 1500;
@@ -182,13 +183,23 @@ function killPidTree(pid, signal) {
   }
 }
 
-function resolveCwd(requested, fallback) {
-  const candidates = [
-    requested,
-    fallback,
-    process.cwd(),
-    os.homedir(),
-  ].filter((p) => typeof p === "string" && p.trim());
+/**
+ * Pick an existing directory for terminal cwd.
+ * When `allowOutside` is false, never fall back to process.cwd() / homedir —
+ * those sit outside the project and would only surface as a confusing gate error.
+ * @param {string | null | undefined} requested
+ * @param {string} fallback Session/project default cwd
+ * @param {{ allowOutside?: boolean }} [opts]
+ * @returns {string}
+ */
+function resolveCwd(requested, fallback, opts = {}) {
+  const allowOutside = Boolean(opts.allowOutside);
+  const candidates = [requested, fallback].filter(
+    (p) => typeof p === "string" && p.trim(),
+  );
+  if (allowOutside) {
+    candidates.push(process.cwd(), os.homedir());
+  }
 
   for (const c of candidates) {
     const abs = path.isAbsolute(c) ? c : path.resolve(c);
@@ -200,19 +211,33 @@ function resolveCwd(requested, fallback) {
       /* try next */
     }
   }
-  return os.homedir();
+
+  // Prefer session cwd even if missing (gate / spawn will error clearly)
+  if (fallback && String(fallback).trim()) {
+    return path.resolve(fallback);
+  }
+  if (allowOutside) return os.homedir();
+  throw Object.assign(
+    new Error("terminal/create: no usable cwd under the open project"),
+    { code: -32000 },
+  );
 }
 
 export class AcpTerminalManager extends EventEmitter {
-  constructor({ defaultCwd } = {}) {
+  constructor({ defaultCwd, allowOutsideProject = false } = {}) {
     super();
     /** @type {Map<string, ManagedTerminal>} */
     this.terminals = new Map();
     this.defaultCwd = defaultCwd || process.cwd();
+    this.allowOutsideProject = Boolean(allowOutsideProject);
   }
 
   setDefaultCwd(cwd) {
     if (cwd) this.defaultCwd = cwd;
+  }
+
+  setAllowOutsideProject(value) {
+    this.allowOutsideProject = Boolean(value);
   }
 
   /**
@@ -244,10 +269,26 @@ export class AcpTerminalManager extends EventEmitter {
       }
     }
 
-    const cwd = resolveCwd(
+    let cwd = resolveCwd(
       typeof params.cwd === "string" ? params.cwd.trim() : null,
       this.defaultCwd,
+      { allowOutside: this.allowOutsideProject },
     );
+
+    // Safety gate: terminal cwd must stay under session/project cwd unless allowed
+    try {
+      cwd = resolveProjectPath(this.defaultCwd, cwd, {
+        allowOutside: this.allowOutsideProject,
+      });
+    } catch (err) {
+      throw Object.assign(
+        new Error(
+          err?.message ||
+            "terminal/create: cwd is outside the open project (enable “Allow outside project” in the sidebar to override)",
+        ),
+        { code: err?.code ?? -32000 },
+      );
+    }
 
     const limit =
       typeof params.outputByteLimit === "number" && params.outputByteLimit >= 0

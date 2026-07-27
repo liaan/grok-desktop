@@ -539,6 +539,106 @@ button {
   border-color: #334155;
 }
 
+/* Slash / skill invocation — distinct from plain chat */
+.msg.user.user-command {
+  border-color: rgba(167, 139, 250, 0.45);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.14) 0%,
+    var(--user-bubble) 55%
+  );
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.12);
+}
+
+.msg .body.body-command {
+  white-space: normal;
+}
+
+.cmd-invocation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.cmd-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cmd-badge.skill {
+  border-color: rgba(96, 165, 250, 0.4);
+  color: var(--accent-2);
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.cmd-badge.command,
+.cmd-badge.agent {
+  border-color: rgba(167, 139, 250, 0.4);
+  color: var(--accent);
+  background: rgba(167, 139, 250, 0.1);
+}
+
+.cmd-badge.app {
+  border-color: rgba(52, 211, 153, 0.4);
+  color: var(--success);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.cmd-badge.slash {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.cmd-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.cmd-picked {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.cmd-picked-soft {
+  opacity: 0.85;
+}
+
+.cmd-args {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cmd-rest {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
 .msg .meta {
   display: flex;
   align-items: baseline;
@@ -746,19 +846,39 @@ button {
   background: #14101c;
 }
 
+.tool-body {
+  min-width: 0;
+}
+
 .tool-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
+}
+
+.tool-title-wrap {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .tool-title {
   font-weight: 600;
   font-size: 13px;
   min-width: 0;
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -775,6 +895,34 @@ button {
   text-transform: lowercase;
   white-space: nowrap;
   max-width: none;
+  margin-top: 1px;
+}
+
+.tool-input,
+.tool-output {
+  margin: 8px 0 0;
+  max-height: 200px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+}
+
+.tool-input {
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-muted);
+  max-height: 120px;
+}
+
+.tool-output {
+  background: #0a0a0e;
+  color: var(--text);
+  max-height: 240px;
 }
 
 .tool-status.completed {
@@ -1113,21 +1261,93 @@ button {
   padding: 12px;
 }
 
+.file-browser-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.file-browser-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-family: var(--mono);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: 8px;
+}
+
 .file-item {
   display: flex;
   gap: 8px;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   border: none;
   background: transparent;
   padding: 7px 8px;
   border-radius: 8px;
+}
+
+.file-item-icon {
+  flex: 0 0 auto;
+  width: 1.25em;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.file-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 13px;
+}
+
+/* Folders: same theme colors, heavier weight */
+.file-item-dir {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.file-item-dir:hover {
+  background: var(--bg-soft);
+}
+
+/* Files: muted, regular weight */
+.file-item-file {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.file-item-file:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.file-reveal {
+  flex: 0 0 auto;
+  opacity: 0.45;
+  padding: 4px 8px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.file-item:hover {
-  background: var(--bg-soft);
+.file-row.is-file:hover .file-reveal {
+  opacity: 1;
   color: var(--text);
 }
 

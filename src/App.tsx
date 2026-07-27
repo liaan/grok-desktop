@@ -13,6 +13,7 @@ import { BrandMark, Spinner } from "./components/BrandMark";
 import { CommandMenu } from "./components/CommandMenu";
 import { MessageList } from "./components/MessageList";
 import { SidePanel } from "./components/SidePanel";
+import { SidebarSafety } from "./components/SidebarSafety";
 import {
   agentCommandsFromUpdate,
   DESKTOP_COMMANDS,
@@ -126,6 +127,8 @@ export default function App() {
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [alwaysApprove, setAlwaysApprove] = useState(false);
+  /** Default safe: block ACP fs + terminal cwd outside project */
+  const [allowOutsideProject, setAllowOutsideProject] = useState(false);
   /** Commands advertised by the agent via available_commands_update */
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -187,6 +190,7 @@ export default function App() {
     const i = await window.grokDesktop.getInfo();
     setInfo(i);
     setAlwaysApprove(i.alwaysApprove);
+    setAllowOutsideProject(Boolean(i.allowOutsideProject));
     setAuth(i.auth);
     if (i.auth.authenticated && !i.auth.expired) {
       void refreshBackbone(i.lastProject || undefined);
@@ -867,6 +871,20 @@ export default function App() {
     setAlwaysApprove(next);
   };
 
+  const toggleAllowOutside = async () => {
+    const next = !allowOutsideProject;
+    if (
+      next &&
+      !window.confirm(
+        "Allow the agent to read/write files and use working directories outside this project?\n\nThis reduces safety. Prefer leaving it off unless you need it.",
+      )
+    ) {
+      return;
+    }
+    const value = await window.grokDesktop.setAllowOutsideProject(next);
+    setAllowOutsideProject(value);
+  };
+
   const statusLabel = useMemo(() => {
     if (conn === "online") return "Connected";
     if (conn === "busy") return "Working…";
@@ -1107,14 +1125,12 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
-          <label className="row" style={{ cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={alwaysApprove}
-              onChange={toggleAlways}
-            />
-            Always approve tools
-          </label>
+          <SidebarSafety
+            alwaysApprove={alwaysApprove}
+            allowOutsideProject={allowOutsideProject}
+            onToggleAlwaysApprove={() => void toggleAlways()}
+            onToggleAllowOutside={() => void toggleAllowOutside()}
+          />
           <div title={sessionId || undefined}>
             Session: {sessionId ? sessionId.slice(0, 8) : "—"}…
           </div>
@@ -1209,7 +1225,11 @@ export default function App() {
         )}
 
         <div className="timeline" ref={timelineRef}>
-          <MessageList items={items} bottomRef={bottomRef} />
+          <MessageList
+            items={items}
+            bottomRef={bottomRef}
+            knownCommands={allCommands}
+          />
         </div>
 
         <div className="composer">

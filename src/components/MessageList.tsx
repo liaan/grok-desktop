@@ -2,6 +2,12 @@ import { Fragment, type ReactNode, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  matchSlashCommand,
+  parseSlashInvocation,
+  type SlashCommand,
+} from "../lib/commands";
+import { formatToolDisplay } from "../lib/tool-display";
+import {
   formatClock,
   formatDayLabel,
   formatFullTimestamp,
@@ -10,35 +16,33 @@ import {
 import type { TimelineItem } from "../vite-env";
 
 function ToolBody({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
-  const raw =
-    item.raw !== undefined
-      ? typeof item.raw === "string"
-        ? item.raw
-        : JSON.stringify(item.raw, null, 2)
-      : null;
-  const content =
-    item.content !== undefined
-      ? typeof item.content === "string"
-        ? item.content
-        : JSON.stringify(item.content, null, 2)
-      : null;
+  const { subtitle, input, output } = formatToolDisplay(item);
 
   return (
-    <div>
+    <div className="tool-body">
       <div className="tool-header">
-        <div className="tool-title" title={item.title}>
-          {item.title}
+        <div className="tool-title-wrap">
+          <div className="tool-title" title={item.title}>
+            {item.title}
+          </div>
+          {subtitle ? (
+            <div className="tool-subtitle" title={subtitle}>
+              {subtitle}
+            </div>
+          ) : null}
         </div>
         <span className={`tool-status ${item.status}`}>{item.status}</span>
       </div>
-      {raw && (
-        <pre style={{ marginTop: 8, maxHeight: 160, overflow: "auto" }}>{raw}</pre>
-      )}
-      {content && (
-        <pre style={{ marginTop: 8, maxHeight: 180, overflow: "auto" }}>
-          {content}
+      {input ? (
+        <pre className="tool-input" title="Input">
+          {input}
         </pre>
-      )}
+      ) : null}
+      {output ? (
+        <pre className="tool-output" title="Output">
+          {output}
+        </pre>
+      ) : null}
     </div>
   );
 }
@@ -63,6 +67,18 @@ function MarkdownLink({
       {children}
     </a>
   );
+}
+
+/** Only allow http(s) remote images; block data:/file: model-driven egress. */
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  if (!src || !/^https?:\/\//i.test(src)) {
+    return (
+      <span className="md-img-blocked" title={src || ""}>
+        [{alt || "image blocked"}]
+      </span>
+    );
+  }
+  return <img src={src} alt={alt || ""} loading="lazy" />;
 }
 
 function MsgMeta({ role, at }: { role: string; at?: number }) {
@@ -93,12 +109,93 @@ function DayDivider({ at }: { at: number }) {
   );
 }
 
+function sourceBadgeLabel(cmd?: SlashCommand): string {
+  if (!cmd) return "slash";
+  if (cmd.local || cmd.source === "desktop") return "app";
+  if (cmd.source === "skill") return "skill";
+  return "command";
+}
+
+/** User bubble: plain chat or highlighted /skill invocation (parse once). */
+function UserMessage({
+  text,
+  images,
+  at,
+  knownCommands,
+}: {
+  text: string;
+  images?: Extract<TimelineItem, { kind: "user" }>["images"];
+  at?: number;
+  knownCommands: SlashCommand[];
+}) {
+  const inv = parseSlashInvocation(text);
+  const isCmd = Boolean(inv);
+  const matched = inv
+    ? matchSlashCommand(inv.name, knownCommands)
+    : undefined;
+  const badge = sourceBadgeLabel(matched);
+  const restLines =
+    inv && text.includes("\n") ? text.slice(text.indexOf("\n") + 1) : "";
+
+  return (
+    <article className={`msg user ${isCmd ? "user-command" : ""}`}>
+      <MsgMeta role={isCmd ? "You · command" : "You"} at={at} />
+      {images && images.length > 0 && (
+        <div className="msg-images">
+          {images.map((img, j) => (
+            <button
+              key={j}
+              type="button"
+              className="msg-image"
+              title="Image attachment"
+              onClick={(e) => e.preventDefault()}
+            >
+              <img src={img.previewUrl} alt={`Attachment ${j + 1}`} />
+            </button>
+          ))}
+        </div>
+      )}
+      {text ? (
+        inv ? (
+          <div className="body body-command">
+            <div
+              className={`cmd-invocation ${matched ? "cmd-known" : "cmd-unknown"}`}
+              title={
+                matched
+                  ? `${matched.description}${matched.local ? " (handled in app)" : " (sent to agent)"}`
+                  : "Looks like a slash command — agent will interpret it"
+              }
+            >
+              <span className={`cmd-badge ${badge}`}>{badge}</span>
+              <code className="cmd-name">/{inv.name}</code>
+              {matched ? (
+                <span className="cmd-picked">
+                  {matched.local ? "app command" : "skill / command"}
+                </span>
+              ) : (
+                <span className="cmd-picked cmd-picked-soft">slash</span>
+              )}
+            </div>
+            {inv.args ? <div className="cmd-args">{inv.args}</div> : null}
+            {restLines ? <div className="cmd-rest">{restLines}</div> : null}
+          </div>
+        ) : (
+          <div className="body">{text}</div>
+        )
+      ) : null}
+    </article>
+  );
+}
+
 export function MessageList({
   items,
   bottomRef,
+  knownCommands = [],
 }: {
   items: TimelineItem[];
   bottomRef: RefObject<HTMLDivElement | null>;
+  /** Skills + agent + desktop commands for slash recognition in user bubbles */
+  knownCommands?: SlashCommand[];
 }) {
   if (items.length === 0) {
     return (
@@ -132,25 +229,12 @@ export function MessageList({
           return (
             <Fragment key={item.id}>
               {day}
-              <article className="msg user">
-                <MsgMeta role="You" at={item.at} />
-                {item.images && item.images.length > 0 && (
-                  <div className="msg-images">
-                    {item.images.map((img, j) => (
-                      <button
-                        key={j}
-                        type="button"
-                        className="msg-image"
-                        title="Image attachment"
-                        onClick={(e) => e.preventDefault()}
-                      >
-                        <img src={img.previewUrl} alt={`Attachment ${j + 1}`} />
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {item.text ? <div className="body">{item.text}</div> : null}
-              </article>
+              <UserMessage
+                text={item.text || ""}
+                images={item.images}
+                at={item.at}
+                knownCommands={knownCommands}
+              />
             </Fragment>
           );
         }
@@ -163,7 +247,7 @@ export function MessageList({
                 <div className="body markdown">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
-                    components={{ a: MarkdownLink }}
+                    components={{ a: MarkdownLink, img: MarkdownImage }}
                   >
                     {item.text}
                   </ReactMarkdown>

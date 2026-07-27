@@ -66,7 +66,7 @@ grok-desktop/
 | `npm run preview` | build + start |
 | `npm run pack` | build + electron-builder `--dir` (unpacked app) |
 | `npm run dist` | build + installer for **current** OS |
-| `npm run dist:win` / `dist:mac` / `dist:linux` | Platform-specific |
+| `npm run dist:win` / `dist:mac` | Platform-specific (CI ships Win + mac only; no `dist:linux` yet) |
 
 **End users never run these.** They use GitHub Release installers.
 
@@ -134,6 +134,27 @@ Agent → client: `session/update`, `session/request_permission`, `fs/*`, `termi
 
 `session/new` / `session/load` use empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
 
+### Agent config inheritance (do not reimplement in the GUI)
+
+Desktop is a shell. Config ownership:
+
+| Source | What | Desktop role |
+|--------|------|----------------|
+| Open project path | Session + spawn **cwd** | Pass folder into `session/new` / `load` / `spawn` |
+| Project tree (`AGENTS.md`, `CLAUDE.md`, rules, …) | Agent instruction files | **None** — agent loads from cwd (same as CLI) |
+| `GROK_HOME` / `~/.grok` | Skills, MCP, plugins, auth, models | Env via `buildGrokEnv`; never edit `config.toml` in-app |
+| Client `mcpServers: []` | Embed contract | Always empty; agent merges its own MCP (upstream Grok Build) |
+| `grok inspect --json` | Skill/MCP **names** for UI | Slash menu + AuthGate counts only — not the runtime loader |
+| Runtime skills | `/name` as `session/prompt` | Same as CLI; no separate skill runner here |
+
+**Outstanding / not in GUI (document for team):**
+
+- No settings UI for MCP, models, or skill install (README: Planned)
+- No in-app editor for project `AGENTS.md` (edit in the repo)
+- Plugins inherited but barely surfaced in UI
+- Config changes under `~/.grok` need a **new agent process** (re-open project) to bind into the live session
+- Linux team installers not in CI yet (Win + mac only)
+
 ### Client capabilities
 
 | Capability | Status | Notes |
@@ -163,9 +184,23 @@ Terminals spawn in the project `cwd` (or the path the agent passes). Output is b
 ## Security / product boundaries
 
 - `contextIsolation: true`, `nodeIntegration: false` — keep it that way.
-- External links via `shell.openExternal`.
+- External links via `shell.openExternal` (http/s only from markdown).
 - Auth via Grok CLI flows; no parallel token store unless product requires it.
 - MIT GUI; do not vendor agent source here.
+
+### Project-root safety gate (default on)
+
+Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolveProjectPath`). Paths are checked **lexically** and with **`realpath`** (symlinks inside the project that point outside are rejected). New write targets realpath the nearest existing ancestor.
+
+| Surface | Gated by “Allow outside project”? | Behavior |
+|---------|-----------------------------------|----------|
+| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(session cwd, path, { allowOutside })` |
+| ACP `terminal/create` cwd | Yes | Same helper against session cwd |
+| Renderer IPC (`fs:read-file`, `fs:list-dir`, shell open/show) | **No — always project-scoped** | Requires an open project; cannot leave the folder even if the agent may |
+
+Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
+
+**Limits:** A shell command with cwd *inside* the project can still `cat` paths outside the tree (`cat ~/.ssh/id_rsa`). Full OS sandbox is out of scope; this gate stops the client from *opening* outside paths (including via symlink) and from *starting* terminals outside the repo.
 
 ---
 

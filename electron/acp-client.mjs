@@ -14,6 +14,7 @@ import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
 import { AcpTerminalManager } from "./acp-terminals.mjs";
+import { resolveProjectPath } from "./path-safety.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -24,12 +25,15 @@ export class GrokAcpClient extends EventEmitter {
     cwd,
     grokPath,
     alwaysApprove = false,
+    /** When false (default), ACP fs/* and terminal cwd stay inside project */
+    allowOutsideProject = false,
     clientVersion = "0.1.2",
   } = {}) {
     super();
     this.cwd = cwd || process.cwd();
     this.grokPath = grokPath || resolveGrokBinary();
     this.alwaysApprove = alwaysApprove;
+    this.allowOutsideProject = Boolean(allowOutsideProject);
     this.clientVersion = clientVersion;
     this.proc = null;
     this.rl = null;
@@ -41,10 +45,31 @@ export class GrokAcpClient extends EventEmitter {
     this.stderrBuf = "";
     /** @type {Record<string, any>} */
     this.agentCapabilities = {};
-    this.terminals = new AcpTerminalManager({ defaultCwd: this.cwd });
+    this.terminals = new AcpTerminalManager({
+      defaultCwd: this.cwd,
+      allowOutsideProject: this.allowOutsideProject,
+    });
     // Forward terminal lifecycle for optional UI live-output later
     for (const ev of ["created", "output", "exit", "released"]) {
       this.terminals.on(ev, (payload) => this.emit(`terminal:${ev}`, payload));
+    }
+  }
+
+  /**
+   * Resolve ACP fs path (relative → project cwd) and optionally sandbox.
+   * @param {string} filePath
+   */
+  _resolveFsPath(filePath) {
+    try {
+      return resolveProjectPath(this.cwd, filePath, {
+        allowOutside: this.allowOutsideProject,
+      });
+    } catch (err) {
+      const empty =
+        filePath == null || String(filePath).trim() === "";
+      throw Object.assign(new Error(err?.message || String(err)), {
+        code: empty ? -32602 : -32000,
+      });
     }
   }
 
@@ -202,7 +227,7 @@ export class GrokAcpClient extends EventEmitter {
     if (msg.method && msg.id !== undefined && !msg.result && !msg.error) {
       this._handleServerRequest(msg).catch((err) => {
         this._respond(msg.id, null, {
-          code: -32000,
+          code: err?.code ?? -32000,
           message: err?.message || String(err),
         });
       });
@@ -264,15 +289,16 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (method === "fs/read_text_file") {
-      const filePath = params.path;
+      const filePath = this._resolveFsPath(params?.path);
       const text = await fs.promises.readFile(filePath, "utf8");
       this._respond(id, { content: text });
       return;
     }
 
     if (method === "fs/write_text_file") {
-      await fs.promises.mkdir(path.dirname(params.path), { recursive: true });
-      await fs.promises.writeFile(params.path, params.content ?? "", "utf8");
+      const filePath = this._resolveFsPath(params?.path);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, params?.content ?? "", "utf8");
       this._respond(id, {});
       return;
     }
@@ -406,6 +432,11 @@ export class GrokAcpClient extends EventEmitter {
 
   setAlwaysApprove(value) {
     this.alwaysApprove = Boolean(value);
+  }
+
+  setAllowOutsideProject(value) {
+    this.allowOutsideProject = Boolean(value);
+    this.terminals.setAllowOutsideProject(this.allowOutsideProject);
   }
 
   async setCwd(cwd) {

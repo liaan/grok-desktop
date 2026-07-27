@@ -27,6 +27,7 @@ import {
   loadTimelineFromDisk,
   mostRecentSession,
 } from "./sessions.mjs";
+import { assertPathInProject } from "./path-safety.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -44,11 +45,20 @@ const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 
 function loadState() {
   try {
-    return JSON.parse(fs.readFileSync(storePath, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(storePath, "utf8"));
+    return {
+      recentProjects: [],
+      alwaysApprove: false,
+      /** When false (default), agent FS + terminal cwd cannot leave project root */
+      allowOutsideProject: false,
+      lastProject: null,
+      ...raw,
+    };
   } catch {
     return {
       recentProjects: [],
       alwaysApprove: false,
+      allowOutsideProject: false,
       lastProject: null,
     };
   }
@@ -74,22 +84,6 @@ function clearPendingPermissions() {
     }
   }
   pendingPermissions.clear();
-}
-
-/**
- * Ensure path is inside project root (renderer FS IPC).
- * @param {string} root
- * @param {string} target
- */
-function assertPathInProject(root, target) {
-  if (!root) throw new Error("No project open");
-  const resolvedRoot = path.resolve(root);
-  const resolved = path.resolve(target);
-  const rel = path.relative(resolvedRoot, resolved);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error("Path is outside the open project");
-  }
-  return resolved;
 }
 
 /**
@@ -132,6 +126,7 @@ function ensureAgent(cwd, opts = {}) {
     agent = new GrokAcpClient({
       cwd,
       alwaysApprove: state.alwaysApprove,
+      allowOutsideProject: Boolean(state.allowOutsideProject),
       clientVersion: app.getVersion(),
     });
 
@@ -352,6 +347,7 @@ function registerIpc() {
       grokHome: grokHomeDir(),
       userData: app.getPath("userData"),
       alwaysApprove: state.alwaysApprove,
+      allowOutsideProject: Boolean(state.allowOutsideProject),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -569,46 +565,59 @@ function registerIpc() {
     return state.alwaysApprove;
   });
 
+  ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {
+    const state = loadState();
+    state.allowOutsideProject = Boolean(value);
+    saveState(state);
+    agent?.setAllowOutsideProject(state.allowOutsideProject);
+    return state.allowOutsideProject;
+  });
+
   ipcMain.handle("fs:read-file", async (_e, filePath) => {
     const root = agent?.cwd;
+    if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, filePath);
     return fs.promises.readFile(safe, "utf8");
   });
 
   ipcMain.handle("fs:list-dir", async (_e, dirPath) => {
     const root = agent?.cwd;
+    if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, dirPath);
     const entries = await fs.promises.readdir(safe, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith("."))
       .slice(0, 200)
-      .map((e) => ({
-        name: e.name,
-        isDirectory: e.isDirectory(),
-        path: path.join(safe, e.name),
-      }));
+      .map((e) => {
+        // Treat symlinks-to-dirs as directories so the browser can enter them
+        // (still gated by assertPathInProject on the next listDir).
+        let isDirectory = e.isDirectory();
+        if (!isDirectory && e.isSymbolicLink()) {
+          try {
+            isDirectory = fs.statSync(path.join(safe, e.name)).isDirectory();
+          } catch {
+            isDirectory = false;
+          }
+        }
+        return {
+          name: e.name,
+          isDirectory,
+          path: path.join(safe, e.name),
+        };
+      });
   });
 
+  // Renderer shell helpers are always project-scoped (ignore allowOutsideProject).
   ipcMain.handle("shell:open-path", async (_e, target) => {
     const root = agent?.cwd;
-    if (root) {
-      try {
-        return shell.openPath(assertPathInProject(root, target));
-      } catch {
-        /* allow absolute paths outside for explicit reveal? no — stay strict */
-        throw new Error("Path is outside the open project");
-      }
-    }
-    return shell.openPath(target);
+    if (!root) throw new Error("No project open");
+    return shell.openPath(assertPathInProject(root, target));
   });
 
   ipcMain.handle("shell:show-item", async (_e, target) => {
     const root = agent?.cwd;
-    if (root) {
-      shell.showItemInFolder(assertPathInProject(root, target));
-      return;
-    }
-    shell.showItemInFolder(target);
+    if (!root) throw new Error("No project open");
+    shell.showItemInFolder(assertPathInProject(root, target));
   });
 
   ipcMain.handle("shell:open-external", async (_e, url) => {

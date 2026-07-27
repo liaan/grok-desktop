@@ -62,7 +62,7 @@ This project is **not** a reimplementation of the agent, models, or tools. It is
 └────────────────────────────┘
 ```
 
-Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI installed on the machine; day-to-day login can be done entirely in the app.
+Runs on **Windows, macOS, and Linux** (Electron). Team installers currently ship for **Windows + macOS** from Releases; Linux is source/`npm run dist` for now. You need the Grok Build CLI installed; day-to-day login can be done entirely in the app.
 
 ## Features
 
@@ -70,17 +70,19 @@ Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI i
 |------|--------|
 | In-app browser sign-in / sign-out | Done |
 | Optional API key for this session | Done |
-| Skills & MCP from `~/.grok` (same as CLI) | Done |
+| Skills & MCP **inherited** from `~/.grok` (same as CLI) | Done — invoke in chat; **edit in CLI** |
+| Project rules (`AGENTS.md`, etc.) via open folder | Done — agent uses project as cwd (same as CLI) |
 | Open project + recent folders | Done |
 | Streaming messages, thoughts, plans, tool cards | Done |
 | Tool permission approvals + always-approve | Done |
-| Cancel in-flight turn | Done |
+| Cancel + mid-turn queue / send-now | Done |
+| Slash menu (skills + local `/new`) | Done |
 | Simple file list peek | Basic |
 | Diff review pane | Planned |
 | Resume CLI sessions with history | Done (same `~/.grok/sessions`) |
 | Multi-session tabs | Basic (sidebar chat list) |
-| Settings UI (model / MCP) | Planned |
-| Native installers (Windows / macOS / Linux) | Done — [Releases](https://github.com/liaan/grok-desktop/releases) |
+| Settings UI (model / MCP / skills editor) | **Planned** — configure under `~/.grok` for now |
+| Native installers | **Windows + macOS Done** — [Releases](https://github.com/liaan/grok-desktop/releases); Linux via source / `npm run dist` |
 
 ## Requirements
 
@@ -90,7 +92,23 @@ Works on **Windows, macOS, and Linux** (Electron). You need the Grok Build CLI i
 
 Install the CLI with the official installer for your OS (see [Grok Build](https://github.com/xai-org/grok-build) / project docs), then start this app and use **Sign in with browser**.
 
-Skills, MCP servers, and plugins are still configured under `~/.grok` (CLI / config files). The desktop loads them automatically; it does not replace that config yet.
+### Agent config: what works in the GUI vs CLI-only
+
+Desktop does **not** reimplement skills, MCP, models, or project rules. It opens a project folder and spawns the same `grok` agent the TUI uses.
+
+| Config | In GUI today | Still CLI / files only |
+|--------|--------------|-------------------------|
+| Auth | Sign in / out in app | — |
+| Session API key | Optional (applies on next agent start) | `XAI_API_KEY` env |
+| **Skills** (runtime) | Invoke via chat or `/skill-name` slash menu | Install / edit under `~/.grok` |
+| **MCP servers** | Used automatically if configured | Define in `~/.grok` / `config.toml` |
+| **Plugins** | Inherited by agent (little GUI summary) | Install / manage in CLI |
+| **Models** | Whatever the agent session uses | Model / routing in CLI config |
+| **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
+| Tool always-approve | Checkbox in sidebar | — |
+| **Project-root safety** | On by default (sidebar: “Allow outside project” off) | Off only if you need host-wide FS |
+
+**After changing** MCP, skills, or plugins in `~/.grok`, **re-open the project** (or New chat after restart) so a new agent process picks up config. The welcome “N skills · M MCP” strip is a `grok inspect` summary, not a live settings editor.
 
 Optional environment variables:
 
@@ -156,11 +174,11 @@ grok-desktop/
 
 ### ACP (client ↔ agent)
 
-**Client → agent:** `initialize`, `session/new`, `session/prompt`, `session/cancel`
+**Client → agent:** `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`
 
-**Agent → client:** `session/update`, `session/request_permission`, optional `fs/*`
+**Agent → client:** `session/update`, `session/request_permission`, `fs/*`, `terminal/*`
 
-`session/new` is called with an empty client `mcpServers` list (same pattern as other embeds). The agent still merges MCP and skills from `~/.grok` and plugins.
+`session/new` / `session/load` use an empty client `mcpServers` list (same pattern as other embeds). The agent still merges MCP and skills from `~/.grok` and plugins. Project instruction files are loaded by the agent from the session **cwd** (the folder you opened).
 
 ## Desktop vs terminal CLI
 

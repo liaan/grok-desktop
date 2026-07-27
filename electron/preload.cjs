@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),
   setAlwaysApprove: (value) =>
     ipcRenderer.invoke("agent:set-always-approve", value),
+  setAllowOutsideProject: (value) =>
+    ipcRenderer.invoke("agent:set-allow-outside-project", value),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
