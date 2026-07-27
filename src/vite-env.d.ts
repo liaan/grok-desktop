@@ -160,6 +160,7 @@ declare global {
       ) => Promise<Array<{ name: string; isDirectory: boolean; path: string }>>;
       openPath: (path: string) => Promise<string>;
       showItem: (path: string) => Promise<void>;
+      openExternal: (url: string) => Promise<boolean>;
       getAuthStatus: () => Promise<AuthStatus>;
       login: (opts?: {
         deviceAuth?: boolean;

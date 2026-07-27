@@ -463,27 +463,34 @@ export default function App() {
   };
 
   const onPaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items?.length) return;
-
+    // Always allow normal text paste (Cmd/Ctrl+V). Only intercept pure image pastes.
     const imageFiles: File[] = [];
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+    const items = e.clipboardData?.items;
+    if (items?.length) {
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
       }
     }
-
-    // Some apps put image files on the clipboard as files, not items
     if (imageFiles.length === 0 && e.clipboardData?.files?.length) {
       for (const file of Array.from(e.clipboardData.files)) {
         if (file.type.startsWith("image/")) imageFiles.push(file);
       }
     }
 
+    // No images → let Electron/browser handle text paste (needs Edit menu roles)
     if (imageFiles.length === 0) return;
-    e.preventDefault();
-    await addImages(imageFiles);
+
+    const hasText = Boolean(e.clipboardData?.getData("text/plain")?.trim());
+    // Image-only: take over so we attach instead of inserting binary garbage
+    if (!hasText) e.preventDefault();
+    try {
+      await addImages(imageFiles);
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    }
   };
 
   const onDrop = async (e: DragEvent) => {
@@ -636,7 +643,8 @@ export default function App() {
               <p className="welcome-error">{error}</p>
             )}
             <p className="welcome-meta">
-              Backbone: {info?.grokBinary || auth?.binary || "detecting…"}
+              App v{info?.version || "…"} · Backbone:{" "}
+              {info?.grokBinary || auth?.binary || "detecting…"}
             </p>
           </div>
         </div>
@@ -772,7 +780,21 @@ export default function App() {
           <div title={sessionId || undefined}>
             Session: {sessionId ? sessionId.slice(0, 8) : "—"}…
           </div>
+          <div>App v{info?.version || "…"}</div>
           <div title={info?.grokBinary}>Binary: {info?.grokBinary}</div>
+          <button
+            type="button"
+            className="btn ghost btn-sm block"
+            style={{ marginTop: 4 }}
+            title="Opens GitHub Releases to download a newer installer"
+            onClick={() =>
+              void window.grokDesktop.openExternal(
+                "https://github.com/liaan/grok-desktop/releases/latest",
+              )
+            }
+          >
+            Check for updates…
+          </button>
         </div>
       </aside>
 
@@ -889,7 +911,7 @@ export default function App() {
                   void sendPrompt();
                 }
               }}
-              disabled={conn === "connecting" || conn === "error"}
+              disabled={conn === "connecting"}
             />
             <div className="composer-actions">
               <div className="row" style={{ gap: 8, minWidth: 0 }}>
@@ -908,14 +930,14 @@ export default function App() {
                 <button
                   type="button"
                   className="btn"
-                  disabled={conn === "connecting" || conn === "error" || conn === "busy"}
+                  disabled={conn === "connecting" || conn === "busy"}
                   onClick={() => fileInputRef.current?.click()}
                   title="Attach images"
                 >
                   Attach
                 </button>
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  Paste / drop images · same skills &amp; MCP as CLI
+                  Paste text/images · drop images · Open project in left sidebar
                 </span>
               </div>
               <button
@@ -924,7 +946,8 @@ export default function App() {
                 disabled={
                   (!input.trim() && pendingImages.length === 0) ||
                   conn === "busy" ||
-                  conn === "connecting"
+                  conn === "connecting" ||
+                  !project
                 }
               >
                 {conn === "busy" ? "Working…" : "Send"}

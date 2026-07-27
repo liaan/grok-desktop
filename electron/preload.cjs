@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
   showItem: (path) => ipcRenderer.invoke("shell:show-item", path),
+  openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
 
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   login: (opts) => ipcRenderer.invoke("auth:login", opts || {}),

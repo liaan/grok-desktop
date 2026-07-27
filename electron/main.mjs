@@ -5,6 +5,7 @@ import {
   dialog,
   shell,
   nativeTheme,
+  Menu,
 } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,6 +181,110 @@ function rememberProjectSession(cwd, sessionId) {
   state.sessionsByProject = state.sessionsByProject || {};
   state.sessionsByProject[cwd] = sessionId;
   saveState(state);
+}
+
+/**
+ * Standard app menu with Edit roles.
+ * Without role-based Cut/Copy/Paste/Select All, Cmd/Ctrl+V often does nothing
+ * in packaged Electron apps (macOS especially).
+ */
+function installApplicationMenu() {
+  const isMac = process.platform === "darwin";
+  /** @type {import('electron').MenuItemConstructorOptions[]} */
+  const template = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        ...(isMac
+          ? [
+              { type: "separator" },
+              { role: "front" },
+              { type: "separator" },
+              { role: "window" },
+            ]
+          : [{ role: "close" }]),
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "Check for updates…",
+          click: () => {
+            shell.openExternal(
+              "https://github.com/liaan/grok-desktop/releases/latest",
+            );
+          },
+        },
+        {
+          label: "Open Releases page",
+          click: () => {
+            shell.openExternal(
+              "https://github.com/liaan/grok-desktop/releases",
+            );
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Install guide (Mac “damaged” fix)",
+          click: () => {
+            shell.openExternal(
+              "https://github.com/liaan/grok-desktop#mac-damaged-and-cant-be-opened",
+            );
+          },
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createWindow() {
@@ -492,9 +597,18 @@ function registerIpc() {
     }
     shell.showItemInFolder(target);
   });
+
+  ipcMain.handle("shell:open-external", async (_e, url) => {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+      throw new Error("Only http(s) URLs are allowed");
+    }
+    await shell.openExternal(url);
+    return true;
+  });
 }
 
 app.whenReady().then(() => {
+  installApplicationMenu();
   registerIpc();
   createWindow();
   setupAutoUpdater();
