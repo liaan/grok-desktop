@@ -23,7 +23,7 @@ Then: **Grok Desktop** → **Sign in with browser** → **Open project…**
 
 ### Mac: “damaged and can’t be opened”
 
-The app is **not** actually broken. macOS marks unsigned downloads from the internet as quarantined and shows that scary dialog (especially after Safari).
+macOS does this for **unsigned / team builds** downloaded from the internet (Safari quarantine). Use **v0.1.3+** if Apple Silicon DMGs from 0.1.2 refuse to open (broken partial signature — fixed in 0.1.3).
 
 **Fix (once per install):**
 

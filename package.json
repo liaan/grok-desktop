@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",
@@ -53,6 +53,7 @@
     ],
     "asar": true,
     "publish": null,
+    "afterPack": "./scripts/afterPack.cjs",
     "win": {
       "target": [
         {
@@ -79,6 +80,7 @@
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
+      "identity": null,
       "artifactName": "GrokDesktop-${version}-Mac-${arch}.${ext}"
     },
     "dmg": {
