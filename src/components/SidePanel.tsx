@@ -9,7 +9,7 @@ import {
 import type { PermissionRequest } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
 import type { BackgroundTask } from "../lib/background-tasks";
-import { runningTaskCount } from "../lib/background-tasks";
+import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 
@@ -35,7 +35,7 @@ export function SidePanel({
   const { redact } = usePrivacy();
   const [tab, setTab] = useState<"files" | "approvals">("approvals");
   const running = runningTaskCount(backgroundTasks);
-  const hasTasks = backgroundTasks.length > 0;
+  const hasTasks = hasAnyTasks(backgroundTasks);
   /** Expanded when there is work; user can collapse. Auto-expand when new running tasks. */
   const [tasksOpen, setTasksOpen] = useState(false);
   const [browseCwd, setBrowseCwd] = useState<string | null>(null);
@@ -320,7 +320,7 @@ export function SidePanel({
           className="tasks-dock-header"
           disabled={!hasTasks}
           aria-expanded={tasksOpen && hasTasks}
-          aria-controls="tasks-dock-body"
+          aria-controls={tasksOpen && hasTasks ? "tasks-dock-body" : undefined}
           title={
             hasTasks
               ? tasksOpen
@@ -341,7 +341,7 @@ export function SidePanel({
           ) : null}
         </button>
         {tasksOpen && hasTasks ? (
-          <div id="tasks-dock-body" className="tasks-dock-body">
+          <div id="tasks-dock-body" className="tasks-dock-body" role="region" aria-label="Background tasks">
             {backgroundTasks.map((t) => (
               <div key={t.id} className={`task-card status-${t.status}`}>
                 <div className="task-card-top">

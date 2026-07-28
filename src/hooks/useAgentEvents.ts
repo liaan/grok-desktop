@@ -94,7 +94,11 @@ export function useAgentEvents(opts: {
           kind === "tool_call" ||
           kind === "tool_call_update"
         ) {
-          setBackgroundTasks((prev) => applyBackgroundUpdate(prev, params));
+          setBackgroundTasks((prev) => {
+            const next = applyBackgroundUpdate(prev, params);
+            // Preserve reference when tool events are unrelated (avoids re-renders)
+            return next === prev ? prev : next;
+          });
         }
         setItems((prev) => applySessionUpdate(prev, params));
       }),

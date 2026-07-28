@@ -1648,9 +1648,12 @@ button {
   opacity: 1;
 }
 
+.tasks-dock-running {
+  border-top-color: rgba(96, 165, 250, 0.45);
+}
+
 .tasks-dock-running .tasks-dock-header {
   color: var(--text);
-  border-top-color: rgba(96, 165, 250, 0.35);
 }
 
 .tasks-dock-header {
