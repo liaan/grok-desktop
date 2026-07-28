@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   cancel: () => ipcRenderer.invoke("agent:cancel"),
   respondPermission: (reqId, outcome) =>
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),
+  listPendingPermissions: () =>
+    ipcRenderer.invoke("agent:list-pending-permissions"),
   respondPlanApproval: (reqId, decision) =>
     ipcRenderer.invoke("agent:plan-approval-respond", { reqId, decision }),
   respondUserQuestion: (reqId, decision) =>

@@ -28,11 +28,16 @@ import {
 } from "./auto-update.mjs";
 import {
   listSessionsForCwd,
-  loadBackgroundTasksFromDisk,
-  loadTimelineFromDisk,
+  loadSessionOpenState,
   mostRecentSession,
   startBackgroundTaskFileTail,
 } from "./sessions.mjs";
+import {
+  cancelAllPermissions,
+  listPendingPermissionRequests,
+  registerPermissionRequest,
+  settlePermission,
+} from "./pending-permissions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
 import {
   maybeWarmDockerSandbox,
@@ -62,8 +67,6 @@ let mainWindow = null;
 let agent = null;
 /** Stop fn for updates.jsonl background-task tail */
 let stopBackgroundTaskTail = null;
-/** @type {Map<string, (outcome: any) => void>} */
-const pendingPermissions = new Map();
 /** Plan approval / ask-user extension method responders */
 const pendingPlanApprovals = new Map();
 const pendingUserQuestions = new Map();
@@ -137,7 +140,14 @@ function saveState(state) {
 
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, payload);
+    try {
+      mainWindow.webContents.send(channel, payload);
+    } catch (err) {
+      debugLog("ipc", "send-failed", {
+        channel,
+        error: err?.message || String(err),
+      });
+    }
   }
 }
 
@@ -175,19 +185,11 @@ function makeReqId(prefix) {
  * wrapper that also dismisses the renderer modal.
  */
 function clearPendingPermissions() {
-  const perms = [...pendingPermissions.values()];
+  cancelAllPermissions();
   const plans = [...pendingPlanApprovals.values()];
   const asks = [...pendingUserQuestions.values()];
-  pendingPermissions.clear();
   pendingPlanApprovals.clear();
   pendingUserQuestions.clear();
-  for (const settle of perms) {
-    try {
-      settle({ outcome: { outcome: "cancelled" } });
-    } catch {
-      /* ignore */
-    }
-  }
   for (const settle of plans) {
     try {
       settle({ type: "abandoned" });
@@ -287,26 +289,21 @@ function ensureAgent(cwd, opts = {}) {
 
     agent.on("permission-request", ({ params, respond }) => {
       const reqId = makeReqId("perm");
+      const request = registerPermissionRequest({
+        reqId,
+        params,
+        respond,
+        onSettled: (id, outcome) => {
+          debugLog("permission", "respond", { reqId: id, outcome });
+          send("agent:permission-dismiss", { reqId: id });
+        },
+      });
       debugLog("permission", "request", {
         reqId,
-        tool: params?.toolCall?.title || params?.toolCall?.kind,
-        toolCallId: params?.toolCall?.toolCallId,
+        tool: request.params?.toolCall?.title || request.params?.toolCall?.kind,
+        toolCallId: request.params?.toolCall?.toolCallId,
       });
-      let settled = false;
-      const settle = (outcome) => {
-        if (settled) return;
-        settled = true;
-        pendingPermissions.delete(reqId);
-        debugLog("permission", "respond", { reqId, outcome });
-        try {
-          respond(outcome);
-        } catch {
-          /* ignore */
-        }
-        send("agent:permission-dismiss", { reqId });
-      };
-      pendingPermissions.set(reqId, settle);
-      send("agent:permission-request", { reqId, params });
+      send("agent:permission-request", request);
     });
 
     agent.on("plan-approval-request", ({ params, respond }) => {
@@ -736,11 +733,13 @@ function registerIpc() {
     let history = [];
     /** @type {any[]} */
     let backgroundTasks = [];
+    /** @type {any} */
+    let usage = null;
     if (client.sessionId && !forceNew) {
-      const loaded = loadTimelineFromDisk(cwd, client.sessionId);
+      const loaded = loadSessionOpenState(cwd, client.sessionId);
       history = loaded.items || [];
-      backgroundTasks =
-        loadBackgroundTasksFromDisk(cwd, client.sessionId).tasks || [];
+      backgroundTasks = loaded.tasks || [];
+      usage = loaded.usage || null;
     }
 
     const sessions = listSessionsForCwd(cwd);
@@ -752,6 +751,7 @@ function registerIpc() {
       resumed: Boolean(resumeSessionId) && !forceNew,
       history,
       backgroundTasks,
+      usage,
       sessions,
     };
   });
@@ -797,10 +797,13 @@ function registerIpc() {
     let history = [];
     /** @type {any[]} */
     let backgroundTasks = [];
+    /** @type {any} */
+    let usage = null;
     if (!forceNew && client.sessionId) {
-      history = loadTimelineFromDisk(cwd, client.sessionId).items || [];
-      backgroundTasks =
-        loadBackgroundTasksFromDisk(cwd, client.sessionId).tasks || [];
+      const loaded = loadSessionOpenState(cwd, client.sessionId);
+      history = loaded.items || [];
+      backgroundTasks = loaded.tasks || [];
+      usage = loaded.usage || null;
     }
 
     return {
@@ -810,6 +813,7 @@ function registerIpc() {
       resumed: Boolean(resumeSessionId) && !forceNew,
       history,
       backgroundTasks,
+      usage,
       sessions: listSessionsForCwd(cwd),
       warning: resumeWarning,
     };
@@ -826,10 +830,12 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:permission-respond", async (_e, { reqId, outcome }) => {
-    const settle = pendingPermissions.get(reqId);
-    if (!settle) return false;
-    settle(outcome);
-    return true;
+    return settlePermission(reqId, outcome);
+  });
+
+  /** Mirror open gates after renderer reload / HMR (main is source of truth). */
+  ipcMain.handle("agent:list-pending-permissions", async () => {
+    return listPendingPermissionRequests();
   });
 
   ipcMain.handle("agent:plan-approval-respond", async (_e, { reqId, decision }) => {

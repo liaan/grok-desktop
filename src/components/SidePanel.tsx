@@ -6,34 +6,27 @@ import {
   parentDir,
   relativeDisplay,
 } from "../lib/path-utils";
-import type { PermissionRequest } from "../vite-env";
-import { formatOptionLabel } from "../lib/timeline";
 import type { BackgroundTask } from "../lib/background-tasks";
 import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
-import { buildToolCard, ToolCardView } from "./ToolCardView";
 
 type FileEntry = { name: string; isDirectory: boolean; path: string };
 
+/**
+ * Right rail: project file browser + background Tasks dock.
+ * Tool approvals live inline in the chat timeline (not here).
+ */
 export function SidePanel({
   project,
-  permissions,
   backgroundTasks,
   sessionMode,
-  onPermission,
-  onAllowAllPermissions,
 }: {
   project: string | null;
-  permissions: PermissionRequest[];
   backgroundTasks: BackgroundTask[];
   /** e.g. "plan" when plan mode is active */
   sessionMode: string | null;
-  onPermission: (reqId: string, optionId: string | "cancelled") => void;
-  /** Approve every open request (multi-edit batches) */
-  onAllowAllPermissions?: () => void;
 }) {
   const { redact } = usePrivacy();
-  const [tab, setTab] = useState<"files" | "approvals">("approvals");
   const running = runningTaskCount(backgroundTasks);
   const hasTasks = hasAnyTasks(backgroundTasks);
   /** Expanded when there is work; user can collapse. Auto-expand when new running tasks. */
@@ -82,10 +75,6 @@ export function SidePanel({
     void loadDir(project);
   }, [project, loadDir]);
 
-  useEffect(() => {
-    if (permissions.length > 0) setTab("approvals");
-  }, [permissions.length]);
-
   // Rise and expand the dock when background work appears
   useEffect(() => {
     if (running > 0 && running >= prevRunning.current) {
@@ -122,21 +111,8 @@ export function SidePanel({
 
   return (
     <aside className="panel">
-      <div className="panel-tabs">
-        <button
-          type="button"
-          className={tab === "approvals" ? "active" : ""}
-          onClick={() => setTab("approvals")}
-        >
-          Approvals{permissions.length ? ` (${permissions.length})` : ""}
-        </button>
-        <button
-          type="button"
-          className={tab === "files" ? "active" : ""}
-          onClick={() => setTab("files")}
-        >
-          Files
-        </button>
+      <div className="panel-header">
+        <div className="panel-header-title">Files</div>
       </div>
       <div className="panel-body">
         {sessionMode === "plan" ? (
@@ -144,162 +120,80 @@ export function SidePanel({
             Plan mode active — file edits blocked until you approve a plan
           </div>
         ) : null}
-        {tab === "approvals" && (
+        {!project ? (
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            Open a project to browse files.
+          </p>
+        ) : (
           <>
-            {permissions.length === 0 ? (
-              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                Tool approvals appear here when the agent needs permission.
-              </p>
-            ) : (
-              <>
-                {permissions.length > 1 && onAllowAllPermissions ? (
-                  <div className="perm-batch-actions">
-                    <button
-                      type="button"
-                      className="btn primary"
-                      onClick={() => onAllowAllPermissions()}
-                    >
-                      Allow all ({permissions.length})
-                    </button>
-                    <p className="perm-batch-hint">
-                      Each tool is a separate approval. Allow all grants every
-                      open request so multi-edit batches do not stall.
-                    </p>
-                  </div>
-                ) : null}
-                {permissions.map((p) => {
-                  const tool = p.params?.toolCall;
-                  const options = p.params?.options?.length
-                    ? p.params.options
-                    : [
-                        { optionId: "allow-once", name: "Allow once" },
-                        { optionId: "reject", name: "Reject" },
-                      ];
-                  const card = buildToolCard({
-                    title: tool?.title,
-                    kind: tool?.kind,
-                    raw: tool?.rawInput,
-                  });
-                  const meta = [
-                    tool?.kind || "tool",
-                    tool?.toolCallId
-                      ? `${String(tool.toolCallId).slice(0, 18)}…`
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <div key={p.reqId} className="perm-card">
-                      <ToolCardView card={card} meta={meta} />
-                      <div className="perm-actions">
-                        {options.map((opt) => (
-                          <button
-                            key={opt.optionId}
-                            type="button"
-                            className={
-                              opt.optionId.includes("allow") ||
-                              /yes|proceed|approve/i.test(opt.name || "")
-                                ? "btn primary"
-                                : "btn"
-                            }
-                            onClick={() => onPermission(p.reqId, opt.optionId)}
-                          >
-                            {formatOptionLabel(opt.optionId, opt.name)}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => onPermission(p.reqId, "cancelled")}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </>
-        )}
-        {tab === "files" && (
-          <>
-            {!project ? (
-              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                Open a project to browse files.
-              </p>
-            ) : (
-              <>
-                <div
-                  className="file-browser-path"
-                  title={redact(browseCwd || project || "")}
+            <div
+              className="file-browser-path"
+              title={redact(browseCwd || project || "")}
+            >
+              {canGoUp ? (
+                <button
+                  type="button"
+                  className="btn ghost btn-sm"
+                  title="Up one folder"
+                  onClick={() => upPath && void loadDir(upPath)}
                 >
-                  {canGoUp ? (
-                    <button
-                      type="button"
-                      className="btn ghost btn-sm"
-                      title="Up one folder"
-                      onClick={() => upPath && void loadDir(upPath)}
-                    >
-                      ↑
-                    </button>
-                  ) : null}
-                  <span className="file-browser-label">{pathLabel}</span>
-                </div>
-                {filesLoading && files.length === 0 ? (
-                  <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                    Loading…
-                  </p>
-                ) : null}
-                {filesError ? (
-                  <p style={{ color: "var(--danger, #f87171)", fontSize: 13 }}>
-                    {filesError}
-                  </p>
-                ) : null}
-                {!filesLoading && !filesError && files.length === 0 ? (
-                  <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                    No files (or empty folder).
-                  </p>
-                ) : null}
-                {files.map((f) => (
-                  <div
-                    key={f.path}
-                    className={`file-row ${f.isDirectory ? "is-dir" : "is-file"}`}
+                  ↑
+                </button>
+              ) : null}
+              <span className="file-browser-label">{pathLabel}</span>
+            </div>
+            {filesLoading && files.length === 0 ? (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                Loading…
+              </p>
+            ) : null}
+            {filesError ? (
+              <p style={{ color: "var(--danger, #f87171)", fontSize: 13 }}>
+                {filesError}
+              </p>
+            ) : null}
+            {!filesLoading && !filesError && files.length === 0 ? (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                No files (or empty folder).
+              </p>
+            ) : null}
+            {files.map((f) => (
+              <div
+                key={f.path}
+                className={`file-row ${f.isDirectory ? "is-dir" : "is-file"}`}
+              >
+                <button
+                  type="button"
+                  className={`file-item ${f.isDirectory ? "file-item-dir" : "file-item-file"}`}
+                  title={
+                    f.isDirectory
+                      ? `Open folder: ${redact(f.path)}`
+                      : `Open: ${redact(f.path)}`
+                  }
+                  onClick={() =>
+                    f.isDirectory
+                      ? void loadDir(f.path)
+                      : void window.grokDesktop.openPath(f.path)
+                  }
+                >
+                  <span className="file-item-icon" aria-hidden>
+                    {f.isDirectory ? "📁" : "📄"}
+                  </span>
+                  <span className="file-item-name">{f.name}</span>
+                </button>
+                {!f.isDirectory ? (
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm file-reveal"
+                    title="Show in folder"
+                    aria-label={`Show ${f.name} in folder`}
+                    onClick={() => void window.grokDesktop.showItem(f.path)}
                   >
-                    <button
-                      type="button"
-                      className={`file-item ${f.isDirectory ? "file-item-dir" : "file-item-file"}`}
-                      title={
-                        f.isDirectory
-                          ? `Open folder: ${redact(f.path)}`
-                          : `Open: ${redact(f.path)}`
-                      }
-                      onClick={() =>
-                        f.isDirectory
-                          ? void loadDir(f.path)
-                          : void window.grokDesktop.openPath(f.path)
-                      }
-                    >
-                      <span className="file-item-icon" aria-hidden>
-                        {f.isDirectory ? "📁" : "📄"}
-                      </span>
-                      <span className="file-item-name">{f.name}</span>
-                    </button>
-                    {!f.isDirectory ? (
-                      <button
-                        type="button"
-                        className="btn ghost btn-sm file-reveal"
-                        title="Show in folder"
-                        aria-label={`Show ${f.name} in folder`}
-                        onClick={() => void window.grokDesktop.showItem(f.path)}
-                      >
-                        ↗
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </>
-            )}
+                    ↗
+                  </button>
+                ) : null}
+              </div>
+            ))}
           </>
         )}
       </div>
@@ -340,7 +234,12 @@ export function SidePanel({
           ) : null}
         </button>
         {tasksOpen && hasTasks ? (
-          <div id="tasks-dock-body" className="tasks-dock-body" role="region" aria-label="Background tasks">
+          <div
+            id="tasks-dock-body"
+            className="tasks-dock-body"
+            role="region"
+            aria-label="Background tasks"
+          >
             {backgroundTasks.map((t) => (
               <div key={t.id} className={`task-card status-${t.status}`}>
                 <div className="task-card-top">

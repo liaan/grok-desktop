@@ -9,6 +9,30 @@ declare module "../../shared/session-timeline.mjs" {
   ): string;
 }
 
+declare module "../../shared/usage.mjs" {
+  export type SessionUsage = {
+    turns: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    lastContextTokens: number;
+    cachedReadTokens: number;
+    reasoningTokens: number;
+    modelCalls: number;
+    costUsdTicks: number;
+    lastModel?: string;
+  };
+  export function emptyUsage(): SessionUsage;
+  export function applyUsageUpdate(
+    prev: SessionUsage,
+    params: any,
+  ): SessionUsage;
+  export function formatTokens(n: number): string;
+  export function formatCostUsd(ticks: number): string | null;
+  export function formatUsageBar(u: SessionUsage): string;
+  export function formatUsageTooltip(u: SessionUsage): string;
+}
+
 export type PermissionOutcome = {
   outcome: {
     outcome: "selected" | "cancelled";
@@ -136,6 +160,8 @@ export type OpenProjectResult = {
     outputSnippet?: string;
     toolCallId?: string;
   }>;
+  /** Summed turn_completed usage from updates.jsonl (status bar) */
+  usage?: import("./lib/usage").SessionUsage | null;
   sessions?: SessionSummary[];
 };
 
@@ -200,6 +226,8 @@ declare global {
         reqId: string,
         outcome: PermissionOutcome,
       ) => Promise<boolean>;
+      /** Open Approvals still held in main (after HMR / reload) */
+      listPendingPermissions: () => Promise<PermissionRequest[]>;
       respondPlanApproval: (
         reqId: string,
         decision: {

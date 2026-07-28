@@ -54,7 +54,7 @@ export function useAgentSafety(opts: {
         next === "always-approve" &&
         permissionMode !== "always-approve" &&
         !window.confirm(
-          "Enable Always approve?\n\nTools will run without the Approvals panel. Deny rules and plan-mode edit gates still apply.",
+          "Enable Always approve?\n\nTools will run without inline approval cards. Deny rules and plan-mode edit gates still apply.",
         )
       ) {
         return;

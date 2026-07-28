@@ -13,6 +13,8 @@ import {
   sameCalendarDay,
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
+import { formatOptionLabel } from "../lib/timeline";
+import { classifyOptionId } from "../../shared/permission-options.mjs";
 import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 
@@ -189,10 +191,18 @@ function UserMessage({
 
 function PendingApprovalCard({
   request,
+  onPermission,
 }: {
   request: PermissionRequest;
+  onPermission?: (reqId: string, optionId: string | "cancelled") => void;
 }) {
   const tool = request.params?.toolCall;
+  const options = request.params?.options?.length
+    ? request.params.options
+    : [
+        { optionId: "allow-once", name: "Allow once" },
+        { optionId: "reject", name: "Reject" },
+      ];
   const card = buildToolCard({
     title: tool?.title,
     kind: tool?.kind,
@@ -214,9 +224,34 @@ function PendingApprovalCard({
           Waiting for tool approval…
         </div>
         <ToolCardView card={card} />
-        <div className="pending-approval-hint">
-          Choose Allow or Reject in the Approvals panel →
-        </div>
+        {onPermission ? (
+          <div className="perm-actions">
+            {options.map((opt) => {
+              const cls = classifyOptionId(opt.optionId, options);
+              const allow =
+                cls === "allow_once" || cls === "allow_always";
+              return (
+                <button
+                  key={opt.optionId}
+                  type="button"
+                  className={allow ? "btn primary" : "btn"}
+                  onClick={() => onPermission(request.reqId, opt.optionId)}
+                >
+                  {formatOptionLabel(opt.optionId, opt.name)}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className="btn danger"
+              onClick={() => onPermission(request.reqId, "cancelled")}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="pending-approval-hint">Waiting for approval…</div>
+        )}
       </div>
     </article>
   );
@@ -227,6 +262,8 @@ export function MessageList({
   bottomRef,
   knownCommands = [],
   pendingPermissions = [],
+  onPermission,
+  onAllowAllPermissions,
 }: {
   items: TimelineItem[];
   bottomRef: RefObject<HTMLDivElement | null>;
@@ -234,6 +271,9 @@ export function MessageList({
   knownCommands?: SlashCommand[];
   /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
   pendingPermissions?: PermissionRequest[];
+  onPermission?: (reqId: string, optionId: string | "cancelled") => void;
+  /** Batch-approve every open request (multi-edit batches) */
+  onAllowAllPermissions?: () => void;
 }) {
   if (items.length === 0 && pendingPermissions.length === 0) {
     return (
@@ -254,6 +294,8 @@ export function MessageList({
       bottomRef={bottomRef}
       knownCommands={knownCommands}
       pendingPermissions={pendingPermissions}
+      onPermission={onPermission}
+      onAllowAllPermissions={onAllowAllPermissions}
     />
   );
 }
@@ -263,11 +305,15 @@ function MessageListBody({
   bottomRef,
   knownCommands,
   pendingPermissions,
+  onPermission,
+  onAllowAllPermissions,
 }: {
   items: TimelineItem[];
   bottomRef: RefObject<HTMLDivElement | null>;
   knownCommands: SlashCommand[];
   pendingPermissions: PermissionRequest[];
+  onPermission?: (reqId: string, optionId: string | "cancelled") => void;
+  onAllowAllPermissions?: () => void;
 }) {
   const { redact } = usePrivacy();
 
@@ -373,8 +419,27 @@ function MessageListBody({
           </Fragment>
         );
       })}
+      {pendingPermissions.length > 1 && onAllowAllPermissions ? (
+        <div className="perm-batch-inline" role="region" aria-label="Batch approvals">
+          <p className="perm-batch-hint">
+            {pendingPermissions.length} tools waiting — Allow all grants each
+            once so multi-edit batches do not stall.
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => onAllowAllPermissions()}
+          >
+            Allow all ({pendingPermissions.length})
+          </button>
+        </div>
+      ) : null}
       {pendingPermissions.map((p) => (
-        <PendingApprovalCard key={p.reqId} request={p} />
+        <PendingApprovalCard
+          key={p.reqId}
+          request={p}
+          onPermission={onPermission}
+        />
       ))}
       <div ref={bottomRef} />
     </>

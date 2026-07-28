@@ -209,6 +209,8 @@ export default function App() {
     userQuestion,
     clearSessionScoped,
     hydrateBackgroundTasks,
+    hydrateSessionUsage,
+    syncPermissionsFromMain,
     onPermission,
     onAllowAllPermissions,
     onPlanApproval,
@@ -309,6 +311,8 @@ export default function App() {
     sendNowRef,
     clearSessionScoped,
     hydrateBackgroundTasks,
+    hydrateSessionUsage,
+    syncPermissionsFromMain,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -1251,6 +1255,8 @@ export default function App() {
             bottomRef={bottomRef}
             knownCommands={allCommands}
             pendingPermissions={permissions}
+            onPermission={onPermission}
+            onAllowAllPermissions={() => void onAllowAllPermissions()}
           />
         </div>
 
@@ -1414,11 +1420,8 @@ export default function App() {
 
       <SidePanel
         project={project}
-        permissions={permissions}
         backgroundTasks={backgroundTasks}
         sessionMode={sessionMode}
-        onPermission={onPermission}
-        onAllowAllPermissions={() => void onAllowAllPermissions()}
       />
 
       <PlanApprovalDialog

@@ -116,6 +116,7 @@ button {
 .app {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   width: 100%;
   max-width: 100%;
@@ -145,6 +146,7 @@ button {
 /* Keep sidebar / main / panel header bottoms aligned under traffic lights */
 .platform-darwin .sidebar .brand,
 .platform-darwin .topbar,
+.platform-darwin .panel-header,
 .platform-darwin .panel-tabs {
   min-height: 72px;
   box-sizing: border-box;
@@ -162,8 +164,10 @@ button {
   align-items: flex-end;
 }
 
+.platform-darwin .panel-header,
 .platform-darwin .panel-tabs {
-  padding-top: 20px;
+  padding-top: 28px;
+  padding-bottom: 10px;
   align-items: flex-end;
 }
 
@@ -417,11 +421,15 @@ button {
   gap: 8px;
 }
 
-/* Main chat */
+/* Main chat
+ * min-height:0 is required: grid items default to min-height:auto and will
+ * grow with the timeline, clipping the composer + status bar under overflow. */
 .main {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   background:
     radial-gradient(1200px 500px at 20% -10%, rgba(124, 58, 237, 0.12), transparent 60%),
@@ -704,7 +712,8 @@ button {
 }
 
 .msg {
-  max-width: min(860px, 100%);
+  /* Fill the main column; only cap on very wide screens so tools/diffs use space */
+  max-width: min(1100px, 100%);
   width: 100%;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
@@ -1220,11 +1229,16 @@ button {
   color: var(--text-muted);
 }
 
+.msg.pending-approval .perm-actions {
+  margin-top: 10px;
+}
+
 .composer {
   border-top: 1px solid var(--border-soft);
   padding: 12px 16px 10px;
   background: linear-gradient(180deg, transparent, var(--bg));
   position: relative;
+  flex-shrink: 0;
 }
 
 /* Bottom status strip (privacy + git branch) */
@@ -1604,15 +1618,39 @@ button {
   vertical-align: middle;
 }
 
-/* Right panel */
+/* Right panel (Files + Tasks dock) */
 .panel {
   border-left: 1px solid var(--border);
   background: var(--panel-bg);
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
+/* Match main .topbar height so the three columns share one header band */
+.panel-header {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.panel-header-title {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+/* Legacy tab strip (unused after Approvals moved inline; keep button styles if re-added) */
 .panel-tabs {
   display: flex;
   align-items: stretch;
@@ -1637,6 +1675,26 @@ button {
 .panel-tabs button.active {
   color: var(--text);
   border-bottom-color: var(--accent);
+}
+
+.perm-batch-inline {
+  margin: 8px 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.perm-batch-inline .perm-batch-hint {
+  margin: 0;
+  flex: 1;
+  min-width: 180px;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .panel-body {

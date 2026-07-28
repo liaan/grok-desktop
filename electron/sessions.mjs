@@ -10,6 +10,7 @@ import {
   applyBackgroundUpdate,
   isBackgroundTaskUpdateKind,
 } from "../shared/background-tasks.mjs";
+import { applyUsageUpdate, emptyUsage } from "../shared/usage.mjs";
 
 /** URL-encode cwd the same way the CLI groups sessions. */
 export function encodeSessionCwd(cwd) {
@@ -87,24 +88,36 @@ export function mostRecentSession(cwd) {
   return list[0] || null;
 }
 
+function updatesJsonlPath(cwd, sessionId) {
+  return path.join(sessionsRootForCwd(cwd), sessionId, "updates.jsonl");
+}
+
 /**
- * Rebuild a UI timeline from updates.jsonl.
+ * Single-pass rebuild of timeline + background tasks + usage from updates.jsonl.
+ * Canonical disk loader for project/session open.
+ *
  * @param {string} cwd
  * @param {string} sessionId
- * @param {{ maxItems?: number }} [opts]
+ * @param {{ maxItems?: number, maxTasks?: number }} [opts]
  */
-export function loadTimelineFromDisk(cwd, sessionId, opts = {}) {
+export function loadSessionOpenState(cwd, sessionId, opts = {}) {
   const maxItems = opts.maxItems ?? 400;
-  const updatesPath = path.join(
-    sessionsRootForCwd(cwd),
-    sessionId,
-    "updates.jsonl",
-  );
+  const maxTasks = opts.maxTasks ?? 40;
+  const updatesPath = updatesJsonlPath(cwd, sessionId);
   if (!fs.existsSync(updatesPath)) {
-    return { items: [], error: null };
+    return {
+      items: [],
+      tasks: [],
+      usage: emptyUsage(),
+      error: null,
+      path: updatesPath,
+    };
   }
 
   let items = [];
+  /** @type {any[]} */
+  let tasks = [];
+  let usage = emptyUsage();
   try {
     const text = fs.readFileSync(updatesPath, "utf8");
     for (const line of text.split("\n")) {
@@ -118,73 +131,56 @@ export function loadTimelineFromDisk(cwd, sessionId, opts = {}) {
       }
       const params = row.params || row;
       items = applySessionUpdate(items, params);
+
+      const update = params?.update ?? params;
+      const kind = update?.sessionUpdate || update?.session_update;
+      if (kind === "turn_completed" || kind === "turn_complete") {
+        usage = applyUsageUpdate(usage, params);
+      }
+      if (isBackgroundTaskUpdateKind(kind)) {
+        tasks = applyBackgroundUpdate(tasks, params);
+      }
     }
   } catch (err) {
     return {
       items: [],
+      tasks: [],
+      usage: emptyUsage(),
       error: err?.message || String(err),
+      path: updatesPath,
     };
   }
 
   if (items.length > maxItems) {
     items = items.slice(items.length - maxItems);
   }
-
-  return { items, error: null };
-}
-
-/**
- * Rebuild background-task list from updates.jsonl (same file the CLI writes).
- * Used to hydrate the Tasks dock and as a safety net when ACP wire events
- * for `_x.ai/session/update` are missed.
- *
- * @param {string} cwd
- * @param {string} sessionId
- * @param {{ maxTasks?: number }} [opts]
- */
-export function loadBackgroundTasksFromDisk(cwd, sessionId, opts = {}) {
-  const maxTasks = opts.maxTasks ?? 40;
-  const updatesPath = path.join(
-    sessionsRootForCwd(cwd),
-    sessionId,
-    "updates.jsonl",
-  );
-  if (!fs.existsSync(updatesPath)) {
-    return { tasks: [], error: null, path: updatesPath };
-  }
-
-  /** @type {any[]} */
-  let tasks = [];
-  try {
-    const text = fs.readFileSync(updatesPath, "utf8");
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let row;
-      try {
-        row = JSON.parse(trimmed);
-      } catch {
-        continue;
-      }
-      const params = row.params || row;
-      const update = params?.update ?? params;
-      const kind = update?.sessionUpdate || update?.session_update;
-      if (!isBackgroundTaskUpdateKind(kind)) continue;
-      tasks = applyBackgroundUpdate(tasks, params);
-    }
-  } catch (err) {
-    return {
-      tasks: [],
-      error: err?.message || String(err),
-      path: updatesPath,
-    };
-  }
-
   if (tasks.length > maxTasks) {
     tasks = tasks.slice(0, maxTasks);
   }
 
-  return { tasks, error: null, path: updatesPath };
+  return { items, tasks, usage, error: null, path: updatesPath };
+}
+
+/** @deprecated use loadSessionOpenState — kept as thin projection for call sites */
+export function loadTimelineFromDisk(cwd, sessionId, opts = {}) {
+  const { items, error } = loadSessionOpenState(cwd, sessionId, opts);
+  return { items, error };
+}
+
+/** @deprecated use loadSessionOpenState */
+export function loadBackgroundTasksFromDisk(cwd, sessionId, opts = {}) {
+  const { tasks, error, path: updatesPath } = loadSessionOpenState(
+    cwd,
+    sessionId,
+    opts,
+  );
+  return { tasks, error, path: updatesPath };
+}
+
+/** @deprecated use loadSessionOpenState */
+export function loadUsageFromDisk(cwd, sessionId) {
+  const { usage, error } = loadSessionOpenState(cwd, sessionId);
+  return { usage, error };
 }
 
 /**
@@ -200,11 +196,7 @@ export function loadBackgroundTasksFromDisk(cwd, sessionId, opts = {}) {
 export function startBackgroundTaskFileTail(opts) {
   const { cwd, sessionId, onParams } = opts;
   const intervalMs = opts.intervalMs ?? 750;
-  const updatesPath = path.join(
-    sessionsRootForCwd(cwd),
-    sessionId,
-    "updates.jsonl",
-  );
+  const updatesPath = updatesJsonlPath(cwd, sessionId);
 
   let pos = 0;
   let stopped = false;
@@ -244,7 +236,6 @@ export function startBackgroundTaskFileTail(opts) {
           const update = params?.update ?? params;
           const kind = update?.sessionUpdate || update?.session_update;
           if (!isBackgroundTaskUpdateKind(kind)) continue;
-          // Only re-emit true task lifecycle + BackgroundTaskStarted tool results
           if (
             kind === "task_backgrounded" ||
             kind === "task_completed" ||
@@ -271,7 +262,7 @@ export function startBackgroundTaskFileTail(opts) {
   };
 
   const timer = setInterval(tick, intervalMs);
-  // Unref so this timer does not keep Electron alive alone
+  // Unref so Electron can quit without waiting on the poller
   if (typeof timer.unref === "function") timer.unref();
 
   return () => {

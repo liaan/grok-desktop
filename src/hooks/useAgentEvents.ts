@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type MutableRefObject,
@@ -74,16 +75,45 @@ export function useAgentEvents(opts: {
   );
   const [sessionUsage, setSessionUsage] = useState<SessionUsage>(emptyUsage);
 
+  /**
+   * Bumped on every live permission push so an in-flight list→replace
+   * re-syncs instead of wiping a request that landed after the snapshot.
+   */
+  const permissionEpoch = useRef(0);
+
+  /**
+   * Main owns open tool gates. Replace renderer mirror from the main list
+   * (mount / open / HMR). Live push events also update the mirror.
+   * Loops until no permission-request arrives mid-await (epoch stable).
+   */
+  const syncPermissionsFromMain = useCallback(async () => {
+    for (;;) {
+      const epochAtStart = permissionEpoch.current;
+      try {
+        const list = await window.grokDesktop.listPendingPermissions();
+        if (Array.isArray(list)) {
+          setPermissions(
+            list.filter((p): p is PermissionRequest => Boolean(p?.reqId)),
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+      // Push arrived during await — list again until stable.
+      if (permissionEpoch.current === epochAtStart) break;
+    }
+  }, []);
+
   useEffect(() => {
+    void syncPermissionsFromMain();
     const offs = [
       window.grokDesktop.on("agent:session-update", (params) => {
         const update = params?.update ?? params;
         const kind = update?.sessionUpdate || update?.session_update;
         if (kind === "available_commands_update") {
           setAgentCommands(agentCommandsFromUpdate(update));
-          return;
-        }
-        if (kind === "current_mode_update") {
+          // Do not return before usage: stream meta often rides this event
+        } else if (kind === "current_mode_update") {
           const modeId =
             update?.currentModeId ||
             update?.modeId ||
@@ -102,24 +132,28 @@ export function useAgentEvents(opts: {
         ) {
           setBackgroundTasks((prev) => {
             const next = applyBackgroundUpdate(prev, params);
-            // Preserve reference when tool events are unrelated (avoids re-renders)
             return next === prev ? prev : next;
           });
         }
-        // Token / cost usage from turn_completed (+ live totalTokens on meta)
+        // Ordered pipeline: ignore live usage while project/session is opening;
+        // disk hydrate (replace) runs in applyOpenResult, then live accumulates.
         if (
-          kind === "turn_completed" ||
-          kind === "turn_complete" ||
-          params?._meta?.totalTokens != null ||
-          update?.totalTokens != null
+          !openingRef.current &&
+          (kind === "turn_completed" ||
+            kind === "turn_complete" ||
+            params?._meta?.totalTokens != null ||
+            update?.totalTokens != null)
         ) {
           setSessionUsage((prev) => applyUsageUpdate(prev, params));
         }
-        setItems((prev) => applySessionUpdate(prev, params));
+        if (kind !== "available_commands_update") {
+          setItems((prev) => applySessionUpdate(prev, params));
+        }
       }),
       window.grokDesktop.on("agent:permission-request", (payload) => {
         const p = payload as PermissionRequest;
         if (!p?.reqId) return;
+        permissionEpoch.current += 1;
         setPermissions((prev) => {
           if (prev.some((x) => x.reqId === p.reqId)) return prev;
           return [...prev, p];
@@ -198,6 +232,7 @@ export function useAgentEvents(opts: {
     return () => offs.forEach((off) => off());
   }, [
     openingRef,
+    syncPermissionsFromMain,
     setAgentCommands,
     setConn,
     setError,
@@ -219,6 +254,33 @@ export function useAgentEvents(opts: {
   const hydrateBackgroundTasks = useCallback((tasks: BackgroundTask[]) => {
     setBackgroundTasks(Array.isArray(tasks) ? tasks : []);
   }, []);
+
+  /**
+   * Replace status-bar usage from disk (call while openingRef is true so live
+   * ACP events do not interleave). After open completes, live apply resumes.
+   */
+  const hydrateSessionUsage = useCallback(
+    (usage: SessionUsage | null | undefined) => {
+      if (!usage || typeof usage !== "object") {
+        setSessionUsage(emptyUsage());
+        return;
+      }
+      setSessionUsage({
+        ...emptyUsage(),
+        turns: Number(usage.turns) || 0,
+        inputTokens: Number(usage.inputTokens) || 0,
+        outputTokens: Number(usage.outputTokens) || 0,
+        totalTokens: Number(usage.totalTokens) || 0,
+        lastContextTokens: Number(usage.lastContextTokens) || 0,
+        cachedReadTokens: Number(usage.cachedReadTokens) || 0,
+        reasoningTokens: Number(usage.reasoningTokens) || 0,
+        modelCalls: Number(usage.modelCalls) || 0,
+        costUsdTicks: Number(usage.costUsdTicks) || 0,
+        lastModel: usage.lastModel,
+      });
+    },
+    [],
+  );
 
   /**
    * Optimistically mark matching tool cards so they don't sit on "pending".
@@ -399,7 +461,7 @@ export function useAgentEvents(opts: {
       const msg =
         skippedAlwaysOnly > 0
           ? `${failed.length} approval(s) need a manual choice (Allow all never selects Always allow).`
-          : `${failed.length} approval(s) could not be applied. Retry from Approvals.`;
+          : `${failed.length} approval(s) could not be applied. Retry the approval card(s) in the chat.`;
       setError(msg);
     }
   }, [markToolInProgress, revertToolStatus, setError]);
@@ -443,6 +505,8 @@ export function useAgentEvents(opts: {
     userQuestion,
     clearSessionScoped,
     hydrateBackgroundTasks,
+    hydrateSessionUsage,
+    syncPermissionsFromMain,
     onPermission,
     onAllowAllPermissions,
     onPlanApproval,

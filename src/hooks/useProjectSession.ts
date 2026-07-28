@@ -37,6 +37,9 @@ export function useProjectSession(opts: {
   sendNowRef: MutableRefObject<unknown>;
   clearSessionScoped: () => void;
   hydrateBackgroundTasks: (tasks: import("../lib/background-tasks").BackgroundTask[]) => void;
+  hydrateSessionUsage: (usage: import("../lib/usage").SessionUsage | null | undefined) => void;
+  /** Mirror open permission gates from main (source of truth). */
+  syncPermissionsFromMain: () => void | Promise<void>;
   hydrateFromInfo: (i: AppInfo) => void;
   refreshAuth: () => Promise<AuthStatus>;
   refreshBackbone: (cwd?: string) => Promise<BackboneSummary>;
@@ -63,6 +66,8 @@ export function useProjectSession(opts: {
     sendNowRef,
     clearSessionScoped,
     hydrateBackgroundTasks,
+    hydrateSessionUsage,
+    syncPermissionsFromMain,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -86,6 +91,7 @@ export function useProjectSession(opts: {
       res: Awaited<ReturnType<typeof window.grokDesktop.openProject>> & {
         warning?: string | null;
         backgroundTasks?: import("../lib/background-tasks").BackgroundTask[];
+        usage?: import("../lib/usage").SessionUsage | null;
       },
       openOpts?: { note?: string },
     ) => {
@@ -93,8 +99,11 @@ export function useProjectSession(opts: {
       setSessionId(res.sessionId);
       setSessions(res.sessions || []);
       clearSessionScoped();
-      // After clear — restore any background tasks from updates.jsonl
+      // While openingRef is true, live usage is ignored — disk replace is safe.
       hydrateBackgroundTasks(res.backgroundTasks || []);
+      hydrateSessionUsage(res.usage);
+      // Await so we do not mark online with a stale empty mirror.
+      await syncPermissionsFromMain();
       setAgentCommands([]);
       setCmdIndex(0);
       setSlashDismissed(false);
@@ -146,6 +155,8 @@ export function useProjectSession(opts: {
     [
       clearSessionScoped,
       hydrateBackgroundTasks,
+      hydrateSessionUsage,
+      syncPermissionsFromMain,
       hydrateFromInfo,
       promptQueueRef,
       refreshBackbone,
