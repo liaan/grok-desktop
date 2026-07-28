@@ -45,6 +45,13 @@ import {
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
 import { getGitBranch } from "./git-info.mjs";
+import {
+  debugLog,
+  getDebugLogPath,
+  isDebugLogging,
+  setDebugLogging,
+  summarizeSessionUpdate,
+} from "./debug-log.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -93,6 +100,8 @@ function loadState() {
        * screenshots / demos. Does not change agent paths or disk.
        */
       privacyMode: false,
+      /** Write diagnostic JSONL to userData/desktop-debug.log */
+      debugLogging: false,
       lastProject: null,
       ...raw,
     };
@@ -104,6 +113,7 @@ function loadState() {
     delete merged.alwaysApprove;
     merged.privacyMode = Boolean(merged.privacyMode);
     merged.reasoningEffort = normalizeReasoningEffort(merged.reasoningEffort);
+    merged.debugLogging = Boolean(merged.debugLogging);
     return merged;
   } catch {
     return {
@@ -113,6 +123,7 @@ function loadState() {
       sandboxTerminal: true,
       theme: "dark",
       privacyMode: false,
+      debugLogging: false,
       lastProject: null,
       recentProjects: [],
     };
@@ -268,16 +279,25 @@ function ensureAgent(cwd, opts = {}) {
     });
 
     agent.on("session-update", (params) => {
+      if (isDebugLogging()) {
+        debugLog("acp", "session-update", summarizeSessionUpdate(params));
+      }
       send("agent:session-update", params);
     });
 
     agent.on("permission-request", ({ params, respond }) => {
       const reqId = makeReqId("perm");
+      debugLog("permission", "request", {
+        reqId,
+        tool: params?.toolCall?.title || params?.toolCall?.kind,
+        toolCallId: params?.toolCall?.toolCallId,
+      });
       let settled = false;
       const settle = (outcome) => {
         if (settled) return;
         settled = true;
         pendingPermissions.delete(reqId);
+        debugLog("permission", "respond", { reqId, outcome });
         try {
           respond(outcome);
         } catch {
@@ -588,6 +608,8 @@ function registerIpc() {
       sandboxBackend: probeSandbox().backend,
       theme: state.theme === "light" ? "light" : "dark",
       privacyMode: Boolean(state.privacyMode),
+      debugLogging: isDebugLogging() || Boolean(state.debugLogging),
+      debugLogPath: getDebugLogPath(),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -900,6 +922,41 @@ function registerIpc() {
     return state.privacyMode;
   });
 
+  ipcMain.handle("app:set-debug-logging", async (_e, value) => {
+    const state = loadState();
+    state.debugLogging = Boolean(value);
+    saveState(state);
+    setDebugLogging(state.debugLogging);
+    debugLog("settings", state.debugLogging ? "debug on" : "debug off", {
+      path: getDebugLogPath(),
+    });
+    return {
+      debugLogging: isDebugLogging(),
+      debugLogPath: getDebugLogPath(),
+    };
+  });
+
+  ipcMain.handle("app:open-debug-log", async () => {
+    const p = getDebugLogPath();
+    try {
+      if (!fs.existsSync(p)) {
+        fs.writeFileSync(
+          p,
+          `${JSON.stringify({ t: new Date().toISOString(), scope: "debug", msg: "log created" })}\n`,
+          "utf8",
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    const err = await shell.openPath(p);
+    if (err) {
+      // openPath returns error string on failure
+      shell.showItemInFolder(p);
+    }
+    return p;
+  });
+
   ipcMain.handle("git:branch", async (_e, cwd) => {
     const root = typeof cwd === "string" && cwd ? cwd : agent?.cwd;
     if (!root) return { branch: null, detached: false };
@@ -1016,6 +1073,12 @@ app.whenReady().then(() => {
   // Pull/build must never run on the terminal/create hot path (freezes UI).
   try {
     const state = loadState();
+    setDebugLogging(Boolean(state.debugLogging));
+    debugLog("app", "ready", {
+      version: app.getVersion(),
+      debug: isDebugLogging(),
+      logPath: getDebugLogPath(),
+    });
     if (state.sandboxTerminal !== false) {
       maybeWarmDockerSandbox();
     }

@@ -33,6 +33,7 @@ import {
   handleAskUserQuestion,
   handleExitPlanMode,
 } from "./acp-ext-methods.mjs";
+import { debugLog } from "./debug-log.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -175,7 +176,19 @@ export class GrokAcpClient extends EventEmitter {
     if (this.reasoningEffort) {
       args.push("--reasoning-effort", this.reasoningEffort);
     }
+    // Optional agent debug file (same folder as desktop-debug when env set)
+    if (/^(1|true|yes|on)$/i.test(String(process.env.GROK_DESKTOP_DEBUG || ""))) {
+      args.push("--debug");
+    }
     args.push("stdio");
+    debugLog("agent", "spawn", {
+      bin: this.grokPath,
+      args,
+      cwd: this.cwd,
+      effort: this.reasoningEffort,
+      sandbox: this.sandboxTerminal,
+      allowOutside: this.allowOutsideProject,
+    });
     this.proc = spawn(this.grokPath, args, {
       cwd: this.cwd,
       env: agentEnv(),
@@ -184,6 +197,7 @@ export class GrokAcpClient extends EventEmitter {
     });
 
     this.proc.on("error", (err) => {
+      debugLog("agent", "spawn error", { message: err?.message || String(err) });
       this.emit("error", err);
     });
 

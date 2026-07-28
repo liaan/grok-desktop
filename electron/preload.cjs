@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:set-sandbox-terminal", value),
   setTheme: (value) => ipcRenderer.invoke("app:set-theme", value),
   setPrivacyMode: (value) => ipcRenderer.invoke("app:set-privacy-mode", value),
+  setDebugLogging: (value) => ipcRenderer.invoke("app:set-debug-logging", value),
+  openDebugLog: () => ipcRenderer.invoke("app:open-debug-log"),
   getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),

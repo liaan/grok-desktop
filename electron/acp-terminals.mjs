@@ -17,6 +17,7 @@ import path from "node:path";
 import { buildGrokEnv, windowsGitBashPath } from "./grok-home.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
 import { planSandboxedSpawn } from "./terminal-sandbox.mjs";
+import { debugLog } from "./debug-log.mjs";
 
 const DEFAULT_OUTPUT_BYTE_LIMIT = 1_048_576; // 1 MiB
 const KILL_ESCALATE_MS = 1500;
@@ -547,6 +548,14 @@ export class AcpTerminalManager extends EventEmitter {
 
     attachProcess(proc, "initial");
 
+    debugLog("terminal", "create", {
+      terminalId: id,
+      command: execCommand,
+      args: args.map((a) => String(a).slice(0, 120)),
+      cwd,
+      sandbox: this.sandboxTerminal ? term.sandboxBackend || true : false,
+    });
+
     this.emit("created", {
       terminalId: id,
       sessionId: term.sessionId,
@@ -723,6 +732,13 @@ export class AcpTerminalManager extends EventEmitter {
     term.proc = null;
     runTermCleanup(term);
     const status = { exitCode, signal };
+    debugLog("terminal", "exit", {
+      terminalId: term.id,
+      exitCode,
+      signal,
+      command: term.command,
+      outBytes: term.output?.length || 0,
+    });
     const waiters = term.waiters.splice(0, term.waiters.length);
     for (const w of waiters) w(status);
     this.emit("exit", {

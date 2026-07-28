@@ -167,6 +167,9 @@ export type AppInfo = {
    * Does not change agent paths or on-disk data.
    */
   privacyMode: boolean;
+  /** Diagnostic JSONL log for tools/hooks/terminals */
+  debugLogging: boolean;
+  debugLogPath: string;
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -229,6 +232,10 @@ declare global {
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
       setPrivacyMode: (value: boolean) => Promise<boolean>;
+      setDebugLogging: (
+        value: boolean,
+      ) => Promise<{ debugLogging: boolean; debugLogPath: string }>;
+      openDebugLog: () => Promise<string>;
       getGitBranch: (
         cwd?: string,
       ) => Promise<{ branch: string | null; detached: boolean }>;

@@ -551,6 +551,13 @@ button {
   max-width: 11rem;
 }
 
+.settings-path {
+  display: inline;
+  font-family: var(--mono);
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .settings-select {
   font-size: 13px;
   padding: 6px 10px;

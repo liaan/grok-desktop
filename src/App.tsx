@@ -152,6 +152,8 @@ export default function App() {
   });
   /** Display-only path redaction for screenshots / demos */
   const [privacyMode, setPrivacyMode] = useState(false);
+  const [debugLogging, setDebugLogging] = useState(false);
+  const [debugLogPath, setDebugLogPath] = useState("");
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -265,6 +267,8 @@ export default function App() {
     setInfo(i);
     hydrateFromInfo(i);
     setPrivacyMode(Boolean(i.privacyMode));
+    setDebugLogging(Boolean(i.debugLogging));
+    setDebugLogPath(i.debugLogPath || "");
     const nextTheme = i.theme === "light" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
@@ -778,6 +782,20 @@ export default function App() {
     }
   };
 
+  const applyDebugLogging = async (next: boolean) => {
+    if (next === debugLogging) return;
+    setDebugLogging(next);
+    try {
+      const res = await window.grokDesktop.setDebugLogging(next);
+      setDebugLogging(Boolean(res.debugLogging));
+      setDebugLogPath(res.debugLogPath || "");
+    } catch (e: unknown) {
+      setDebugLogging(!next);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Failed to set debug logging");
+    }
+  };
+
   // Git branch in status bar (poll while a project is open)
   useEffect(() => {
     if (!project) {
@@ -1091,11 +1109,15 @@ export default function App() {
         allowOutsideProject={allowOutsideProject}
         sandboxTerminal={sandboxTerminal}
         sandboxStatus={sandboxStatus}
+        debugLogging={debugLogging}
+        debugLogPath={debugLogPath}
         onSetTheme={(t) => void setAppTheme(t)}
         onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
         onSetPermissionMode={(m) => void applyPermissionMode(m)}
         onToggleAllowOutside={() => void toggleAllowOutside()}
         onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
+        onSetDebugLogging={(next) => void applyDebugLogging(next)}
+        onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
       />
 
       <main className="main">
