@@ -172,8 +172,12 @@ export function SettingsDialog({
                 <span className="settings-label">Allow outside project</span>
                 <span className="settings-desc">
                   When off (recommended), ACP file ops and terminal cwd must
-                  stay inside the open project. Independent of terminal sandbox.
-                  File browser stays project-scoped either way.
+                  stay inside the open project or a{" "}
+                  <strong>linked git worktree</strong> of this repo (sibling
+                  checkouts from <code>git worktree add</code>). Independent of
+                  terminal sandbox. File browser stays project-scoped either
+                  way. Turn on only for paths that are not worktrees of this
+                  repo.
                 </span>
               </div>
               <input

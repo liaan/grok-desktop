@@ -198,13 +198,17 @@ Terminals spawn in the project `cwd` (or the path the agent passes). Output is b
 
 Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolveProjectPath`). Paths are checked **lexically** and with **`realpath`** (symlinks inside the project that point outside are rejected). New write targets realpath the nearest existing ancestor.
 
+**Linked git worktrees** of the open project’s repository are also allowed when the gate is on (via `git worktree list` — see `electron/git-worktrees.mjs`). Sibling checkouts from `git worktree add ../foo` therefore work for ACP `fs/*` and terminal cwd without enabling full host access. Unrelated paths still need **Allow outside project**.
+
 | Surface | Gated by “Allow outside project”? | Behavior |
 |---------|-----------------------------------|----------|
-| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(session cwd, path, { allowOutside })` |
+| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(session cwd, path, { allowOutside })` — worktrees of this repo always OK |
 | ACP `terminal/create` cwd | Yes | Same helper against session cwd |
 | Renderer IPC (`fs:read-file`, `fs:list-dir`, shell open/show) | **No — always project-scoped** | Requires an open project; cannot leave the folder even if the agent may |
 
 Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
+
+**Note:** Terminal **sandbox** (Host shell chip) is independent — it jails shell processes. Turning sandbox off does **not** allow ACP file tools outside the project/worktrees.
 
 ### Tool permission mode (Ask / Auto / Always approve)
 

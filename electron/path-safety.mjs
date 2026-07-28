@@ -3,9 +3,14 @@
  *
  * Containment is both lexical (path.relative) and physical (realpath) so a
  * symlink inside the project cannot point ACP fs/terminal paths outside.
+ *
+ * Linked git worktrees of the open project’s repository are also allowed
+ * (sibling checkouts from `git worktree add`) without enabling full
+ * “Allow outside project”.
  */
 import fs from "node:fs";
 import path from "node:path";
+import { listLinkedWorktreeRoots } from "./git-worktrees.mjs";
 
 /**
  * Realpath `resolved` if it exists; otherwise realpath the nearest existing
@@ -47,8 +52,61 @@ function isUnder(rootAbs, targetAbs) {
 }
 
 /**
- * Resolve `target` and ensure it is under `root` (or equal to root).
- * Uses lexical resolve plus realpath so symlinks cannot escape the project.
+ * Allowed roots: open project + linked git worktrees of the same repo.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function allowedRoots(root) {
+  const resolvedRoot = path.resolve(root);
+  /** @type {string[]} */
+  const roots = [resolvedRoot];
+  try {
+    const realMain = fs.realpathSync(resolvedRoot);
+    if (realMain !== resolvedRoot) roots.push(realMain);
+  } catch {
+    /* keep resolved */
+  }
+  for (const wt of listLinkedWorktreeRoots(resolvedRoot)) {
+    roots.push(wt);
+  }
+  // de-dupe
+  const seen = new Set();
+  /** @type {string[]} */
+  const out = [];
+  for (const r of roots) {
+    const n = path.resolve(r);
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * @param {string[]} roots
+ * @param {string} resolved lexical absolute path
+ * @returns {boolean}
+ */
+function isUnderAnyRoot(roots, resolved) {
+  const realTarget = resolveRealish(resolved);
+  for (const root of roots) {
+    let realRoot = root;
+    try {
+      realRoot = fs.realpathSync(root);
+    } catch {
+      /* keep */
+    }
+    if (isUnder(root, resolved) || isUnder(realRoot, realTarget)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Resolve `target` and ensure it is under `root` (or a linked git worktree).
+ * Uses lexical resolve plus realpath so symlinks cannot escape the project
+ * (except into registered worktrees of the same repo).
  * @param {string} root Project / session cwd
  * @param {string} target Absolute or relative path
  * @returns {string} Absolute resolved path (lexical; safe to open/write)
@@ -63,22 +121,11 @@ export function assertPathInProject(root, target) {
     ? path.resolve(target)
     : path.resolve(resolvedRoot, target);
 
-  if (!isUnder(resolvedRoot, resolved)) {
+  const roots = allowedRoots(resolvedRoot);
+  if (!isUnderAnyRoot(roots, resolved)) {
     throw new Error(
-      `Path is outside the open project: ${resolved} (project: ${resolvedRoot})`,
-    );
-  }
-
-  let realRoot = resolvedRoot;
-  try {
-    realRoot = fs.realpathSync(resolvedRoot);
-  } catch {
-    /* project should exist; keep resolved root */
-  }
-  const realTarget = resolveRealish(resolved);
-  if (!isUnder(realRoot, realTarget)) {
-    throw new Error(
-      `Path is outside the open project: ${resolved} → ${realTarget} (project: ${realRoot})`,
+      `Path is outside the open project: ${resolved} (project: ${resolvedRoot}). ` +
+        `Linked git worktrees of this repo are allowed; enable “Allow outside project” for other paths.`,
     );
   }
 
@@ -87,7 +134,7 @@ export function assertPathInProject(root, target) {
 
 /**
  * Resolve a path relative to project root. When `allowOutside` is false
- * (default), the path must stay under root (lexical + realpath).
+ * (default), the path must stay under root or a linked git worktree.
  * @param {string} root Project / session cwd
  * @param {string} target Absolute or relative path
  * @param {{ allowOutside?: boolean }} [opts]
@@ -111,6 +158,7 @@ export function resolveProjectPath(root, target, opts = {}) {
 /**
  * Lexical containment only (no realpath). Useful for UI when IPC already
  * enforces the full gate, or for pure path math without disk I/O.
+ * Note: does **not** expand linked worktrees (UI-only helper).
  * @param {string} root
  * @param {string} target
  * @returns {boolean}
