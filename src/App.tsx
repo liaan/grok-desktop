@@ -276,10 +276,13 @@ export default function App() {
     void bootstrap();
   }, [bootstrap]);
 
-  /** Taskbar / window title: "Grok - projectname" when a folder is open. */
+  /**
+   * Taskbar / window title: project first so Windows truncation still
+   * leaves the folder name visible ("foo · Grok", not "Grok - f…").
+   */
   useEffect(() => {
     document.title = project
-      ? `Grok - ${basename(project)}`
+      ? `${basename(project)} · Grok`
       : "Grok Desktop";
   }, [project]);
 

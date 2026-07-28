@@ -125,8 +125,9 @@ function send(channel, payload) {
 const APP_WINDOW_TITLE = "Grok Desktop";
 
 /**
- * Taskbar / title-bar label: include project shortname so multi-window
- * instances are distinguishable (e.g. "Grok - grok-desktop").
+ * Taskbar / title-bar label. Project shortname first so Windows taskbar
+ * truncation (from the right) still shows which window is which
+ * (e.g. "grok-desktop · Grok" → "grok-desk…", not "Grok - w…").
  * @param {string | null | undefined} cwd
  */
 function setWindowTitle(cwd) {
@@ -140,7 +141,7 @@ function setWindowTitle(cwd) {
     path.basename(trimmed) ||
     trimmed ||
     String(cwd);
-  mainWindow.setTitle(`Grok - ${short}`);
+  mainWindow.setTitle(`${short} · Grok`);
 }
 
 function makeReqId(prefix) {
