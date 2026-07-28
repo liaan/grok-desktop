@@ -249,7 +249,8 @@ export function startBackgroundTaskFileTail(opts) {
             kind === "task_backgrounded" ||
             kind === "task_completed" ||
             kind === "subagent_spawned" ||
-            kind === "subagent_finished"
+            kind === "subagent_finished" ||
+            kind === "hook_execution"
           ) {
             onParams(params);
           } else if (kind === "tool_call" || kind === "tool_call_update") {

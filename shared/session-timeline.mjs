@@ -159,6 +159,79 @@ export function applySessionUpdate(items, params) {
       });
       return next;
     }
+    case "hook_execution": {
+      // Pre/post tool hooks (project/user). When a hook *crashes* (exit ≠ 0)
+      // the agent often never emits tool_call_update — the card stays "pending"
+      // forever. Surface the failure and close the matching pending tool card.
+      const runs = Array.isArray(update.runs) ? update.runs : [];
+      const failed = runs.filter(
+        (r) =>
+          String(r?.status?.status || r?.status || "").toLowerCase() ===
+            "failed" ||
+          (typeof r?.status?.exit_code === "number" &&
+            r.status.exit_code !== 0),
+      );
+      if (failed.length === 0) return next;
+
+      const toolName = String(
+        update.tool_name || update.toolName || update.event_name || "tool",
+      );
+      const details = failed
+        .map((r) => {
+          const name = r?.name || "hook";
+          const err =
+            r?.status?.error ||
+            r?.error ||
+            (r?.status?.exit_code != null
+              ? `exit ${r.status.exit_code}`
+              : "failed");
+          return `${name}: ${err}`;
+        })
+        .join("\n");
+
+      next.push({
+        id: uid("sys"),
+        kind: "system",
+        text:
+          `Hook blocked or crashed (${update.event_name || "hook"} on ${toolName}).\n` +
+          `${details}\n` +
+          `The tool may stay stuck until you Stop. Check project hooks under .grok/hooks (Windows often breaks bash path / CRLF).`,
+        at,
+      });
+
+      // Fail the newest pending tool that looks related
+      for (let i = next.length - 1; i >= 0; i--) {
+        const item = next[i];
+        if (item?.kind !== "tool") continue;
+        const st = String(item.status || "").toLowerCase();
+        if (st && st !== "pending" && st !== "in_progress") continue;
+        const title = String(item.title || "").toLowerCase();
+        const tn = toolName.toLowerCase();
+        const related =
+          !tn ||
+          title.includes(tn) ||
+          tn.includes("terminal") ||
+          tn.includes("bash") ||
+          title.includes("execute") ||
+          title.includes("run_terminal");
+        if (!related) continue;
+        next[i] = {
+          ...item,
+          status: "failed",
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "text",
+                text: `Blocked by hook failure:\n${details}`,
+              },
+            },
+          ],
+        };
+        break;
+      }
+      return next;
+    }
     default:
       return next;
   }
