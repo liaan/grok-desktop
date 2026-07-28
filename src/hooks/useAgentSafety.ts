@@ -3,9 +3,15 @@ import {
   normalizePermissionMode,
   type PermissionMode,
 } from "../lib/permission-mode";
+import {
+  DEFAULT_REASONING_EFFORT,
+  normalizeReasoningEffort,
+  reasoningEffortLabel,
+  type ReasoningEffort,
+} from "../lib/reasoning-effort";
 
 /**
- * Permission mode, sandbox terminal, allow-outside-project.
+ * Permission mode, reasoning effort, sandbox terminal, allow-outside-project.
  */
 export function useAgentSafety(opts: {
   setError: (msg: string | null) => void;
@@ -14,6 +20,9 @@ export function useAgentSafety(opts: {
   const { setError, appendSystem } = opts;
   const [permissionMode, setPermissionMode] =
     useState<PermissionMode>("ask");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    DEFAULT_REASONING_EFFORT,
+  );
   const [allowOutsideProject, setAllowOutsideProject] = useState(false);
   const [sandboxTerminal, setSandboxTerminal] = useState(true);
   const [sandboxStatus, setSandboxStatus] = useState("");
@@ -23,6 +32,7 @@ export function useAgentSafety(opts: {
     (i: {
       permissionMode?: string;
       alwaysApprove?: boolean;
+      reasoningEffort?: string;
       allowOutsideProject?: boolean;
       sandboxTerminal?: boolean;
       sandboxStatus?: string;
@@ -30,6 +40,7 @@ export function useAgentSafety(opts: {
       setPermissionMode(
         normalizePermissionMode(i.permissionMode, i.alwaysApprove),
       );
+      setReasoningEffort(normalizeReasoningEffort(i.reasoningEffort));
       setAllowOutsideProject(Boolean(i.allowOutsideProject));
       setSandboxTerminal(i.sandboxTerminal !== false);
       setSandboxStatus(i.sandboxStatus || "");
@@ -66,6 +77,30 @@ export function useAgentSafety(opts: {
       }
     },
     [permissionMode, setError, appendSystem],
+  );
+
+  const applyReasoningEffort = useCallback(
+    async (next: ReasoningEffort) => {
+      try {
+        const result = await window.grokDesktop.setReasoningEffort(next);
+        const effort = normalizeReasoningEffort(result.effort);
+        setReasoningEffort(effort);
+        if (result.agentSynced === false && result.error) {
+          setError(
+            `Effort set to ${effort} on the client, but the agent did not sync (${result.error}). New agent processes pick it up via --reasoning-effort.`,
+          );
+        } else {
+          setError(null);
+        }
+        appendSystem?.(
+          `Reasoning effort: ${reasoningEffortLabel(effort)} (/effort ${effort})`,
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Failed to set reasoning effort: ${msg}`);
+      }
+    },
+    [setError, appendSystem],
   );
 
   const toggleAllowOutside = useCallback(async () => {
@@ -107,11 +142,13 @@ export function useAgentSafety(opts: {
 
   return {
     permissionMode,
+    reasoningEffort,
     allowOutsideProject,
     sandboxTerminal,
     sandboxStatus,
     hydrateFromInfo,
     applyPermissionMode,
+    applyReasoningEffort,
     toggleAllowOutside,
     applySandboxTerminal,
   };

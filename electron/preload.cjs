@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:set-always-approve", value),
   setPermissionMode: (value) =>
     ipcRenderer.invoke("agent:set-permission-mode", value),
+  setReasoningEffort: (value) =>
+    ipcRenderer.invoke("agent:set-reasoning-effort", value),
   setAllowOutsideProject: (value) =>
     ipcRenderer.invoke("agent:set-allow-outside-project", value),
   setSandboxTerminal: (value) =>

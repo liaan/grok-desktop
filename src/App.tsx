@@ -29,6 +29,7 @@ import {
   type SlashCommand,
 } from "./lib/commands";
 import { type PermissionMode } from "./lib/permission-mode";
+import { type ReasoningEffort } from "./lib/reasoning-effort";
 import {
   nextAlwaysApproveMode,
   runDesktopCommand,
@@ -186,11 +187,13 @@ export default function App() {
 
   const {
     permissionMode,
+    reasoningEffort,
     allowOutsideProject,
     sandboxTerminal,
     sandboxStatus,
     hydrateFromInfo,
     applyPermissionMode,
+    applyReasoningEffort,
     toggleAllowOutside,
     applySandboxTerminal,
   } = useAgentSafety({ setError, appendSystem });
@@ -1111,6 +1114,25 @@ export default function App() {
                 <option value="ask">Ask</option>
                 <option value="auto">Auto</option>
                 <option value="always-approve">Always</option>
+              </select>
+            </label>
+            <label
+              className="perm-mode-topbar"
+              title="Reasoning effort for the current model (/effort)"
+            >
+              <span className="perm-mode-topbar-label">Effort</span>
+              <select
+                className="perm-mode-select"
+                value={reasoningEffort}
+                aria-label="Reasoning effort"
+                onChange={(e) =>
+                  void applyReasoningEffort(e.target.value as ReasoningEffort)
+                }
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">X-High</option>
               </select>
             </label>
             <span

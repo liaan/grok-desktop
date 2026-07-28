@@ -218,6 +218,10 @@ Desktop stores `permissionMode` in `desktop-state.json` (`ask` default; migrates
 
 Live changes call `session/set_mode` when available, else slash `/always-approve on|off` or `/auto`. UI: topbar **Perms** select + Settings dropdown.
 
+### Reasoning effort (topbar Effort)
+
+Desktop stores `reasoningEffort` in `desktop-state.json` (`high` default). Spawn uses `grok agent --reasoning-effort <level> stdio` (flag must be before the transport subcommand). Live changes call `session/set_model` with `modelId` + `_meta.reasoningEffort` (same surface as CLI `/effort`). Levels: `low` | `medium` | `high` | `xhigh` — a model only accepts tiers it advertises.
+
 ### Plan mode & background tasks (GUI)
 
 | Surface | Behavior |

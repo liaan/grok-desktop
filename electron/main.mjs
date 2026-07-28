@@ -34,6 +34,10 @@ import {
 import { assertPathInProject } from "./path-safety.mjs";
 import { probeSandbox, sandboxStatusLabel } from "./terminal-sandbox.mjs";
 import { normalizePermissionMode } from "./permission-mode.mjs";
+import {
+  DEFAULT_REASONING_EFFORT,
+  normalizeReasoningEffort,
+} from "./reasoning-effort.mjs";
 import { getGitBranch } from "./git-info.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,6 +66,11 @@ function loadState() {
       alwaysApprove: false,
       /** ask | auto | always-approve */
       permissionMode: "ask",
+      /**
+       * Reasoning effort for models that support it (`/effort`).
+       * low | medium | high | xhigh — default high (matches grok-4.5 menu).
+       */
+      reasoningEffort: DEFAULT_REASONING_EFFORT,
       /** When false (default), agent FS + terminal cwd cannot leave project root */
       allowOutsideProject: false,
       /**
@@ -86,10 +95,12 @@ function loadState() {
     );
     delete merged.alwaysApprove;
     merged.privacyMode = Boolean(merged.privacyMode);
+    merged.reasoningEffort = normalizeReasoningEffort(merged.reasoningEffort);
     return merged;
   } catch {
     return {
       permissionMode: "ask",
+      reasoningEffort: DEFAULT_REASONING_EFFORT,
       allowOutsideProject: false,
       sandboxTerminal: true,
       theme: "dark",
@@ -194,6 +205,7 @@ function ensureAgent(cwd, opts = {}) {
     agent = new GrokAcpClient({
       cwd,
       permissionMode: state.permissionMode,
+      reasoningEffort: state.reasoningEffort,
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       clientVersion: app.getVersion(),
@@ -512,6 +524,7 @@ function registerIpc() {
       /** @deprecated use permissionMode === 'always-approve' */
       alwaysApprove: state.permissionMode === "always-approve",
       permissionMode: normalizePermissionMode(state.permissionMode),
+      reasoningEffort: normalizeReasoningEffort(state.reasoningEffort),
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       sandboxStatus: sandboxStatusLabel(),
@@ -763,6 +776,19 @@ function registerIpc() {
     let result = { mode, agentSynced: false };
     if (agent?.setPermissionMode) {
       result = await agent.setPermissionMode(mode);
+    }
+    return result;
+  });
+
+  ipcMain.handle("agent:set-reasoning-effort", async (_e, value) => {
+    const effort = normalizeReasoningEffort(value);
+    const state = loadState();
+    state.reasoningEffort = effort;
+    saveState(state);
+    /** @type {{ effort: string, agentSynced: boolean, error?: string }} */
+    let result = { effort, agentSynced: false };
+    if (agent?.setReasoningEffort) {
+      result = await agent.setReasoningEffort(effort);
     }
     return result;
   });

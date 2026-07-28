@@ -21,6 +21,10 @@ import {
   toAgentPermissionMode,
 } from "./permission-mode.mjs";
 import {
+  DEFAULT_REASONING_EFFORT,
+  normalizeReasoningEffort,
+} from "./reasoning-effort.mjs";
+import {
   cancelledPermissionResult,
   pickAllowOptionId,
   selectedPermissionResult,
@@ -49,6 +53,11 @@ export class GrokAcpClient extends EventEmitter {
     allowOutsideProject = false,
     /** When true (default), wrap ACP tool shells in an OS FS jail */
     sandboxTerminal = true,
+    /**
+     * Reasoning effort for models that support it (`/effort`, `--reasoning-effort`).
+     * low | medium | high | xhigh
+     */
+    reasoningEffort = DEFAULT_REASONING_EFFORT,
     clientVersion = "0.1.2",
   } = {}) {
     super();
@@ -60,6 +69,7 @@ export class GrokAcpClient extends EventEmitter {
     );
     this.allowOutsideProject = Boolean(allowOutsideProject);
     this.sandboxTerminal = sandboxTerminal !== false;
+    this.reasoningEffort = normalizeReasoningEffort(reasoningEffort);
     this.clientVersion = clientVersion;
     this.proc = null;
     this.rl = null;
@@ -71,6 +81,13 @@ export class GrokAcpClient extends EventEmitter {
     this.stderrBuf = "";
     /** @type {Record<string, any>} */
     this.agentCapabilities = {};
+    /** Last known ACP model id (from session/new|load models.currentModelId). */
+    this.currentModelId = null;
+    /**
+     * Effort levels advertised by the current model (ids). Empty when unknown.
+     * @type {string[]}
+     */
+    this.availableReasoningEfforts = [];
     this.terminals = new AcpTerminalManager({
       defaultCwd: this.cwd,
       allowOutsideProject: this.allowOutsideProject,
@@ -152,7 +169,13 @@ export class GrokAcpClient extends EventEmitter {
   async start(opts = {}) {
     if (this.proc) return this;
 
-    const args = ["agent", "stdio"];
+    // `--reasoning-effort` is an `agent` flag (before the transport subcommand).
+    // Top-level `grok --reasoning-effort … agent stdio` is ignored by the CLI.
+    const args = ["agent"];
+    if (this.reasoningEffort) {
+      args.push("--reasoning-effort", this.reasoningEffort);
+    }
+    args.push("stdio");
     this.proc = spawn(this.grokPath, args, {
       cwd: this.cwd,
       env: agentEnv(),
@@ -223,6 +246,63 @@ export class GrokAcpClient extends EventEmitter {
     };
   }
 
+  /**
+   * Remember model id + advertised effort menu from session/new|load result.
+   * @param {any} session
+   */
+  _rememberModels(session) {
+    const models = session?.models;
+    const current =
+      models?.currentModelId ||
+      session?._meta?.["x.ai/sessionDetail"]?.currentModelId ||
+      null;
+    if (current) this.currentModelId = String(current);
+
+    const list = Array.isArray(models?.availableModels)
+      ? models.availableModels
+      : [];
+    const entry =
+      list.find((m) => String(m?.modelId || "") === this.currentModelId) ||
+      list[0];
+    const efforts = entry?._meta?.reasoningEfforts;
+    if (Array.isArray(efforts)) {
+      this.availableReasoningEfforts = efforts
+        .map((e) => String(e?.id || e?.value || "").toLowerCase())
+        .filter(Boolean);
+    } else {
+      this.availableReasoningEfforts = [];
+    }
+
+    // Prefer live session value when present and we have no stronger client pref
+    // (spawn flag already applied; keep client preference as source of truth).
+    const live = entry?._meta?.reasoningEffort;
+    if (live && !this.reasoningEffort) {
+      this.reasoningEffort = normalizeReasoningEffort(live);
+    }
+  }
+
+  /**
+   * Align live session effort with Desktop preference after session/new|load.
+   * Spawn flag usually already matches; this covers load + mid-process /new.
+   */
+  async _syncReasoningEffortToSession() {
+    if (!this.sessionId || !this.ready || !this.reasoningEffort) return;
+    if (!this.currentModelId) return;
+    try {
+      await this.request(
+        "session/set_model",
+        {
+          sessionId: this.sessionId,
+          modelId: this.currentModelId,
+          _meta: { reasoningEffort: this.reasoningEffort },
+        },
+        { timeoutMs: 15_000 },
+      );
+    } catch {
+      /* Best-effort — spawn flag / next agent start still apply. */
+    }
+  }
+
   async newSession() {
     // Drop prior chat's processes so /new and session switch don't leak shells
     try {
@@ -240,8 +320,10 @@ export class GrokAcpClient extends EventEmitter {
       { timeoutMs: LOAD_TIMEOUT_MS },
     );
     this.sessionId = session.sessionId;
+    this._rememberModels(session);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
+    await this._syncReasoningEffortToSession();
     this.emit("ready", {
       sessionId: this.sessionId,
       cwd: this.cwd,
@@ -280,8 +362,10 @@ export class GrokAcpClient extends EventEmitter {
 
     this.sessionId =
       result?.sessionId || result?._meta?.sessionId || sessionId;
+    this._rememberModels(result);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
+    await this._syncReasoningEffortToSession();
     this.emit("ready", {
       sessionId: this.sessionId,
       cwd: this.cwd,
@@ -595,6 +679,55 @@ export class GrokAcpClient extends EventEmitter {
       const error = err?.message || String(err);
       return {
         mode: this.permissionMode,
+        agentSynced: false,
+        error,
+      };
+    }
+  }
+
+  /**
+   * Set reasoning effort (same as CLI `/effort <level>`).
+   * Live path: `session/set_model` with `_meta.reasoningEffort` (Grok 0.2.101+).
+   * Spawn also passes `--reasoning-effort` so new agent processes match.
+   *
+   * @param {string} level
+   * @returns {Promise<{
+   *   effort: string,
+   *   agentSynced: boolean,
+   *   error?: string,
+   * }>}
+   */
+  async setReasoningEffort(level) {
+    this.reasoningEffort = normalizeReasoningEffort(level);
+
+    if (!this.sessionId || !this.ready || !this.proc) {
+      return { effort: this.reasoningEffort, agentSynced: false };
+    }
+
+    const modelId = this.currentModelId;
+    if (!modelId) {
+      return {
+        effort: this.reasoningEffort,
+        agentSynced: false,
+        error: "No current model id from the agent yet",
+      };
+    }
+
+    try {
+      await this.request(
+        "session/set_model",
+        {
+          sessionId: this.sessionId,
+          modelId,
+          _meta: { reasoningEffort: this.reasoningEffort },
+        },
+        { timeoutMs: 15_000 },
+      );
+      return { effort: this.reasoningEffort, agentSynced: true };
+    } catch (err) {
+      const error = err?.message || String(err);
+      return {
+        effort: this.reasoningEffort,
         agentSynced: false,
         error,
       };

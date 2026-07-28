@@ -33,6 +33,13 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     local: true,
   },
   {
+    name: "effort",
+    description: "Set reasoning effort (or use topbar Effort: low/medium/high/xhigh)",
+    source: "desktop",
+    inputHint: "low|medium|high|xhigh",
+    // Not local: agent handles `/effort` the same as the CLI
+  },
+  {
     name: "plan",
     description: "Enter plan mode (explore + design before coding)",
     source: "desktop",

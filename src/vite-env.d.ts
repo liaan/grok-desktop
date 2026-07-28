@@ -133,6 +133,8 @@ export type AppInfo = {
   alwaysApprove: boolean;
   /** ask | auto | always-approve */
   permissionMode: "ask" | "auto" | "always-approve";
+  /** Reasoning effort (`/effort`): low | medium | high | xhigh */
+  reasoningEffort: "low" | "medium" | "high" | "xhigh";
   /** When false (default), ACP fs + terminal cwd cannot leave project root */
   allowOutsideProject: boolean;
   /**
@@ -198,6 +200,13 @@ declare global {
         value: "ask" | "auto" | "always-approve",
       ) => Promise<{
         mode: "ask" | "auto" | "always-approve";
+        agentSynced: boolean;
+        error?: string;
+      }>;
+      setReasoningEffort: (
+        value: "low" | "medium" | "high" | "xhigh",
+      ) => Promise<{
+        effort: "low" | "medium" | "high" | "xhigh";
         agentSynced: boolean;
         error?: string;
       }>;
