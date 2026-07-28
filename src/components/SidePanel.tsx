@@ -309,7 +309,6 @@ export function SidePanel({
         className={[
           "tasks-dock",
           hasTasks ? "tasks-dock-has-items" : "tasks-dock-empty",
-          tasksOpen && hasTasks ? "tasks-dock-open" : "",
           running > 0 ? "tasks-dock-running" : "",
         ]
           .filter(Boolean)

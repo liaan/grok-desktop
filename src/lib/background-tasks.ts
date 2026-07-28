@@ -157,32 +157,38 @@ export function applyBackgroundUpdate(
       snap.explicitly_killed ||
       (typeof exit === "number" && exit !== 0) ||
       Boolean(snap.signal);
+    const titleFromSnap = snap.description || snap.command;
+    const outFile = snap.output_file || snap.outputFile;
+    const snippet =
+      typeof snap.output === "string" ? snap.output.slice(-800) : undefined;
+    if (idx >= 0) {
+      const prev = tasks[idx];
+      const list = [...tasks];
+      list[idx] = {
+        ...prev,
+        id: id.startsWith("term_") ? id : prev.id,
+        toolCallId: toolCallId || prev.toolCallId,
+        status: failed ? "failed" : "completed",
+        exitCode: typeof exit === "number" ? exit : prev.exitCode ?? null,
+        endedAt: now(),
+        // Only overwrite fields when the snapshot provides values
+        command: snap.command || prev.command,
+        outputFile: outFile || prev.outputFile,
+        title: titleFromSnap || prev.title || id,
+        outputSnippet: snippet ?? prev.outputSnippet,
+      };
+      return list;
+    }
     const patch: Partial<BackgroundTask> = {
       status: failed ? "failed" : "completed",
       exitCode: typeof exit === "number" ? exit : null,
       endedAt: now(),
       command: snap.command || undefined,
-      outputFile: snap.output_file || snap.outputFile,
-      title:
-        snap.description ||
-        snap.command ||
-        (idx >= 0 ? tasks[idx].title : id),
-      outputSnippet:
-        typeof snap.output === "string"
-          ? snap.output.slice(-800)
-          : undefined,
+      outputFile: outFile || undefined,
+      title: titleFromSnap || id,
+      outputSnippet: snippet,
       toolCallId,
     };
-    if (idx >= 0) {
-      const list = [...tasks];
-      list[idx] = {
-        ...tasks[idx],
-        ...patch,
-        id: id.startsWith("term_") ? id : tasks[idx].id,
-        toolCallId: toolCallId || tasks[idx].toolCallId,
-      };
-      return list;
-    }
     return [
       {
         id,
