@@ -11,6 +11,66 @@ export function grokHomeDir() {
   return path.join(os.homedir(), ".grok");
 }
 
+/**
+ * Candidate Git for Windows install roots (bin/cmd/usr\bin live under these).
+ * Shared by PATH enrichment and bash discovery so host shells see the same git.
+ * @returns {string[]}
+ */
+export function windowsGitInstallRoots() {
+  if (process.platform !== "win32") return [];
+  const pf = process.env["ProgramFiles"] || "C:\\Program Files";
+  const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const local = process.env.LOCALAPPDATA || "";
+  return [
+    path.join(pf, "Git"),
+    path.join(pf86, "Git"),
+    local ? path.join(local, "Programs", "Git") : "",
+  ].filter(Boolean);
+}
+
+/**
+ * Existing Git for Windows PATH dirs (cmd, bin, usr\bin) in preference order.
+ * @returns {string[]}
+ */
+export function windowsGitPathDirs() {
+  /** @type {string[]} */
+  const dirs = [];
+  for (const root of windowsGitInstallRoots()) {
+    for (const sub of ["cmd", "bin", path.join("usr", "bin")]) {
+      const d = path.join(root, sub);
+      try {
+        if (fs.existsSync(d)) dirs.push(d);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return dirs;
+}
+
+/**
+ * Absolute path to Git for Windows bash.exe, or null if not installed.
+ * Prefer this over System32\bash.exe (WSL launcher).
+ * @returns {string | null}
+ */
+export function windowsGitBashPath() {
+  if (process.platform !== "win32") return null;
+  for (const root of windowsGitInstallRoots()) {
+    for (const rel of [
+      path.join("bin", "bash.exe"),
+      path.join("usr", "bin", "bash.exe"),
+    ]) {
+      const p = path.join(root, rel);
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return null;
+}
+
 export function resolveGrokBinary() {
   if (process.env.GROK_BINARY) return process.env.GROK_BINARY;
 
@@ -95,19 +155,12 @@ export function buildGrokEnv(extra = {}) {
   const grokHome = grokHomeDir();
   const binDir = path.join(grokHome, "bin");
   const pathSep = process.platform === "win32" ? ";" : ":";
-  const pf = process.env["ProgramFiles"] || "C:\\Program Files";
   const extras = [
     binDir,
     path.join(home, ".local", "bin"),
     path.join(home, ".cargo", "bin"),
     // Windows: Git for Windows before thin GUI / WSL PATH entries
-    ...(process.platform === "win32"
-      ? [
-          path.join(pf, "Git", "cmd"),
-          path.join(pf, "Git", "bin"),
-          path.join(pf, "Git", "usr", "bin"),
-        ]
-      : []),
+    ...windowsGitPathDirs(),
     "/usr/local/bin",
     "/opt/homebrew/bin",
     "/usr/bin",

@@ -12,7 +12,7 @@
  * Fail closed: if sandbox is on and no backend works, throw — never silently
  * spawn on the bare host.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,11 +28,29 @@ const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 const DEFAULT_DOCKER_IMAGE =
   process.env.GROK_DESKTOP_SANDBOX_IMAGE || "buildpack-deps:noble-scm";
 
-/** Local image built once when the preferred image has no git. */
-const LOCAL_SANDBOX_IMAGE = "grok-desktop-sandbox:1";
+/**
+ * Local image built once when the preferred image has no git.
+ * Bump the tag when the embedded Dockerfile recipe changes.
+ */
+const LOCAL_SANDBOX_IMAGE = "grok-desktop-sandbox:2";
+
+/** Recipe version embedded in local image labels / comments. */
+const LOCAL_SANDBOX_RECIPE = "2";
+
+/**
+ * Verified ready image only (passed git probe). Never cache unverified refs.
+ * @type {string | null}
+ */
+let readyDockerSandboxImage = null;
+
+/** @type {Promise<string> | null} */
+let dockerWarmPromise = null;
+
+/** @type {'idle' | 'warming' | 'ready' | 'error'} */
+let dockerWarmState = "idle";
 
 /** @type {string | null} */
-let cachedDockerSandboxImage = null;
+let dockerWarmError = null;
 
 /**
  * Read-only trees bind-mounted into every bwrap jail (host + WSL).
@@ -206,95 +224,259 @@ function findDocker() {
 }
 
 /**
- * True if `image` is present locally and `git` is on PATH inside it.
+ * Async child process (does not block the Electron main event loop like spawnSync).
+ * @param {string} cmd
+ * @param {string[]} args
+ * @param {{ timeoutMs?: number, input?: string }} [opts]
+ * @returns {Promise<{ status: number | null, stdout: string, stderr: string }>}
+ */
+function runAsync(cmd, args, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  return new Promise((resolve) => {
+    let settled = false;
+    /** @type {import('node:child_process').ChildProcess | null} */
+    let proc = null;
+    let stdout = "";
+    let stderr = "";
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    };
+    try {
+      proc = spawn(cmd, args, {
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (err) {
+      finish(1);
+      stderr = String(err?.message || err);
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        proc?.kill();
+      } catch {
+        /* ignore */
+      }
+      finish(1);
+    }, timeoutMs);
+    if (opts.input != null && proc.stdin) {
+      proc.stdin.end(opts.input);
+    } else {
+      try {
+        proc.stdin?.end();
+      } catch {
+        /* ignore */
+      }
+    }
+    proc.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    proc.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
+    proc.on("error", (err) => {
+      stderr += String(err?.message || err);
+      finish(1);
+    });
+    proc.on("close", (code) => {
+      finish(typeof code === "number" ? code : 1);
+    });
+  });
+}
+
+/**
+ * True if local image has `git` on PATH. Cheap-ish: no network, short timeout.
  * @param {string} dockerPath
  * @param {string} image
  */
-function dockerImageHasGit(dockerPath, image) {
-  const r = runQuiet(
+async function dockerImageHasGitAsync(dockerPath, image) {
+  const r = await runAsync(
     dockerPath,
     [
       "run",
       "--rm",
+      "--network=none",
+      "--read-only",
       "--entrypoint",
       "sh",
       image,
       "-c",
       "command -v git >/dev/null 2>&1",
     ],
-    60_000,
+    { timeoutMs: 20_000 },
   );
   return r.status === 0;
 }
 
 /**
- * Ensure a Docker image suitable for ACP tool shells (needs git + bash).
- * Prefers GROK_DESKTOP_SANDBOX_IMAGE / buildpack-deps; falls back to a
- * one-time local build from ubuntu:24.04 + apt git.
+ * @param {string} dockerPath
+ * @param {string} image
+ */
+async function dockerImageExistsAsync(dockerPath, image) {
+  const r = await runAsync(dockerPath, ["image", "inspect", image], {
+    timeoutMs: 15_000,
+  });
+  return r.status === 0;
+}
+
+function markDockerReady(image) {
+  readyDockerSandboxImage = image;
+  dockerWarmState = "ready";
+  dockerWarmError = null;
+  return image;
+}
+
+function markDockerError(msg) {
+  dockerWarmState = "error";
+  dockerWarmError = msg;
+  // Do NOT cache an unverified preferred image — leave ready null for retry
+  return null;
+}
+
+/**
+ * Currently verified Docker sandbox image, or null if not ready.
+ * @returns {string | null}
+ */
+export function getReadyDockerSandboxImage() {
+  return readyDockerSandboxImage;
+}
+
+/**
+ * @returns {{ state: string, image: string | null, error: string | null }}
+ */
+export function getDockerSandboxWarmStatus() {
+  return {
+    state: dockerWarmState,
+    image: readyDockerSandboxImage,
+    error: dockerWarmError,
+  };
+}
+
+/**
+ * Synchronous resolve for the hot `terminal/create` path.
+ * Only returns a previously verified image — never pull/build on main.
+ * Kicks a background warm if not ready yet.
  *
  * @param {string} dockerPath
+ * @param {string} [preferredImage]
+ * @returns {string}
+ */
+export function resolveDockerSandboxImageForSpawn(dockerPath, preferredImage) {
+  if (readyDockerSandboxImage) return readyDockerSandboxImage;
+
+  // Kick background prepare (no await) so the next tool call can succeed
+  void warmDockerSandboxImage({
+    dockerPath,
+    preferredImage: preferredImage || DEFAULT_DOCKER_IMAGE,
+  });
+
+  const status =
+    dockerWarmState === "warming"
+      ? "Preparing a git-capable sandbox image in the background (first run may pull or build). Retry the tool in a few seconds."
+      : dockerWarmError
+        ? `Docker sandbox image not ready: ${dockerWarmError}`
+        : "Docker sandbox image is not ready yet. Preparing in the background — retry shortly.";
+
+  throw Object.assign(new Error(status), { code: -32000 });
+}
+
+/**
+ * Ensure a Docker image with git is available (async, non-blocking to callers
+ * that fire-and-forget). Only caches images that pass the git probe.
+ *
+ * Prefers GROK_DESKTOP_SANDBOX_IMAGE / buildpack-deps; falls back to a one-time
+ * local build from ubuntu:24.04 + apt git.
+ *
+ * @param {{ dockerPath?: string, preferredImage?: string, force?: boolean }} [opts]
+ * @returns {Promise<string | null>} ready image ref, or null on failure
+ */
+export async function warmDockerSandboxImage(opts = {}) {
+  if (readyDockerSandboxImage && !opts.force) return readyDockerSandboxImage;
+  if (dockerWarmPromise && !opts.force) return dockerWarmPromise;
+
+  const dockerPath = opts.dockerPath || findDocker();
+  if (!dockerPath) {
+    markDockerError("Docker not found");
+    return null;
+  }
+  const preferred = opts.preferredImage || DEFAULT_DOCKER_IMAGE;
+
+  dockerWarmState = "warming";
+  dockerWarmError = null;
+
+  dockerWarmPromise = (async () => {
+    try {
+      // 1) Preferred already local + has git
+      if (await dockerImageExistsAsync(dockerPath, preferred)) {
+        if (await dockerImageHasGitAsync(dockerPath, preferred)) {
+          return markDockerReady(preferred);
+        }
+      } else {
+        // 2) Pull preferred (may be first run — async so UI stays responsive)
+        const pull = await runAsync(dockerPath, ["pull", preferred], {
+          timeoutMs: 300_000,
+        });
+        if (pull.status === 0 && (await dockerImageHasGitAsync(dockerPath, preferred))) {
+          return markDockerReady(preferred);
+        }
+      }
+
+      // 3) Local recipe image from a previous ensure
+      if (await dockerImageExistsAsync(dockerPath, LOCAL_SANDBOX_IMAGE)) {
+        if (await dockerImageHasGitAsync(dockerPath, LOCAL_SANDBOX_IMAGE)) {
+          return markDockerReady(LOCAL_SANDBOX_IMAGE);
+        }
+      }
+
+      // 4) Build minimal image with git once
+      const dockerfile = [
+        `# grok-desktop sandbox recipe ${LOCAL_SANDBOX_RECIPE}`,
+        "FROM ubuntu:24.04",
+        "ENV DEBIAN_FRONTEND=noninteractive",
+        "RUN apt-get update \\",
+        " && apt-get install -y --no-install-recommends git ca-certificates openssh-client curl \\",
+        " && rm -rf /var/lib/apt/lists/*",
+      ].join("\n");
+
+      const build = await runAsync(
+        dockerPath,
+        ["build", "-t", LOCAL_SANDBOX_IMAGE, "-"],
+        { timeoutMs: 600_000, input: dockerfile },
+      );
+      if (build.status === 0) {
+        if (await dockerImageHasGitAsync(dockerPath, LOCAL_SANDBOX_IMAGE)) {
+          return markDockerReady(LOCAL_SANDBOX_IMAGE);
+        }
+        return markDockerError(
+          `Built ${LOCAL_SANDBOX_IMAGE} but git probe failed`,
+        );
+      }
+      const detail = (build.stderr || build.stdout || "docker build failed")
+        .trim()
+        .slice(-500);
+      return markDockerError(`docker build failed: ${detail}`);
+    } catch (err) {
+      return markDockerError(String(err?.message || err));
+    } finally {
+      dockerWarmPromise = null;
+    }
+  })();
+
+  return dockerWarmPromise;
+}
+
+/**
+ * @deprecated use warmDockerSandboxImage / resolveDockerSandboxImageForSpawn
+ * Sync wrapper kept for any external callers; never pull/build on the hot path.
+ * @param {string} dockerPath
  * @param {string} preferredImage
- * @returns {string} image ref to use
+ * @returns {string}
  */
 export function ensureDockerSandboxImage(dockerPath, preferredImage) {
-  if (cachedDockerSandboxImage) return cachedDockerSandboxImage;
-
-  const preferred = preferredImage || DEFAULT_DOCKER_IMAGE;
-
-  const tryImage = (image) => {
-    if (dockerImageHasGit(dockerPath, image)) {
-      cachedDockerSandboxImage = image;
-      return true;
-    }
-    return false;
-  };
-
-  const inspectPref = runQuiet(
-    dockerPath,
-    ["image", "inspect", preferred],
-    15_000,
-  );
-  if (inspectPref.status === 0 && tryImage(preferred)) return preferred;
-
-  if (inspectPref.status !== 0) {
-    const pull = runQuiet(dockerPath, ["pull", preferred], 300_000);
-    if (pull.status === 0 && tryImage(preferred)) return preferred;
-  }
-
-  const inspectLocal = runQuiet(
-    dockerPath,
-    ["image", "inspect", LOCAL_SANDBOX_IMAGE],
-    15_000,
-  );
-  if (inspectLocal.status === 0 && tryImage(LOCAL_SANDBOX_IMAGE)) {
-    return LOCAL_SANDBOX_IMAGE;
-  }
-
-  const dockerfile = [
-    "FROM ubuntu:24.04",
-    "ENV DEBIAN_FRONTEND=noninteractive",
-    "RUN apt-get update \\",
-    " && apt-get install -y --no-install-recommends git ca-certificates openssh-client curl \\",
-    " && rm -rf /var/lib/apt/lists/*",
-  ].join("\n");
-
-  const build = spawnSync(
-    dockerPath,
-    ["build", "-t", LOCAL_SANDBOX_IMAGE, "-"],
-    {
-      input: dockerfile,
-      encoding: "utf8",
-      timeout: 600_000,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
-  if (build.status === 0 && tryImage(LOCAL_SANDBOX_IMAGE)) {
-    return LOCAL_SANDBOX_IMAGE;
-  }
-
-  cachedDockerSandboxImage = preferred;
-  return preferred;
+  return resolveDockerSandboxImageForSpawn(dockerPath, preferredImage);
 }
 
 function findWsl() {
@@ -840,8 +1022,9 @@ function planDocker(p) {
     });
   }
   const preferred = p.probe.dockerImage || DEFAULT_DOCKER_IMAGE;
-  // Prefer an image that actually has git (plain ubuntu:24.04 does not).
-  const image = ensureDockerSandboxImage(docker, preferred);
+  // Hot path: only a previously verified image. Never pull/build on main.
+  // Background warm is kicked from resolve if needed.
+  const image = resolveDockerSandboxImageForSpawn(docker, preferred);
   const rel = relUnderProject(p.projectRoot, p.cwd);
   if (rel == null) {
     throw Object.assign(
@@ -871,6 +1054,8 @@ function planDocker(p) {
     "GIT_PAGER=cat",
     "-e",
     "PAGER=cat",
+    "-e",
+    "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
   ];
 
   return {
@@ -906,5 +1091,31 @@ function planDocker(p) {
 export function sandboxStatusLabel(opts = {}) {
   const p = probeSandbox(opts);
   if (!p.available) return `Unavailable — ${p.detail}`;
+  if (p.backend === "docker") {
+    const warm = getDockerSandboxWarmStatus();
+    if (warm.state === "ready" && warm.image) {
+      return `${p.detail} · image ${warm.image}`;
+    }
+    if (warm.state === "warming") {
+      return `${p.detail} · preparing image…`;
+    }
+    if (warm.state === "error" && warm.error) {
+      return `${p.detail} · image error: ${warm.error}`;
+    }
+    return `${p.detail} · image not ready`;
+  }
   return p.detail;
+}
+
+/**
+ * Fire-and-forget warm when Docker is the sandbox backend.
+ * Safe to call often; coalesces concurrent warms.
+ */
+export function maybeWarmDockerSandbox() {
+  const p = probeSandbox();
+  if (!p.available || p.backend !== "docker") return;
+  void warmDockerSandboxImage({
+    dockerPath: p.dockerPath,
+    preferredImage: p.dockerImage || DEFAULT_DOCKER_IMAGE,
+  });
 }

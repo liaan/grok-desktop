@@ -32,7 +32,11 @@ import {
   mostRecentSession,
 } from "./sessions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
-import { probeSandbox, sandboxStatusLabel } from "./terminal-sandbox.mjs";
+import {
+  maybeWarmDockerSandbox,
+  probeSandbox,
+  sandboxStatusLabel,
+} from "./terminal-sandbox.mjs";
 import { normalizePermissionMode } from "./permission-mode.mjs";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -831,6 +835,10 @@ function registerIpc() {
     state.sandboxTerminal = Boolean(value);
     saveState(state);
     agent?.setSandboxTerminal(state.sandboxTerminal);
+    // Start Docker image pull/build off the UI thread when sandbox is (re)enabled
+    if (state.sandboxTerminal) {
+      maybeWarmDockerSandbox();
+    }
     return state.sandboxTerminal;
   });
 
@@ -954,6 +962,17 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
+
+  // Warm Docker sandbox image in the background when sandbox is on (default).
+  // Pull/build must never run on the terminal/create hot path (freezes UI).
+  try {
+    const state = loadState();
+    if (state.sandboxTerminal !== false) {
+      maybeWarmDockerSandbox();
+    }
+  } catch {
+    /* ignore */
+  }
 
   app.on("activate", () => {
     // Do not recreate a window mid update-install

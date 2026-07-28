@@ -14,7 +14,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGrokEnv } from "./grok-home.mjs";
+import { buildGrokEnv, windowsGitBashPath } from "./grok-home.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
 import { planSandboxedSpawn } from "./terminal-sandbox.mjs";
 
@@ -51,23 +51,10 @@ const KILL_ESCALATE_MS = 1500;
  */
 function bashPath() {
   if (process.platform === "win32") {
-    const pf = process.env["ProgramFiles"] || "C:\\Program Files";
-    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    const local = process.env.LOCALAPPDATA || "";
-    const candidates = [
-      path.join(pf, "Git", "bin", "bash.exe"),
-      path.join(pf, "Git", "usr", "bin", "bash.exe"),
-      path.join(pf86, "Git", "bin", "bash.exe"),
-      local ? path.join(local, "Programs", "Git", "bin", "bash.exe") : "",
-    ].filter(Boolean);
-    for (const p of candidates) {
-      try {
-        if (fs.existsSync(p)) return p;
-      } catch {
-        /* ignore */
-      }
-    }
-    // Last resort: PATH lookup (may be WSL's bash.exe)
+    const gitBash = windowsGitBashPath();
+    if (gitBash) return gitBash;
+    // No Git for Windows — avoid silent WSL bash against a Windows cwd when
+    // possible; still fall back to PATH for exotic setups.
     return "bash";
   }
   for (const p of ["/bin/bash", "/usr/bin/bash"]) {
@@ -110,6 +97,10 @@ function applyNonInteractiveToolEnv(env) {
     GCM_INTERACTIVE: "never",
     GIT_PAGER: "cat",
     PAGER: "cat",
+    // Fail fast instead of hanging on SSH passphrase / host-key prompts
+    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+    // Signed commits: do not open pinentry TTY (will fail closed if signing required)
+    GPG_TTY: "",
   };
   for (const [k, v] of Object.entries(defaults)) {
     if (env[k] == null || env[k] === "") env[k] = v;
