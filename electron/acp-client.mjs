@@ -394,6 +394,25 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
+    // Session updates (incl. Grok extensions) must be handled *before* the
+    // generic server-request branch: some agents attach a JSON-RPC `id` and
+    // expect an empty result. If we route those to _handleServerRequest they
+    // become "Unhandled client method" and never reach the Tasks UI.
+    const method = msg.method ? String(msg.method) : "";
+    const isSessionUpdate =
+      method === "session/update" ||
+      method === "_x.ai/session/update" ||
+      method === "x.ai/session/update" ||
+      method.endsWith("/session/update");
+
+    if (isSessionUpdate && msg.params != null && !msg.result && !msg.error) {
+      this.emit("session-update", msg.params);
+      if (msg.id !== undefined) {
+        this._respond(msg.id, {});
+      }
+      return;
+    }
+
     if (msg.method && msg.id !== undefined && !msg.result && !msg.error) {
       this._handleServerRequest(msg).catch((err) => {
         this._respond(msg.id, null, {
@@ -405,18 +424,7 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (msg.method && msg.id === undefined) {
-      // Grok emits task_backgrounded / task_completed / some subagent events on
-      // `_x.ai/session/update` (not plain `session/update`). Forward both so the
-      // Tasks pane sees background work.
-      if (
-        msg.method === "session/update" ||
-        msg.method === "_x.ai/session/update" ||
-        msg.method === "x.ai/session/update"
-      ) {
-        this.emit("session-update", msg.params);
-      } else {
-        this.emit("notification", msg);
-      }
+      this.emit("notification", msg);
       return;
     }
 

@@ -36,6 +36,7 @@ export function useProjectSession(opts: {
   promptQueueRef: MutableRefObject<unknown>;
   sendNowRef: MutableRefObject<unknown>;
   clearSessionScoped: () => void;
+  hydrateBackgroundTasks: (tasks: import("../lib/background-tasks").BackgroundTask[]) => void;
   hydrateFromInfo: (i: AppInfo) => void;
   refreshAuth: () => Promise<AuthStatus>;
   refreshBackbone: (cwd?: string) => Promise<BackboneSummary>;
@@ -61,6 +62,7 @@ export function useProjectSession(opts: {
     promptQueueRef,
     sendNowRef,
     clearSessionScoped,
+    hydrateBackgroundTasks,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -83,6 +85,7 @@ export function useProjectSession(opts: {
     async (
       res: Awaited<ReturnType<typeof window.grokDesktop.openProject>> & {
         warning?: string | null;
+        backgroundTasks?: import("../lib/background-tasks").BackgroundTask[];
       },
       openOpts?: { note?: string },
     ) => {
@@ -90,6 +93,8 @@ export function useProjectSession(opts: {
       setSessionId(res.sessionId);
       setSessions(res.sessions || []);
       clearSessionScoped();
+      // After clear — restore any background tasks from updates.jsonl
+      hydrateBackgroundTasks(res.backgroundTasks || []);
       setAgentCommands([]);
       setCmdIndex(0);
       setSlashDismissed(false);
@@ -101,6 +106,9 @@ export function useProjectSession(opts: {
       const bb = await refreshBackbone(res.cwd);
       const skillN = bb.ok ? bb.skills.length : "?";
       const mcpN = bb.ok ? bb.mcpServers.length : "?";
+      const runningBg = (res.backgroundTasks || []).filter(
+        (t) => t.status === "running",
+      ).length;
       const banner: TimelineItem = {
         id: uid("sys"),
         kind: "system",
@@ -115,6 +123,9 @@ export function useProjectSession(opts: {
           history.length
             ? `History: ${history.length} message(s) restored`
             : "History: empty (fresh chat)",
+          runningBg
+            ? `Background tasks: ${runningBg} still running (see Tasks dock)`
+            : null,
           `Binary: ${res.grokBinary}`,
           `Skills: ${skillN} · MCP: ${mcpN}`,
         ]
@@ -134,6 +145,7 @@ export function useProjectSession(opts: {
     },
     [
       clearSessionScoped,
+      hydrateBackgroundTasks,
       hydrateFromInfo,
       promptQueueRef,
       refreshBackbone,

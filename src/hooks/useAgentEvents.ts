@@ -199,6 +199,11 @@ export function useAgentEvents(opts: {
     setUserQuestion(null);
   }, []);
 
+  /** Restore Tasks dock from session disk / open result. */
+  const hydrateBackgroundTasks = useCallback((tasks: BackgroundTask[]) => {
+    setBackgroundTasks(Array.isArray(tasks) ? tasks : []);
+  }, []);
+
   /**
    * Optimistically mark matching tool cards so they don't sit on "pending".
    * Matches toolCallId as string; falls back to latest pending with same title.
@@ -420,6 +425,7 @@ export function useAgentEvents(opts: {
     planApproval,
     userQuestion,
     clearSessionScoped,
+    hydrateBackgroundTasks,
     onPermission,
     onAllowAllPermissions,
     onPlanApproval,

@@ -1627,16 +1627,21 @@ button {
 /* Bottom-right tasks dock: greyed when empty; expands upward when active */
 .tasks-dock {
   flex-shrink: 0;
-  border-top: 1px solid var(--border-soft);
-  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  background: var(--code-bg, rgba(20, 20, 26, 0.55));
   display: flex;
   flex-direction: column;
   max-height: 45%;
-  min-height: 0;
+  min-height: 2.5rem;
+  z-index: 2;
 }
 
 .tasks-dock-empty {
-  opacity: 0.55;
+  opacity: 0.7;
+}
+
+[data-theme="light"] .tasks-dock {
+  background: rgba(20, 20, 40, 0.04);
 }
 
 .tasks-dock-empty .tasks-dock-header {

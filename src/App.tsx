@@ -205,6 +205,7 @@ export default function App() {
     planApproval,
     userQuestion,
     clearSessionScoped,
+    hydrateBackgroundTasks,
     onPermission,
     onAllowAllPermissions,
     onPlanApproval,
@@ -302,6 +303,7 @@ export default function App() {
     promptQueueRef,
     sendNowRef,
     clearSessionScoped,
+    hydrateBackgroundTasks,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -1145,6 +1147,18 @@ export default function App() {
                 <option value="xhigh">X-High</option>
               </select>
             </label>
+            {backgroundTasks.some((t) => t.status === "running") ? (
+              <span
+                className="status-pill"
+                title="Background tasks running — see Tasks dock (bottom-right)"
+              >
+                <span className="status-dot busy" />
+                Tasks{" "}
+                {
+                  backgroundTasks.filter((t) => t.status === "running").length
+                }
+              </span>
+            ) : null}
             <span
               className={`status-pill ${isOpening ? "status-pill-loading" : ""}`}
             >

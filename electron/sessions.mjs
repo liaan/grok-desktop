@@ -6,6 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { grokHomeDir } from "./grok-home.mjs";
 import { applySessionUpdate } from "../shared/session-timeline.mjs";
+import {
+  applyBackgroundUpdate,
+  isBackgroundTaskUpdateKind,
+} from "../shared/background-tasks.mjs";
 
 /** URL-encode cwd the same way the CLI groups sessions. */
 export function encodeSessionCwd(cwd) {
@@ -127,4 +131,148 @@ export function loadTimelineFromDisk(cwd, sessionId, opts = {}) {
   }
 
   return { items, error: null };
+}
+
+/**
+ * Rebuild background-task list from updates.jsonl (same file the CLI writes).
+ * Used to hydrate the Tasks dock and as a safety net when ACP wire events
+ * for `_x.ai/session/update` are missed.
+ *
+ * @param {string} cwd
+ * @param {string} sessionId
+ * @param {{ maxTasks?: number }} [opts]
+ */
+export function loadBackgroundTasksFromDisk(cwd, sessionId, opts = {}) {
+  const maxTasks = opts.maxTasks ?? 40;
+  const updatesPath = path.join(
+    sessionsRootForCwd(cwd),
+    sessionId,
+    "updates.jsonl",
+  );
+  if (!fs.existsSync(updatesPath)) {
+    return { tasks: [], error: null, path: updatesPath };
+  }
+
+  /** @type {any[]} */
+  let tasks = [];
+  try {
+    const text = fs.readFileSync(updatesPath, "utf8");
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let row;
+      try {
+        row = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      const params = row.params || row;
+      const update = params?.update ?? params;
+      const kind = update?.sessionUpdate || update?.session_update;
+      if (!isBackgroundTaskUpdateKind(kind)) continue;
+      tasks = applyBackgroundUpdate(tasks, params);
+    }
+  } catch (err) {
+    return {
+      tasks: [],
+      error: err?.message || String(err),
+      path: updatesPath,
+    };
+  }
+
+  if (tasks.length > maxTasks) {
+    tasks = tasks.slice(0, maxTasks);
+  }
+
+  return { tasks, error: null, path: updatesPath };
+}
+
+/**
+ * Tail updates.jsonl and invoke onParams for new background-related lines.
+ * @param {{
+ *   cwd: string,
+ *   sessionId: string,
+ *   onParams: (params: any) => void,
+ *   intervalMs?: number,
+ * }} opts
+ * @returns {() => void} stop
+ */
+export function startBackgroundTaskFileTail(opts) {
+  const { cwd, sessionId, onParams } = opts;
+  const intervalMs = opts.intervalMs ?? 750;
+  const updatesPath = path.join(
+    sessionsRootForCwd(cwd),
+    sessionId,
+    "updates.jsonl",
+  );
+
+  let pos = 0;
+  let stopped = false;
+  try {
+    if (fs.existsSync(updatesPath)) {
+      // Live tail only — hydrate already ran a full pass
+      pos = fs.statSync(updatesPath).size;
+    }
+  } catch {
+    pos = 0;
+  }
+
+  const tick = () => {
+    if (stopped) return;
+    try {
+      if (!fs.existsSync(updatesPath)) return;
+      const st = fs.statSync(updatesPath);
+      if (st.size < pos) pos = 0; // truncated / rotated
+      if (st.size === pos) return;
+      const fd = fs.openSync(updatesPath, "r");
+      try {
+        const len = st.size - pos;
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, pos);
+        pos = st.size;
+        const chunk = buf.toString("utf8");
+        for (const line of chunk.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let row;
+          try {
+            row = JSON.parse(trimmed);
+          } catch {
+            continue;
+          }
+          const params = row.params || row;
+          const update = params?.update ?? params;
+          const kind = update?.sessionUpdate || update?.session_update;
+          if (!isBackgroundTaskUpdateKind(kind)) continue;
+          // Only re-emit true task lifecycle + BackgroundTaskStarted tool results
+          if (
+            kind === "task_backgrounded" ||
+            kind === "task_completed" ||
+            kind === "subagent_spawned" ||
+            kind === "subagent_finished"
+          ) {
+            onParams(params);
+          } else if (kind === "tool_call" || kind === "tool_call_update") {
+            const rawOut = update?.rawOutput || update?.raw_output;
+            if (rawOut?.type === "BackgroundTaskStarted" || rawOut?.task_id) {
+              onParams(params);
+            }
+          }
+        }
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      /* ignore transient read errors */
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  // Unref so this timer does not keep Electron alive alone
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }

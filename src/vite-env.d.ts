@@ -121,6 +121,21 @@ export type OpenProjectResult = {
   grokBinary: string;
   resumed?: boolean;
   history?: TimelineItem[];
+  /** Background commands/subagents restored from updates.jsonl */
+  backgroundTasks?: Array<{
+    id: string;
+    kind: "command" | "subagent" | "monitor";
+    title: string;
+    detail?: string;
+    status: "running" | "completed" | "failed" | "unknown";
+    command?: string;
+    outputFile?: string;
+    exitCode?: number | null;
+    startedAt: number;
+    endedAt?: number;
+    outputSnippet?: string;
+    toolCallId?: string;
+  }>;
   sessions?: SessionSummary[];
 };
 

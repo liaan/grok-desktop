@@ -28,8 +28,10 @@ import {
 } from "./auto-update.mjs";
 import {
   listSessionsForCwd,
+  loadBackgroundTasksFromDisk,
   loadTimelineFromDisk,
   mostRecentSession,
+  startBackgroundTaskFileTail,
 } from "./sessions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
 import {
@@ -51,6 +53,8 @@ const isDev = !app.isPackaged;
 let mainWindow = null;
 /** @type {GrokAcpClient | null} */
 let agent = null;
+/** Stop fn for updates.jsonl background-task tail */
+let stopBackgroundTaskTail = null;
 /** @type {Map<string, (outcome: any) => void>} */
 const pendingPermissions = new Map();
 /** Plan approval / ask-user extension method responders */
@@ -192,6 +196,28 @@ function clearPendingPermissions() {
 }
 
 /**
+ * Follow updates.jsonl for background task events for the live session.
+ * @param {string} cwd
+ * @param {string | null | undefined} sessionId
+ */
+function restartBackgroundTaskTail(cwd, sessionId) {
+  try {
+    stopBackgroundTaskTail?.();
+  } catch {
+    /* ignore */
+  }
+  stopBackgroundTaskTail = null;
+  if (!cwd || !sessionId) return;
+  stopBackgroundTaskTail = startBackgroundTaskFileTail({
+    cwd,
+    sessionId,
+    onParams: (params) => {
+      send("agent:session-update", params);
+    },
+  });
+}
+
+/**
  * Ensure agent process for cwd, optionally resuming a CLI session.
  * Serialized — concurrent open/switch cannot race dispose/start.
  * @param {string} cwd
@@ -206,17 +232,21 @@ function ensureAgent(cwd, opts = {}) {
       if (forceNew) {
         clearPendingPermissions();
         await agent.newSession();
+        restartBackgroundTaskTail(cwd, agent.sessionId);
         return agent;
       }
       if (resumeSessionId && resumeSessionId !== agent.sessionId) {
         clearPendingPermissions();
         await agent.loadSession(resumeSessionId);
+        restartBackgroundTaskTail(cwd, agent.sessionId);
         return agent;
       }
       if (resumeSessionId && resumeSessionId === agent.sessionId) {
+        restartBackgroundTaskTail(cwd, agent.sessionId);
         return agent;
       }
       if (!resumeSessionId && !forceNew) {
+        restartBackgroundTaskTail(cwd, agent.sessionId);
         return agent;
       }
     }
@@ -332,6 +362,7 @@ function ensureAgent(cwd, opts = {}) {
     await agent.start({
       resumeSessionId: forceNew ? null : resumeSessionId,
     });
+    restartBackgroundTaskTail(cwd, agent.sessionId);
     return agent;
   };
 
@@ -678,11 +709,16 @@ function registerIpc() {
 
     rememberProjectSession(cwd, client.sessionId);
     setWindowTitle(client.cwd);
+    restartBackgroundTaskTail(cwd, client.sessionId);
 
     let history = [];
+    /** @type {any[]} */
+    let backgroundTasks = [];
     if (client.sessionId && !forceNew) {
       const loaded = loadTimelineFromDisk(cwd, client.sessionId);
       history = loaded.items || [];
+      backgroundTasks =
+        loadBackgroundTasksFromDisk(cwd, client.sessionId).tasks || [];
     }
 
     const sessions = listSessionsForCwd(cwd);
@@ -693,6 +729,7 @@ function registerIpc() {
       grokBinary: client.grokPath,
       resumed: Boolean(resumeSessionId) && !forceNew,
       history,
+      backgroundTasks,
       sessions,
     };
   });
@@ -733,10 +770,15 @@ function registerIpc() {
     }
     rememberProjectSession(cwd, client.sessionId);
     setWindowTitle(client.cwd);
+    restartBackgroundTaskTail(cwd, client.sessionId);
 
     let history = [];
+    /** @type {any[]} */
+    let backgroundTasks = [];
     if (!forceNew && client.sessionId) {
       history = loadTimelineFromDisk(cwd, client.sessionId).items || [];
+      backgroundTasks =
+        loadBackgroundTasksFromDisk(cwd, client.sessionId).tasks || [];
     }
 
     return {
@@ -745,6 +787,7 @@ function registerIpc() {
       grokBinary: client.grokPath,
       resumed: Boolean(resumeSessionId) && !forceNew,
       history,
+      backgroundTasks,
       sessions: listSessionsForCwd(cwd),
       warning: resumeWarning,
     };
@@ -924,6 +967,12 @@ function registerIpc() {
  * and before-quit). Force-kills the child if dispose hangs.
  */
 function disposeAgentQuick() {
+  try {
+    stopBackgroundTaskTail?.();
+  } catch {
+    /* ignore */
+  }
+  stopBackgroundTaskTail = null;
   const a = agent;
   agent = null;
   setWindowTitle(null);
