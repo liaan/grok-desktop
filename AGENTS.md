@@ -251,7 +251,7 @@ Implementation: `electron/terminal-sandbox.mjs`, hooked in `AcpTerminalManager` 
 |----------|---------|--------|
 | macOS | `sandbox-exec` (Seatbelt) | `(allow default)` then **deny `$HOME` except project** + deny docker sockets; network allowed |
 | Linux | `bwrap` (bubblewrap); Docker fallback | No host `$HOME` bind; **no docker.sock** |
-| Windows | WSL + `bwrap` first; Docker fallback | Project bind only; **never** mounts host docker.sock |
+| Windows | WSL + `bwrap` if present; else **host shell** (`win-host`); Docker **opt-in only** (`GROK_DESKTOP_ALLOW_DOCKER_SANDBOX=1`) | Docker/WSL bind-mounts often hang on Windows volumes — default avoids them |
 
 Policy highlights:
 

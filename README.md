@@ -133,8 +133,11 @@ Optional environment variables:
 | `GROK_BINARY` | Full path to the `grok` executable |
 | `GROK_HOME` | Override config/auth home (default `~/.grok`) |
 | `XAI_API_KEY` | API key fallback when no session token is present |
-| `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox fallback (default `buildpack-deps:noble-scm`, must include `git`) |
+| `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox (default `buildpack-deps:noble-scm`, must include `git`) |
+| `GROK_DESKTOP_ALLOW_DOCKER_SANDBOX` | Set `1` to allow Docker tool sandbox on Windows (off by default — hangs on bind mounts) |
 | `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
+| `GROK_DESKTOP_DEBUG` | Set `1` to enable desktop-debug.log (tools/hooks/terminals) |
+| `GROK_DESKTOP_TERMINAL_TIMEOUT_MS` | Kill hung tool shells after N ms (default `900000` = 15 min; `0` = off) |
 
 ## Quick start (developers)
 

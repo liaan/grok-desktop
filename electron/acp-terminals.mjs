@@ -455,6 +455,12 @@ export class AcpTerminalManager extends EventEmitter {
             backend: null,
           };
       term.sandboxBackend = plan.backend || null;
+      term._spawnPlan = {
+        file: plan.file,
+        fileArgs: (plan.fileArgs || []).map((a) => String(a).slice(0, 160)),
+        cwd: plan.cwd,
+        backend: plan.backend,
+      };
       if (typeof plan.cleanup === "function") {
         term.cleanup = plan.cleanup;
       }
@@ -473,6 +479,12 @@ export class AcpTerminalManager extends EventEmitter {
       proc = spawnOnce(execCommand, args, useShell);
     } catch (err) {
       runTermCleanup(term);
+      debugLog("terminal", "create-failed", {
+        message: err?.message || String(err),
+        command: execCommand,
+        cwd,
+        sandbox: this.sandboxTerminal,
+      });
       throw Object.assign(
         new Error(`terminal/create failed: ${err?.message || err}`),
         { code: err?.code ?? -32000 },
@@ -482,6 +494,34 @@ export class AcpTerminalManager extends EventEmitter {
     term.proc = proc;
     term.pid = proc.pid ?? null;
     this.terminals.set(id, term);
+
+    // Safety net: Docker/WSL tool shells that never exit leave UI on in_progress.
+    // Default 15 minutes; override with GROK_DESKTOP_TERMINAL_TIMEOUT_MS (0 = off).
+    const timeoutMs = Number(
+      process.env.GROK_DESKTOP_TERMINAL_TIMEOUT_MS ?? 15 * 60_000,
+    );
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      term._timeout = setTimeout(() => {
+        if (term.exited) return;
+        debugLog("terminal", "timeout-kill", {
+          terminalId: id,
+          timeoutMs,
+          backend: term.sandboxBackend,
+          command: term.command,
+        });
+        this._append(
+          term,
+          `\n[timeout] tool shell exceeded ${Math.round(timeoutMs / 1000)}s — killed\n`,
+        );
+        try {
+          if (term.pid) killPidTree(term.pid, "SIGKILL");
+        } catch {
+          /* ignore */
+        }
+        this._markExited(term, 124, "TIMEOUT");
+      }, timeoutMs);
+      if (typeof term._timeout.unref === "function") term._timeout.unref();
+    }
 
     const onChunk = (buf) => {
       this._append(term, buf.toString("utf8"));
@@ -554,6 +594,8 @@ export class AcpTerminalManager extends EventEmitter {
       args: args.map((a) => String(a).slice(0, 120)),
       cwd,
       sandbox: this.sandboxTerminal ? term.sandboxBackend || true : false,
+      plan: term._spawnPlan || null,
+      pid: term.pid,
     });
 
     this.emit("created", {
@@ -730,6 +772,10 @@ export class AcpTerminalManager extends EventEmitter {
     term.exitCode = exitCode;
     term.signal = signal;
     term.proc = null;
+    if (term._timeout) {
+      clearTimeout(term._timeout);
+      term._timeout = null;
+    }
     runTermCleanup(term);
     const status = { exitCode, signal };
     debugLog("terminal", "exit", {

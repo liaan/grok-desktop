@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { app } from "electron";
+import os from "node:os";
 
 /** @type {boolean} */
 let enabled = false;
@@ -17,11 +17,22 @@ const MAX_BYTES = 8 * 1024 * 1024;
 function ensurePath() {
   if (logPath) return logPath;
   try {
-    const dir = app.getPath("userData");
-    logPath = path.join(dir, "desktop-debug.log");
+    // Lazy require so unit tests / node --check can import terminal modules
+    // without a full Electron app binding.
+    // eslint-disable-next-line global-require
+    const { app } = require("electron");
+    if (app?.getPath) {
+      logPath = path.join(app.getPath("userData"), "desktop-debug.log");
+      return logPath;
+    }
   } catch {
-    logPath = path.join(process.cwd(), "desktop-debug.log");
+    /* not in electron */
   }
+  logPath = path.join(
+    process.env.APPDATA || os.homedir(),
+    "grok-desktop",
+    "desktop-debug.log",
+  );
   return logPath;
 }
 

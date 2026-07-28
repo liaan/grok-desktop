@@ -81,7 +81,7 @@ export const BWRAP_RO_BINDS = [
   "/etc/timezone",
 ];
 
-/** @typedef {'sandbox-exec' | 'bwrap' | 'wsl-bwrap' | 'docker' | 'none'} SandboxBackend */
+/** @typedef {'sandbox-exec' | 'bwrap' | 'wsl-bwrap' | 'win-host' | 'docker' | 'none'} SandboxBackend */
 
 /**
  * @typedef {{
@@ -790,21 +790,30 @@ function probeSandboxUncached() {
       }
     }
 
+    // Without bwrap, Docker and WSL bind-mounts on Windows often hang forever
+    // on large git repos (G:\Docker\…). Use the host shell (Git Bash) so tools
+    // complete; path gates still limit cwd. Full FS jail needs WSL+bwrap.
+    // Opt into Docker with GROK_DESKTOP_ALLOW_DOCKER_SANDBOX=1 if you need it.
     const docker = findDocker();
-    if (docker) {
+    if (
+      docker &&
+      /^(1|true|yes|on)$/i.test(
+        String(process.env.GROK_DESKTOP_ALLOW_DOCKER_SANDBOX || ""),
+      )
+    ) {
       return result({
         available: true,
         backend: "docker",
-        detail: `Docker fallback (${docker}) — no host docker.sock`,
+        detail: `Docker sandbox (opt-in) — ${docker}`,
         dockerPath: docker,
       });
     }
 
     return result({
-      available: false,
-      backend: "none",
+      available: true,
+      backend: "win-host",
       detail:
-        "Install WSL with bubblewrap (bwrap), or Docker Desktop. No sandbox backend found.",
+        "Windows host shell (no WSL+bwrap jail). Docker/WSL sandboxes skipped — they hang on bind-mounted git repos. Install bubblewrap in WSL for a real jail.",
     });
   }
 
@@ -961,6 +970,19 @@ export function planSandboxedSpawn(opts) {
 
   if (probe.backend === "wsl-bwrap") {
     return planWslBwrap({ probe, projectRoot, cwd, env, inner });
+  }
+
+  if (probe.backend === "win-host") {
+    // Identity plan: host Git Bash / cmd. Sandbox toggle stays on for UX, but
+    // isolation is path-gate only (same as Host shell for process FS).
+    return {
+      file: opts.file,
+      fileArgs: opts.fileArgs,
+      shell: Boolean(opts.shell),
+      cwd,
+      env,
+      backend: "win-host",
+    };
   }
 
   if (probe.backend === "docker") {
