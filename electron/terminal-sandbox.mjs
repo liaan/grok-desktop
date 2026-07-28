@@ -43,7 +43,7 @@ const LOCAL_SANDBOX_RECIPE = "2";
  */
 let readyDockerSandboxImage = null;
 
-/** @type {Promise<string> | null} */
+/** @type {Promise<string | null> | null} */
 let dockerWarmPromise = null;
 
 /** @type {'idle' | 'warming' | 'ready' | 'error'} */
@@ -51,6 +51,12 @@ let dockerWarmState = "idle";
 
 /** @type {string | null} */
 let dockerWarmError = null;
+
+/** Earliest time another full warm may start after an error (ms epoch). */
+let dockerWarmRetryAfter = 0;
+
+/** Cooldown after a failed warm so every tool call does not re-pull/build. */
+const DOCKER_WARM_ERROR_COOLDOWN_MS = 60_000;
 
 /**
  * Read-only trees bind-mounted into every bwrap jail (host + WSL).
@@ -230,6 +236,19 @@ function findDocker() {
  * @param {{ timeoutMs?: number, input?: string }} [opts]
  * @returns {Promise<{ status: number | null, stdout: string, stderr: string }>}
  */
+const RUN_ASYNC_OUTPUT_CAP = 64 * 1024;
+
+/**
+ * Keep only the last `cap` characters of a growing log buffer.
+ * @param {string} cur
+ * @param {string} add
+ * @param {number} cap
+ */
+function appendCapped(cur, add, cap = RUN_ASYNC_OUTPUT_CAP) {
+  const next = cur + add;
+  return next.length > cap ? next.slice(-cap) : next;
+}
+
 function runAsync(cmd, args, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 60_000;
   return new Promise((resolve) => {
@@ -238,10 +257,13 @@ function runAsync(cmd, args, opts = {}) {
     let proc = null;
     let stdout = "";
     let stderr = "";
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let timer = null;
     const finish = (status) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      timer = null;
       resolve({ status, stdout, stderr });
     };
     try {
@@ -250,35 +272,50 @@ function runAsync(cmd, args, opts = {}) {
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (err) {
-      finish(1);
       stderr = String(err?.message || err);
+      finish(1);
       return;
     }
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       try {
-        proc?.kill();
+        if (proc?.pid && process.platform === "win32") {
+          spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+          });
+        } else {
+          proc?.kill("SIGKILL");
+        }
       } catch {
-        /* ignore */
+        try {
+          proc?.kill();
+        } catch {
+          /* ignore */
+        }
       }
+      stderr = appendCapped(stderr, "\n[timeout]\n");
       finish(1);
     }, timeoutMs);
-    if (opts.input != null && proc.stdin) {
-      proc.stdin.end(opts.input);
-    } else {
-      try {
+    try {
+      if (opts.input != null && proc.stdin) {
+        proc.stdin.end(opts.input);
+      } else {
         proc.stdin?.end();
-      } catch {
-        /* ignore */
       }
+    } catch {
+      /* ignore closed stdin */
     }
+    proc.stdin?.on("error", () => {
+      /* ignore EPIPE on closed stdin */
+    });
     proc.stdout?.on("data", (d) => {
-      stdout += d.toString();
+      stdout = appendCapped(stdout, d.toString());
     });
     proc.stderr?.on("data", (d) => {
-      stderr += d.toString();
+      stderr = appendCapped(stderr, d.toString());
     });
     proc.on("error", (err) => {
-      stderr += String(err?.message || err);
+      stderr = appendCapped(stderr, String(err?.message || err));
       finish(1);
     });
     proc.on("close", (code) => {
@@ -332,6 +369,7 @@ function markDockerReady(image) {
 function markDockerError(msg) {
   dockerWarmState = "error";
   dockerWarmError = msg;
+  dockerWarmRetryAfter = Date.now() + DOCKER_WARM_ERROR_COOLDOWN_MS;
   // Do NOT cache an unverified preferred image — leave ready null for retry
   return null;
 }
@@ -367,18 +405,31 @@ export function getDockerSandboxWarmStatus() {
 export function resolveDockerSandboxImageForSpawn(dockerPath, preferredImage) {
   if (readyDockerSandboxImage) return readyDockerSandboxImage;
 
-  // Kick background prepare (no await) so the next tool call can succeed
-  void warmDockerSandboxImage({
-    dockerPath,
-    preferredImage: preferredImage || DEFAULT_DOCKER_IMAGE,
-  });
+  const now = Date.now();
+  const inCooldown =
+    dockerWarmState === "error" && now < dockerWarmRetryAfter;
 
-  const status =
-    dockerWarmState === "warming"
-      ? "Preparing a git-capable sandbox image in the background (first run may pull or build). Retry the tool in a few seconds."
-      : dockerWarmError
-        ? `Docker sandbox image not ready: ${dockerWarmError}`
-        : "Docker sandbox image is not ready yet. Preparing in the background — retry shortly.";
+  // Kick background prepare when idle / first failure expired (not while cooling down)
+  if (!inCooldown) {
+    void warmDockerSandboxImage({
+      dockerPath,
+      preferredImage: preferredImage || DEFAULT_DOCKER_IMAGE,
+    });
+  }
+
+  let status;
+  if (dockerWarmState === "warming") {
+    status =
+      "Preparing a git-capable sandbox image in the background (first run may pull or build). Retry the tool in a few seconds.";
+  } else if (inCooldown && dockerWarmError) {
+    const secs = Math.max(1, Math.ceil((dockerWarmRetryAfter - now) / 1000));
+    status = `Docker sandbox image not ready: ${dockerWarmError} (retry in ~${secs}s)`;
+  } else if (dockerWarmError) {
+    status = `Docker sandbox image not ready: ${dockerWarmError}`;
+  } else {
+    status =
+      "Docker sandbox image is not ready yet. Preparing in the background — retry shortly.";
+  }
 
   throw Object.assign(new Error(status), { code: -32000 });
 }
@@ -396,6 +447,13 @@ export function resolveDockerSandboxImageForSpawn(dockerPath, preferredImage) {
 export async function warmDockerSandboxImage(opts = {}) {
   if (readyDockerSandboxImage && !opts.force) return readyDockerSandboxImage;
   if (dockerWarmPromise && !opts.force) return dockerWarmPromise;
+  if (
+    !opts.force &&
+    dockerWarmState === "error" &&
+    Date.now() < dockerWarmRetryAfter
+  ) {
+    return null;
+  }
 
   const dockerPath = opts.dockerPath || findDocker();
   if (!dockerPath) {
@@ -406,6 +464,7 @@ export async function warmDockerSandboxImage(opts = {}) {
 
   dockerWarmState = "warming";
   dockerWarmError = null;
+  dockerWarmRetryAfter = 0;
 
   dockerWarmPromise = (async () => {
     try {
@@ -1055,7 +1114,12 @@ function planDocker(p) {
     "-e",
     "PAGER=cat",
     "-e",
-    "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+    // Ephemeral container: accept-new is OK (no durable host known_hosts)
+    "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
+    "-e",
+    "GCM_INTERACTIVE=never",
+    "-e",
+    "GPG_TTY=",
   ];
 
   return {

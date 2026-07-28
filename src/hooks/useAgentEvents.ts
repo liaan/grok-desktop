@@ -89,7 +89,10 @@ export function useAgentEvents(opts: {
           kind === "task_backgrounded" ||
           kind === "task_completed" ||
           kind === "subagent_spawned" ||
-          kind === "subagent_finished"
+          kind === "subagent_finished" ||
+          // Fallback when extension events are missed: BackgroundTaskStarted in tool result
+          kind === "tool_call" ||
+          kind === "tool_call_update"
         ) {
           setBackgroundTasks((prev) => applyBackgroundUpdate(prev, params));
         }

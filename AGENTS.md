@@ -229,7 +229,7 @@ Desktop stores `reasoningEffort` in `desktop-state.json` (`high` default). Spawn
 | `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon). Must not be no-op (agent reports “client disconnected”). |
 | `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal |
 | ACP `fs/*` under session dir | Always allowed for the current session folder (`~/.grok/sessions/<encoded-cwd>/<session-id>/`) so `plan.md` can be written while project path gate stays on |
-| `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** tab |
+| `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** bottom dock (agent often sends these on `_x.ai/session/update`, which Desktop must forward like `session/update`) |
 | `current_mode_update` | Plan-mode banner when `currentModeId === "plan"` |
 | `/plan` slash | Advertised in composer menu; sent to agent as normal prompt text |
 

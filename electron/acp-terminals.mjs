@@ -97,8 +97,9 @@ function applyNonInteractiveToolEnv(env) {
     GCM_INTERACTIVE: "never",
     GIT_PAGER: "cat",
     PAGER: "cat",
-    // Fail fast instead of hanging on SSH passphrase / host-key prompts
-    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+    // Fail fast instead of hanging on SSH passphrase prompts. Host shells
+    // fail closed on unknown hosts (do not rewrite the user's known_hosts).
+    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
     // Signed commits: do not open pinentry TTY (will fail closed if signing required)
     GPG_TTY: "",
   };

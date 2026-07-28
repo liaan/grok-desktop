@@ -33,14 +33,18 @@ export function SidePanel({
   onAllowAllPermissions?: () => void;
 }) {
   const { redact } = usePrivacy();
-  const [tab, setTab] = useState<"files" | "approvals" | "tasks">("approvals");
+  const [tab, setTab] = useState<"files" | "approvals">("approvals");
   const running = runningTaskCount(backgroundTasks);
+  const hasTasks = backgroundTasks.length > 0;
+  /** Expanded when there is work; user can collapse. Auto-expand when new running tasks. */
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [browseCwd, setBrowseCwd] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [filesError, setFilesError] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
   /** Monotonic id so out-of-order listDir results are ignored. */
   const loadSeq = useRef(0);
+  const prevRunning = useRef(0);
 
   const loadDir = useCallback(async (dir: string) => {
     const seq = ++loadSeq.current;
@@ -82,9 +86,16 @@ export function SidePanel({
     if (permissions.length > 0) setTab("approvals");
   }, [permissions.length]);
 
+  // Rise and expand the dock when background work appears
   useEffect(() => {
-    if (running > 0 && permissions.length === 0) setTab("tasks");
-  }, [running, permissions.length]);
+    if (running > 0 && running >= prevRunning.current) {
+      setTasksOpen(true);
+    }
+    if (!hasTasks) {
+      setTasksOpen(false);
+    }
+    prevRunning.current = running;
+  }, [running, hasTasks]);
 
   const atProjectRoot =
     Boolean(project && browseCwd) &&
@@ -103,6 +114,12 @@ export function SidePanel({
         ? basen(project)
         : "";
 
+  const tasksLabel = running
+    ? `Tasks (${running})`
+    : hasTasks
+      ? `Tasks (${backgroundTasks.length})`
+      : "Tasks";
+
   return (
     <aside className="panel">
       <div className="panel-tabs">
@@ -112,13 +129,6 @@ export function SidePanel({
           onClick={() => setTab("approvals")}
         >
           Approvals{permissions.length ? ` (${permissions.length})` : ""}
-        </button>
-        <button
-          type="button"
-          className={tab === "tasks" ? "active" : ""}
-          onClick={() => setTab("tasks")}
-        >
-          Tasks{running ? ` (${running})` : ""}
         </button>
         <button
           type="button"
@@ -134,46 +144,6 @@ export function SidePanel({
             Plan mode active — file edits blocked until you approve a plan
           </div>
         ) : null}
-        {tab === "tasks" && (
-          <>
-            {backgroundTasks.length === 0 ? (
-              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                Background commands and subagents appear here while they run.
-              </p>
-            ) : (
-              backgroundTasks.map((t) => (
-                <div
-                  key={t.id}
-                  className={`task-card status-${t.status}`}
-                >
-                  <div className="task-card-top">
-                    <span className={`task-kind`}>{t.kind}</span>
-                    <span className={`task-status status-${t.status}`}>
-                      {t.status}
-                    </span>
-                  </div>
-                  <h3 className="task-title" title={redact(t.title)}>
-                    {redact(t.title)}
-                  </h3>
-                  {t.detail ? (
-                    <div className="task-detail" title={redact(t.detail)}>
-                      {redact(t.detail)}
-                    </div>
-                  ) : null}
-                  {t.command && t.command !== t.title ? (
-                    <pre className="task-cmd">{redact(t.command)}</pre>
-                  ) : null}
-                  {t.outputSnippet ? (
-                    <pre className="task-out">{redact(t.outputSnippet)}</pre>
-                  ) : null}
-                  {t.exitCode != null ? (
-                    <div className="task-meta">exit {t.exitCode}</div>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </>
-        )}
         {tab === "approvals" && (
           <>
             {permissions.length === 0 ? (
@@ -332,6 +302,75 @@ export function SidePanel({
             )}
           </>
         )}
+      </div>
+
+      {/* Bottom dock: greyed when empty; rises when there is background work */}
+      <div
+        className={[
+          "tasks-dock",
+          hasTasks ? "tasks-dock-has-items" : "tasks-dock-empty",
+          tasksOpen && hasTasks ? "tasks-dock-open" : "",
+          running > 0 ? "tasks-dock-running" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <button
+          type="button"
+          className="tasks-dock-header"
+          disabled={!hasTasks}
+          aria-expanded={tasksOpen && hasTasks}
+          aria-controls="tasks-dock-body"
+          title={
+            hasTasks
+              ? tasksOpen
+                ? "Collapse background tasks"
+                : "Expand background tasks"
+              : "No background tasks"
+          }
+          onClick={() => {
+            if (!hasTasks) return;
+            setTasksOpen((o) => !o);
+          }}
+        >
+          <span className="tasks-dock-label">{tasksLabel}</span>
+          {hasTasks ? (
+            <span className="tasks-dock-chevron" aria-hidden>
+              {tasksOpen ? "▾" : "▴"}
+            </span>
+          ) : null}
+        </button>
+        {tasksOpen && hasTasks ? (
+          <div id="tasks-dock-body" className="tasks-dock-body">
+            {backgroundTasks.map((t) => (
+              <div key={t.id} className={`task-card status-${t.status}`}>
+                <div className="task-card-top">
+                  <span className="task-kind">{t.kind}</span>
+                  <span className={`task-status status-${t.status}`}>
+                    {t.status}
+                  </span>
+                </div>
+                <h3 className="task-title" title={redact(t.title)}>
+                  {redact(t.title)}
+                </h3>
+                {t.detail ? (
+                  <div className="task-detail" title={redact(t.detail)}>
+                    {redact(t.detail)}
+                  </div>
+                ) : null}
+                {t.command && t.command !== t.title ? (
+                  <pre className="task-cmd">{redact(t.command)}</pre>
+                ) : null}
+                {t.outputSnippet ? (
+                  <pre className="task-out">{redact(t.outputSnippet)}</pre>
+                ) : null}
+                {t.exitCode != null ? (
+                  <div className="task-meta">exit {t.exitCode}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </aside>
   );

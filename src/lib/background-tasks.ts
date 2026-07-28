@@ -24,6 +24,12 @@ function now() {
 /**
  * Apply a session/update payload to the background-task list.
  * Returns a new array (immutable).
+ *
+ * Event sources:
+ * - `sessionUpdate: task_backgrounded | task_completed | subagent_*`
+ *   (often via `_x.ai/session/update` from the agent)
+ * - `tool_call` / `tool_call_update` with `rawOutput.type === "BackgroundTaskStarted"`
+ *   or `rawInput.background` / `is_background` (fallback when extension event is missed)
  */
 export function applyBackgroundUpdate(
   tasks: BackgroundTask[],
@@ -55,6 +61,24 @@ export function applyBackgroundUpdate(
     if (idx >= 0) list[idx] = { ...list[idx], ...next, startedAt: list[idx].startedAt };
     else list.unshift(next);
     return list;
+  }
+
+  // Fallback: tool result announces a background shell (term_*)
+  if (kind === "tool_call" || kind === "tool_call_update") {
+    const fromTool = taskFromToolUpdate(update);
+    if (fromTool) {
+      const idx = list.findIndex((t) => t.id === fromTool.id);
+      if (idx >= 0) {
+        list[idx] = {
+          ...list[idx],
+          ...fromTool,
+          startedAt: list[idx].startedAt,
+        };
+      } else {
+        list.unshift(fromTool);
+      }
+      return list;
+    }
   }
 
   if (kind === "task_completed") {
@@ -163,6 +187,64 @@ export function applyBackgroundUpdate(
   return list;
 }
 
+/**
+ * Derive a running background task from ACP tool_call / tool_call_update.
+ * @param {any} update
+ * @returns {BackgroundTask | null}
+ */
+function taskFromToolUpdate(update: any): BackgroundTask | null {
+  const rawOut = update?.rawOutput || update?.raw_output || {};
+  const rawIn = update?.rawInput || update?.raw_input || {};
+  const metaIn = update?._meta?.["x.ai/tool"]?.input || {};
+
+  const started =
+    rawOut?.type === "BackgroundTaskStarted" ||
+    (typeof rawOut?.task_id === "string" &&
+      String(rawOut.status || "").toLowerCase() === "running" &&
+      (rawOut?.task_type === "bash" ||
+        rawIn?.background === true ||
+        rawIn?.is_background === true ||
+        metaIn?.background === true));
+
+  // Only promote when the tool result says the bg task started (not mere pending)
+  if (!started) return null;
+
+  const id = String(
+    rawOut?.task_id ||
+      rawOut?.taskId ||
+      update?.task_id ||
+      update?.toolCallId ||
+      update?.tool_call_id ||
+      "",
+  );
+  if (!id) return null;
+
+  const command = String(
+    rawOut?.command || rawIn?.command || metaIn?.command || "",
+  );
+  const title = String(
+    rawIn?.description ||
+      metaIn?.description ||
+      rawOut?.summary ||
+      command ||
+      `Background task ${id.slice(0, 12)}`,
+  );
+
+  return {
+    id,
+    kind: "command",
+    title,
+    status: "running",
+    command: command || undefined,
+    outputFile: rawOut?.output_file || rawOut?.outputFile,
+    startedAt: now(),
+  };
+}
+
 export function runningTaskCount(tasks: BackgroundTask[]): number {
   return tasks.filter((t) => t.status === "running").length;
+}
+
+export function hasAnyTasks(tasks: BackgroundTask[]): boolean {
+  return tasks.length > 0;
 }

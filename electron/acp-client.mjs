@@ -405,7 +405,14 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (msg.method && msg.id === undefined) {
-      if (msg.method === "session/update") {
+      // Grok emits task_backgrounded / task_completed / some subagent events on
+      // `_x.ai/session/update` (not plain `session/update`). Forward both so the
+      // Tasks pane sees background work.
+      if (
+        msg.method === "session/update" ||
+        msg.method === "_x.ai/session/update" ||
+        msg.method === "x.ai/session/update"
+      ) {
         this.emit("session-update", msg.params);
       } else {
         this.emit("notification", msg);
