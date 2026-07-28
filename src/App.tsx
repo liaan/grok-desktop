@@ -201,6 +201,7 @@ export default function App() {
   const {
     permissions,
     backgroundTasks,
+    sessionUsage,
     sessionMode,
     planApproval,
     userQuestion,
@@ -1385,6 +1386,7 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           gitBranch={gitBranch}
           gitDetached={gitDetached}
+          sessionUsage={sessionUsage}
         />
       </main>
 

@@ -1,17 +1,27 @@
+import type { SessionUsage } from "../lib/usage";
+import { formatUsageBar, formatUsageTooltip } from "../lib/usage";
+
 /**
- * Bottom status strip for the main column — privacy indicator + git branch.
+ * Bottom status strip for the main column — privacy, token usage, git branch.
  */
 export function StatusBar({
   privacyMode,
   onOpenSettings,
   gitBranch,
   gitDetached,
+  sessionUsage,
 }: {
   privacyMode: boolean;
   onOpenSettings: () => void;
   gitBranch: string | null;
   gitDetached: boolean;
+  sessionUsage?: SessionUsage | null;
 }) {
+  const usageLabel = sessionUsage ? formatUsageBar(sessionUsage) : "";
+  const usageTip = sessionUsage
+    ? formatUsageTooltip(sessionUsage)
+    : "Token usage appears after the first completed turn.";
+
   return (
     <footer className="status-bar" role="status" aria-label="Project status">
       <div className="status-bar-left">
@@ -25,6 +35,15 @@ export function StatusBar({
             Privacy
           </button>
         ) : null}
+        {usageLabel ? (
+          <span className="status-bar-usage" title={usageTip}>
+            {usageLabel}
+          </span>
+        ) : (
+          <span className="status-bar-usage muted" title={usageTip}>
+            usage —
+          </span>
+        )}
       </div>
       <div className="status-bar-right">
         {gitBranch ? (

@@ -12,6 +12,11 @@ import {
   type BackgroundTask,
 } from "../lib/background-tasks";
 import { applySessionUpdate } from "../lib/timeline";
+import {
+  applyUsageUpdate,
+  emptyUsage,
+  type SessionUsage,
+} from "../lib/usage";
 import type { PlanApprovalRequest } from "../components/PlanApprovalDialog";
 import type { AskUserRequest } from "../components/AskUserDialog";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
@@ -67,6 +72,7 @@ export function useAgentEvents(opts: {
   const [userQuestion, setUserQuestion] = useState<AskUserRequest | null>(
     null,
   );
+  const [sessionUsage, setSessionUsage] = useState<SessionUsage>(emptyUsage);
 
   useEffect(() => {
     const offs = [
@@ -99,6 +105,15 @@ export function useAgentEvents(opts: {
             // Preserve reference when tool events are unrelated (avoids re-renders)
             return next === prev ? prev : next;
           });
+        }
+        // Token / cost usage from turn_completed (+ live totalTokens on meta)
+        if (
+          kind === "turn_completed" ||
+          kind === "turn_complete" ||
+          params?._meta?.totalTokens != null ||
+          update?.totalTokens != null
+        ) {
+          setSessionUsage((prev) => applyUsageUpdate(prev, params));
         }
         setItems((prev) => applySessionUpdate(prev, params));
       }),
@@ -194,6 +209,7 @@ export function useAgentEvents(opts: {
   const clearSessionScoped = useCallback(() => {
     setPermissions([]);
     setBackgroundTasks([]);
+    setSessionUsage(emptyUsage());
     setSessionMode(null);
     setPlanApproval(null);
     setUserQuestion(null);
@@ -421,6 +437,7 @@ export function useAgentEvents(opts: {
   return {
     permissions,
     backgroundTasks,
+    sessionUsage,
     sessionMode,
     planApproval,
     userQuestion,

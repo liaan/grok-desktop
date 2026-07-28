@@ -1270,6 +1270,21 @@ button {
   background: rgba(219, 234, 254, 0.9);
 }
 
+.status-bar-usage {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(420px, 55vw);
+  cursor: default;
+}
+
+.status-bar-usage.muted {
+  opacity: 0.55;
+}
+
 .status-bar-git {
   display: inline-flex;
   align-items: center;
