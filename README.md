@@ -133,7 +133,7 @@ Optional environment variables:
 | `GROK_BINARY` | Full path to the `grok` executable |
 | `GROK_HOME` | Override config/auth home (default `~/.grok`) |
 | `XAI_API_KEY` | API key fallback when no session token is present |
-| `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox fallback (default `ubuntu:24.04`) |
+| `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox fallback (default `buildpack-deps:noble-scm`, must include `git`) |
 | `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
 
 ## Quick start (developers)

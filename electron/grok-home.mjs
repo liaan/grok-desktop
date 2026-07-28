@@ -95,10 +95,19 @@ export function buildGrokEnv(extra = {}) {
   const grokHome = grokHomeDir();
   const binDir = path.join(grokHome, "bin");
   const pathSep = process.platform === "win32" ? ";" : ":";
+  const pf = process.env["ProgramFiles"] || "C:\\Program Files";
   const extras = [
     binDir,
     path.join(home, ".local", "bin"),
     path.join(home, ".cargo", "bin"),
+    // Windows: Git for Windows before thin GUI / WSL PATH entries
+    ...(process.platform === "win32"
+      ? [
+          path.join(pf, "Git", "cmd"),
+          path.join(pf, "Git", "bin"),
+          path.join(pf, "Git", "usr", "bin"),
+        ]
+      : []),
     "/usr/local/bin",
     "/opt/homebrew/bin",
     "/usr/bin",

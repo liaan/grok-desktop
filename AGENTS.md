@@ -256,8 +256,10 @@ Policy highlights:
 - **Home jail** — tool shells cannot read/write the rest of `$HOME` (`.ssh`, sibling repos, Docker config). Global user config outside the project may need sandbox off for some workflows.
 - **Does not sandbox** the `grok agent stdio` process, MCP servers under `~/.grok`, or Electron itself.
 - UI: Settings toggle (confirm when turning **off**); topbar chips for **Host shell** / **Outside project** / **Auto-approve**.
+- **Docker image must include git** — default `buildpack-deps:noble-scm` (not plain `ubuntu:24.04`). If the chosen image has no `git`, Desktop builds a local `grok-desktop-sandbox:1` once.
+- **Windows host shells** prefer **Git for Windows bash** over `System32\bash.exe` (WSL launcher). Tool env sets `GIT_EDITOR=true` / `GIT_TERMINAL_PROMPT=0` so commits never hang on an editor or credential TTY (ACP stdin is not interactive). Docker runs **without** `-i` so tools do not stick on “pending” after exit.
 
-Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `ubuntu:24.04`), `GROK_DESKTOP_WSL_DISTRO` (preferred WSL distro).
+Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `buildpack-deps:noble-scm`), `GROK_DESKTOP_WSL_DISTRO` (preferred WSL distro).
 
 ---
 

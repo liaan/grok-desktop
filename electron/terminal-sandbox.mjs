@@ -18,8 +18,21 @@ import os from "node:os";
 import path from "node:path";
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+/**
+ * Default Docker sandbox image. Must include git + bash — plain ubuntu:24.04
+ * does not ship git, so agent `git` tools fail inside the jail.
+ * Override with GROK_DESKTOP_SANDBOX_IMAGE.
+ *
+ * buildpack-deps:*-scm is the standard "SCM tools" Debian/Ubuntu image.
+ */
 const DEFAULT_DOCKER_IMAGE =
-  process.env.GROK_DESKTOP_SANDBOX_IMAGE || "ubuntu:24.04";
+  process.env.GROK_DESKTOP_SANDBOX_IMAGE || "buildpack-deps:noble-scm";
+
+/** Local image built once when the preferred image has no git. */
+const LOCAL_SANDBOX_IMAGE = "grok-desktop-sandbox:1";
+
+/** @type {string | null} */
+let cachedDockerSandboxImage = null;
 
 /**
  * Read-only trees bind-mounted into every bwrap jail (host + WSL).
@@ -190,6 +203,98 @@ function findDocker() {
     if (fs.existsSync(p)) return p;
   }
   return findOnPath("docker");
+}
+
+/**
+ * True if `image` is present locally and `git` is on PATH inside it.
+ * @param {string} dockerPath
+ * @param {string} image
+ */
+function dockerImageHasGit(dockerPath, image) {
+  const r = runQuiet(
+    dockerPath,
+    [
+      "run",
+      "--rm",
+      "--entrypoint",
+      "sh",
+      image,
+      "-c",
+      "command -v git >/dev/null 2>&1",
+    ],
+    60_000,
+  );
+  return r.status === 0;
+}
+
+/**
+ * Ensure a Docker image suitable for ACP tool shells (needs git + bash).
+ * Prefers GROK_DESKTOP_SANDBOX_IMAGE / buildpack-deps; falls back to a
+ * one-time local build from ubuntu:24.04 + apt git.
+ *
+ * @param {string} dockerPath
+ * @param {string} preferredImage
+ * @returns {string} image ref to use
+ */
+export function ensureDockerSandboxImage(dockerPath, preferredImage) {
+  if (cachedDockerSandboxImage) return cachedDockerSandboxImage;
+
+  const preferred = preferredImage || DEFAULT_DOCKER_IMAGE;
+
+  const tryImage = (image) => {
+    if (dockerImageHasGit(dockerPath, image)) {
+      cachedDockerSandboxImage = image;
+      return true;
+    }
+    return false;
+  };
+
+  const inspectPref = runQuiet(
+    dockerPath,
+    ["image", "inspect", preferred],
+    15_000,
+  );
+  if (inspectPref.status === 0 && tryImage(preferred)) return preferred;
+
+  if (inspectPref.status !== 0) {
+    const pull = runQuiet(dockerPath, ["pull", preferred], 300_000);
+    if (pull.status === 0 && tryImage(preferred)) return preferred;
+  }
+
+  const inspectLocal = runQuiet(
+    dockerPath,
+    ["image", "inspect", LOCAL_SANDBOX_IMAGE],
+    15_000,
+  );
+  if (inspectLocal.status === 0 && tryImage(LOCAL_SANDBOX_IMAGE)) {
+    return LOCAL_SANDBOX_IMAGE;
+  }
+
+  const dockerfile = [
+    "FROM ubuntu:24.04",
+    "ENV DEBIAN_FRONTEND=noninteractive",
+    "RUN apt-get update \\",
+    " && apt-get install -y --no-install-recommends git ca-certificates openssh-client curl \\",
+    " && rm -rf /var/lib/apt/lists/*",
+  ].join("\n");
+
+  const build = spawnSync(
+    dockerPath,
+    ["build", "-t", LOCAL_SANDBOX_IMAGE, "-"],
+    {
+      input: dockerfile,
+      encoding: "utf8",
+      timeout: 600_000,
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  if (build.status === 0 && tryImage(LOCAL_SANDBOX_IMAGE)) {
+    return LOCAL_SANDBOX_IMAGE;
+  }
+
+  cachedDockerSandboxImage = preferred;
+  return preferred;
 }
 
 function findWsl() {
@@ -734,7 +839,9 @@ function planDocker(p) {
       code: -32000,
     });
   }
-  const image = p.probe.dockerImage || DEFAULT_DOCKER_IMAGE;
+  const preferred = p.probe.dockerImage || DEFAULT_DOCKER_IMAGE;
+  // Prefer an image that actually has git (plain ubuntu:24.04 does not).
+  const image = ensureDockerSandboxImage(docker, preferred);
   const rel = relUnderProject(p.projectRoot, p.cwd);
   if (rel == null) {
     throw Object.assign(
@@ -748,16 +855,38 @@ function planDocker(p) {
   const mapped = mapInnerCommandForDocker(p.inner, p.projectRoot);
   const vol = `${p.projectRoot}:/work`;
 
+  // Non-interactive git inside the container (no TTY, no editor hang).
+  const envFlags = [
+    "-e",
+    "DEBIAN_FRONTEND=noninteractive",
+    "-e",
+    "GIT_EDITOR=true",
+    "-e",
+    "EDITOR=true",
+    "-e",
+    "VISUAL=true",
+    "-e",
+    "GIT_TERMINAL_PROMPT=0",
+    "-e",
+    "GIT_PAGER=cat",
+    "-e",
+    "PAGER=cat",
+  ];
+
   return {
     file: docker,
     fileArgs: [
       "run",
       "--rm",
-      "-i",
+      // Do NOT use -i: Electron stdio stdin is "ignore"; docker -i then often
+      // hangs after the command exits waiting on a dead interactive stdin
+      // (tools stuck on "pending" forever).
+      "--init",
       "-v",
       vol,
       "-w",
       workdir,
+      ...envFlags,
       // No --privileged, no docker.sock
       image,
       mapped.file,

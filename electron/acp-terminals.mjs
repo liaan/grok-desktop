@@ -42,8 +42,34 @@ const KILL_ESCALATE_MS = 1500;
  * }} ManagedTerminal
  */
 
+/**
+ * Resolve bash for host tool shells.
+ *
+ * On Windows, prefer Git for Windows bash over `System32\bash.exe` (WSL
+ * launcher). WSL bash + Windows cwd often mis-handles host git and can leave
+ * tool cards stuck on "pending".
+ */
 function bashPath() {
-  if (process.platform === "win32") return "bash";
+  if (process.platform === "win32") {
+    const pf = process.env["ProgramFiles"] || "C:\\Program Files";
+    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const local = process.env.LOCALAPPDATA || "";
+    const candidates = [
+      path.join(pf, "Git", "bin", "bash.exe"),
+      path.join(pf, "Git", "usr", "bin", "bash.exe"),
+      path.join(pf86, "Git", "bin", "bash.exe"),
+      local ? path.join(local, "Programs", "Git", "bin", "bash.exe") : "",
+    ].filter(Boolean);
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {
+        /* ignore */
+      }
+    }
+    // Last resort: PATH lookup (may be WSL's bash.exe)
+    return "bash";
+  }
   for (const p of ["/bin/bash", "/usr/bin/bash"]) {
     try {
       if (fs.existsSync(p)) return p;
@@ -55,8 +81,40 @@ function bashPath() {
 }
 
 function shPath() {
-  if (process.platform === "win32") return "sh";
+  if (process.platform === "win32") {
+    const bash = bashPath();
+    if (bash !== "bash" && bash.toLowerCase().endsWith("bash.exe")) {
+      const sh = path.join(path.dirname(bash), "sh.exe");
+      try {
+        if (fs.existsSync(sh)) return sh;
+      } catch {
+        /* ignore */
+      }
+    }
+    return "sh";
+  }
   return fs.existsSync("/bin/sh") ? "/bin/sh" : "sh";
+}
+
+/**
+ * Env so agent tool shells never block on editors / credential TTY prompts.
+ * ACP terminals use stdin "ignore" — interactive git/gpg hangs forever ("pending").
+ * @param {Record<string, string | undefined>} env
+ */
+function applyNonInteractiveToolEnv(env) {
+  const defaults = {
+    GIT_EDITOR: "true",
+    EDITOR: "true",
+    VISUAL: "true",
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "never",
+    GIT_PAGER: "cat",
+    PAGER: "cat",
+  };
+  for (const [k, v] of Object.entries(defaults)) {
+    if (env[k] == null || env[k] === "") env[k] = v;
+  }
+  return env;
 }
 
 /**
@@ -335,7 +393,7 @@ export class AcpTerminalManager extends EventEmitter {
         envExtra[key] = String(entry.value ?? "");
       }
     }
-    const env = buildGrokEnv(envExtra);
+    const env = applyNonInteractiveToolEnv(buildGrokEnv(envExtra));
 
     let { execCommand, args, useShell } = normalizeTerminalSpawn(
       command,
