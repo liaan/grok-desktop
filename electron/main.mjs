@@ -122,6 +122,27 @@ function send(channel, payload) {
   }
 }
 
+const APP_WINDOW_TITLE = "Grok Desktop";
+
+/**
+ * Taskbar / title-bar label: include project shortname so multi-window
+ * instances are distinguishable (e.g. "Grok - grok-desktop").
+ * @param {string | null | undefined} cwd
+ */
+function setWindowTitle(cwd) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!cwd) {
+    mainWindow.setTitle(APP_WINDOW_TITLE);
+    return;
+  }
+  const trimmed = String(cwd).replace(/[/\\]+$/, "");
+  const short =
+    path.basename(trimmed) ||
+    trimmed ||
+    String(cwd);
+  mainWindow.setTitle(`Grok - ${short}`);
+}
+
 function makeReqId(prefix) {
   if (typeof crypto.randomUUID === "function") {
     return `${prefix}_${crypto.randomUUID()}`;
@@ -464,7 +485,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    title: "Grok Desktop",
+    title: APP_WINDOW_TITLE,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f6f6f8",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -651,6 +672,7 @@ function registerIpc() {
     }
 
     rememberProjectSession(cwd, client.sessionId);
+    setWindowTitle(client.cwd);
 
     let history = [];
     if (client.sessionId && !forceNew) {
@@ -705,6 +727,7 @@ function registerIpc() {
       }
     }
     rememberProjectSession(cwd, client.sessionId);
+    setWindowTitle(client.cwd);
 
     let history = [];
     if (!forceNew && client.sessionId) {
@@ -894,6 +917,7 @@ function registerIpc() {
 function disposeAgentQuick() {
   const a = agent;
   agent = null;
+  setWindowTitle(null);
   if (!a) return;
   try {
     clearPendingPermissions();

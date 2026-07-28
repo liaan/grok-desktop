@@ -276,6 +276,13 @@ export default function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  /** Taskbar / window title: "Grok - projectname" when a folder is open. */
+  useEffect(() => {
+    document.title = project
+      ? `Grok - ${basename(project)}`
+      : "Grok Desktop";
+  }, [project]);
+
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;

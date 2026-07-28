@@ -36,6 +36,10 @@
   --table-stripe: rgba(255, 255, 255, 0.02);
   --table-th: rgba(255, 255, 255, 0.05);
   --cmd-name-bg: rgba(0, 0, 0, 0.25);
+  /* Pills / chips that sit on the main surface */
+  --pill-bg: rgba(20, 20, 26, 0.7);
+  --queue-item-bg: rgba(0, 0, 0, 0.2);
+  --error-banner-fg: #fecaca;
   --radius: 12px;
   --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
@@ -78,6 +82,10 @@
   --table-stripe: rgba(20, 20, 40, 0.03);
   --table-th: rgba(20, 20, 40, 0.05);
   --cmd-name-bg: rgba(20, 20, 40, 0.06);
+  /* Dark-on-dark was unreadable in light mode (status pill, day divider) */
+  --pill-bg: #ffffff;
+  --queue-item-bg: rgba(20, 20, 40, 0.06);
+  --error-banner-fg: #991b1b;
 }
 
 * {
@@ -476,7 +484,7 @@ button {
   font-size: 11px;
   line-height: 1.3;
   color: var(--text-muted);
-  background: rgba(20, 20, 26, 0.65);
+  background: var(--pill-bg);
   cursor: pointer;
 }
 
@@ -495,10 +503,6 @@ button {
   border-color: rgba(96, 165, 250, 0.5);
   color: #93c5fd;
   background: rgba(30, 58, 110, 0.4);
-}
-
-[data-theme="light"] .elevated-chip {
-  background: rgba(255, 255, 255, 0.75);
 }
 
 [data-theme="light"] .elevated-chip.warn {
@@ -574,7 +578,7 @@ button {
   padding: 4px 10px;
   font-size: 12px;
   color: var(--text-muted);
-  background: rgba(20, 20, 26, 0.7);
+  background: var(--pill-bg);
   white-space: nowrap;
 }
 
@@ -646,7 +650,7 @@ button {
   padding: 2px 10px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
-  background: rgba(20, 20, 26, 0.7);
+  background: var(--pill-bg);
 }
 
 .msg,
@@ -1365,7 +1369,7 @@ button {
   gap: 8px;
   padding: 4px 6px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--queue-item-bg);
 }
 
 .prompt-queue-idx {
@@ -2406,7 +2410,7 @@ button {
 .error-banner {
   padding: 8px 16px;
   background: rgba(248, 113, 113, 0.1);
-  color: #fecaca;
+  color: var(--error-banner-fg);
   border-bottom: 1px solid rgba(248, 113, 113, 0.25);
   font-size: 13px;
   display: flex;
