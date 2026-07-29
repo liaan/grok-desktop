@@ -60,10 +60,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Persist electron + electron-builder toolsets (NSIS, icons, winCodeSign, …).
+      # Without this, every CI run re-downloads and can die on ECONNRESET mid-build.
+      - name: Cache Electron toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron
+            ${{ github.workspace }}/.cache/electron-builder
+          key: ${{ runner.os }}-${{ runner.arch }}-eb-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-eb-
+
       - name: Build installers
-        run: npm run build && npx electron-builder ${{ matrix.args }} --publish never
+        shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+        run: |
+          set -euo pipefail
+          npm run build
+          # Transient CDN/GitHub resets are common on Windows matrix; retry builder only.
+          max=4
+          for attempt in $(seq 1 "$max"); do
+            # Drop partial win-unpacked / half-written installers from a failed attempt.
+            rm -rf release
+            if npx electron-builder ${{ matrix.args }} --publish never; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max" ]; then
+              echo "electron-builder failed after ${max} attempts"
+              exit 1
+            fi
+            delay=$((attempt * 25))
+            echo "electron-builder failed (attempt ${attempt}/${max}); retrying in ${delay}s..."
+            sleep "$delay"
+          done
 
       - name: Prepare release artifacts
         shell: bash
