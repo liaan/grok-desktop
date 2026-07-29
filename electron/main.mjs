@@ -303,6 +303,7 @@ function ensureAgent(cwd, opts = {}) {
         tool: request.params?.toolCall?.title || request.params?.toolCall?.kind,
         toolCallId: request.params?.toolCall?.toolCallId,
       });
+      // One ACP request → one JSON-RPC response after UI settle (no rebroadcast).
       send("agent:permission-request", request);
     });
 
@@ -825,6 +826,10 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:cancel", async () => {
+    // Main-owned UI gates + agent oneshots: both must settle cancelled.
+    cancelAllPermissions(() => ({
+      outcome: { outcome: "cancelled" },
+    }));
     agent?.cancel();
     return true;
   });

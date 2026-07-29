@@ -110,18 +110,21 @@ export function settlePermission(reqId, outcome) {
 }
 
 /**
- * Cancel every open tool permission (agent dispose / project switch).
+ * Cancel every open tool permission (Stop/cancel, dispose, project switch).
+ * ACP requires pending session/request_permission to resolve with cancelled.
+ * Each settle is single-shot (registerPermissionRequest guards double settle).
  * @param {(outcome: any) => any} [cancelOutcome]
  */
 export function cancelAllPermissions(cancelOutcome) {
-  const outcome =
-    cancelOutcome ||
-    (() => ({ outcome: { outcome: "cancelled" } }));
+  const makeOutcome =
+    typeof cancelOutcome === "function"
+      ? cancelOutcome
+      : () => ({ outcome: { outcome: "cancelled" } });
   const entries = [...pending.values()];
   pending.clear();
   for (const entry of entries) {
     try {
-      entry.settle(outcome());
+      entry.settle(makeOutcome());
     } catch {
       /* ignore */
     }

@@ -30,6 +30,15 @@ import {
   selectedPermissionResult,
 } from "../shared/permission-options.mjs";
 import {
+  classifyInboundMessage,
+  createOnceResponder,
+  createPermissionOneshot,
+  isFsReadMethod,
+  isFsWriteMethod,
+  isPermissionMethod,
+  isTerminalMethod,
+} from "../shared/acp-rpc.mjs";
+import {
   handleAskUserQuestion,
   handleExitPlanMode,
 } from "./acp-ext-methods.mjs";
@@ -77,6 +86,14 @@ export class GrokAcpClient extends EventEmitter {
     this.nextId = 1;
     /** @type {Map<number, { resolve: Function, reject: Function, timer?: NodeJS.Timeout }>} */
     this.pending = new Map();
+    /**
+     * Open agent→client permission oneshots (ACP request id → gate).
+     * Cancel MUST settle each with outcome cancelled (spec).
+     * @type {Map<string, ReturnType<typeof createPermissionOneshot>>}
+     */
+    this._openPermissionGates = new Map();
+    /** @type {ReturnType<typeof createOnceResponder> | null} */
+    this._once = null;
     this.sessionId = null;
     this.ready = false;
     this.stderrBuf = "";
@@ -395,6 +412,29 @@ export class GrokAcpClient extends EventEmitter {
       p.reject(err);
     }
     this.pending.clear();
+    // Unblock any parked session/request_permission oneshots
+    this._cancelOpenPermissionGates();
+  }
+
+  /**
+   * ACP: Client MUST respond to all pending request_permission with cancelled
+   * when the prompt turn is cancelled. Only settle the oneshot here — the
+   * parked handler awaits wait() then issues the single JSON-RPC response.
+   */
+  _cancelOpenPermissionGates() {
+    const cancelled = cancelledPermissionResult();
+    for (const [, gate] of this._openPermissionGates) {
+      gate.settle(cancelled);
+    }
+    // Do not clear the map here: finally blocks on the handlers remove entries
+    // after they _respond once.
+  }
+
+  _ensureOnce() {
+    if (!this._once) {
+      this._once = createOnceResponder((msg) => this._write(msg));
+    }
+    return this._once;
   }
 
   _onLine(line) {
@@ -408,28 +448,34 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    // Session updates (incl. Grok extensions) must be handled *before* the
-    // generic server-request branch: some agents attach a JSON-RPC `id` and
-    // expect an empty result. If we route those to _handleServerRequest they
-    // become "Unhandled client method" and never reach the Tasks UI.
-    const method = msg.method ? String(msg.method) : "";
-    const isSessionUpdate =
-      method === "session/update" ||
-      method === "_x.ai/session/update" ||
-      method === "x.ai/session/update" ||
-      method.endsWith("/session/update");
+    const c = classifyInboundMessage(msg);
 
-    if (isSessionUpdate && msg.params != null && !msg.result && !msg.error) {
-      this.emit("session-update", msg.params);
-      if (msg.id !== undefined) {
-        this._respond(msg.id, {});
+    if (c.kind === "session-update") {
+      // Progress only — does not complete tools; agent still needs client RPCs.
+      this.emit("session-update", c.params);
+      if (c.expectsEmptyAck) {
+        this._ensureOnce().beginRequest(c.id);
+        this._respond(c.id, {});
       }
       return;
     }
 
-    if (msg.method && msg.id !== undefined && !msg.result && !msg.error) {
-      this._handleServerRequest(msg).catch((err) => {
-        this._respond(msg.id, null, {
+    if (c.kind === "server-request") {
+      // Fresh response slot for this id (JSON-RPC may reuse ids after completion).
+      this._ensureOnce().beginRequest(c.id);
+      // Concurrent handlers (grok-build gateway spawn): one long permission
+      // wait must not block later fs/* / terminal/* lines.
+      this._handleServerRequest({
+        method: c.method,
+        id: c.id,
+        params: c.params,
+      }).catch((err) => {
+        debugLog("acp", "server-request-error", {
+          id: c.id,
+          method: c.method,
+          error: err?.message || String(err),
+        });
+        this._respond(c.id, null, {
           code: err?.code ?? -32000,
           message: err?.message || String(err),
         });
@@ -437,27 +483,37 @@ export class GrokAcpClient extends EventEmitter {
       return;
     }
 
-    if (msg.method && msg.id === undefined) {
-      this.emit("notification", msg);
+    if (c.kind === "notification") {
+      this.emit("notification", { method: c.method, params: c.params });
       return;
     }
 
-    if (msg.id !== undefined && this.pending.has(msg.id)) {
-      const p = this.pending.get(msg.id);
-      this.pending.delete(msg.id);
+    if (c.kind === "client-response" && this.pending.has(c.id)) {
+      const p = this.pending.get(c.id);
+      this.pending.delete(c.id);
       if (p.timer) clearTimeout(p.timer);
-      if (msg.error) {
+      if (c.error) {
         p.reject(
-          Object.assign(new Error(msg.error.message || "ACP error"), msg.error),
+          Object.assign(new Error(c.error.message || "ACP error"), c.error),
         );
       } else {
-        p.resolve(msg.result);
+        p.resolve(c.result);
       }
     }
   }
 
   async _handleServerRequest(msg) {
     const { method, params, id } = msg;
+    const started = Date.now();
+    debugLog("acp", "server-request", {
+      id,
+      method: String(method || ""),
+      path: params?.path,
+      tool:
+        params?.toolCall?.title ||
+        params?.toolCall?._meta?.["x.ai/tool"]?.name ||
+        null,
+    });
 
     const extCtx = {
       emitter: this,
@@ -465,97 +521,119 @@ export class GrokAcpClient extends EventEmitter {
       sessionDir: () => this.sessionDir(),
     };
 
-    // Grok extension: plan approval popup (must not auto-approve / no-op)
-    if (
-      method === EXT_EXIT_PLAN ||
-      method === "exit_plan_mode" ||
-      method?.endsWith("/exit_plan_mode")
-    ) {
-      await handleExitPlanMode(extCtx, id, params);
-      return;
-    }
+    try {
+      // Grok extension: plan approval popup (must not auto-approve / no-op)
+      if (
+        method === EXT_EXIT_PLAN ||
+        method === "exit_plan_mode" ||
+        method?.endsWith("/exit_plan_mode")
+      ) {
+        await handleExitPlanMode(extCtx, id, params);
+        return;
+      }
 
-    // Grok extension: multi-choice questions
-    if (
-      method === EXT_ASK_USER ||
-      method === "ask_user_question" ||
-      method?.endsWith("/ask_user_question")
-    ) {
-      await handleAskUserQuestion(extCtx, id, params);
-      return;
-    }
+      // Grok extension: multi-choice questions
+      if (
+        method === EXT_ASK_USER ||
+        method === "ask_user_question" ||
+        method?.endsWith("/ask_user_question")
+      ) {
+        await handleAskUserQuestion(extCtx, id, params);
+        return;
+      }
 
-    if (method === "session/request_permission") {
-      const toolName = String(
-        params?.toolCall?.title ||
-          params?.toolCall?._meta?.["x.ai/tool"]?.name ||
-          params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
-          "",
-      );
-      // Prefer an optionId the agent actually listed (kind allow_* / name Allow…)
-      const allowId = pickAllowOptionId(params?.options, {
-        // Always-approve mode may use allow-always when that is all the agent offers
-        allowAlwaysOk: this.permissionMode === "always-approve",
-      });
-
-      // exit_plan_mode: ACP permission is a formality; real UI is x.ai/exit_plan_mode
-      if (/exit_plan/i.test(toolName)) {
-        this._respond(
-          id,
-          selectedPermissionResult(
-            pickAllowOptionId(params?.options, { allowAlwaysOk: false }),
-          ),
+      if (isPermissionMethod(method)) {
+        const toolName = String(
+          params?.toolCall?.title ||
+            params?.toolCall?._meta?.["x.ai/tool"]?.name ||
+            params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
+            "",
         );
-        return;
-      }
-
-      if (this.permissionMode === "always-approve") {
-        this._respond(id, selectedPermissionResult(allowId));
-        return;
-      }
-
-      // Wait for the UI — do not auto-cancel after 2 minutes (that was cancelling
-      // Write tools while the user still had the Approvals card open / mid-batch).
-      const decision = await new Promise((resolve) => {
-        let settled = false;
-        const finish = (outcome) => {
-          if (settled) return;
-          settled = true;
-          resolve(outcome || cancelledPermissionResult());
-        };
-        this.emit("permission-request", {
-          params,
-          respond: finish,
+        const allowId = pickAllowOptionId(params?.options, {
+          allowAlwaysOk: this.permissionMode === "always-approve",
         });
+
+        // exit_plan_mode: ACP permission is a formality; real UI is x.ai/exit_plan_mode
+        if (/exit_plan/i.test(toolName)) {
+          this._respond(
+            id,
+            selectedPermissionResult(
+              pickAllowOptionId(params?.options, { allowAlwaysOk: false }),
+            ),
+          );
+          return;
+        }
+
+        if (this.permissionMode === "always-approve") {
+          this._respond(id, selectedPermissionResult(allowId));
+          return;
+        }
+
+        // No main listener → never resolve (agent tools stay pending forever).
+        if (this.listenerCount("permission-request") === 0) {
+          console.error(
+            "[acp] session/request_permission with no listener — cancelling",
+            { id, toolName },
+          );
+          debugLog("acp", "permission-no-listener", { id, toolName });
+          this._respond(id, cancelledPermissionResult());
+          return;
+        }
+
+        // Oneshot wait for UI settle — exactly one respond(id) after settle.
+        const oneshot = createPermissionOneshot();
+        this._openPermissionGates.set(id, oneshot);
+        try {
+          this.emit("permission-request", {
+            params,
+            requestId: id,
+            respond: (outcome) => {
+              oneshot.settle(outcome || cancelledPermissionResult());
+            },
+          });
+          const decision = await oneshot.wait();
+          this._respond(id, decision ?? cancelledPermissionResult());
+        } finally {
+          this._openPermissionGates.delete(id);
+        }
+        return;
+      }
+
+      if (isFsReadMethod(method)) {
+        const filePath = this._resolveFsPath(params?.path);
+        const text = await fs.promises.readFile(filePath, "utf8");
+        this._respond(id, { content: text });
+        return;
+      }
+
+      if (isFsWriteMethod(method)) {
+        const filePath = this._resolveFsPath(params?.path);
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.promises.writeFile(filePath, params?.content ?? "", "utf8");
+        this._respond(id, {});
+        return;
+      }
+
+      if (isTerminalMethod(method)) {
+        await this._handleTerminal(method, params, id);
+        return;
+      }
+
+      console.error("[acp] unhandled client method (agent may hang):", method, {
+        id,
       });
-      this._respond(id, decision);
-      return;
+      debugLog("acp", "unhandled-method", { id, method: String(method || "") });
+      this._respond(id, null, {
+        code: -32601,
+        message: `Unhandled client method: ${method}`,
+      });
+    } finally {
+      debugLog("acp", "server-request-done", {
+        id,
+        method: String(method || ""),
+        ms: Date.now() - started,
+      });
     }
-
-    if (method === "fs/read_text_file") {
-      const filePath = this._resolveFsPath(params?.path);
-      const text = await fs.promises.readFile(filePath, "utf8");
-      this._respond(id, { content: text });
-      return;
-    }
-
-    if (method === "fs/write_text_file") {
-      const filePath = this._resolveFsPath(params?.path);
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.promises.writeFile(filePath, params?.content ?? "", "utf8");
-      this._respond(id, {});
-      return;
-    }
-
-    if (method?.startsWith("terminal/")) {
-      await this._handleTerminal(method, params, id);
-      return;
-    }
-
-    this._respond(id, null, {
-      code: -32601,
-      message: `Unhandled client method: ${method}`,
-    });
   }
 
   /**
@@ -603,11 +681,14 @@ export class GrokAcpClient extends EventEmitter {
     }
   }
 
-  _respond(id, result, error) {
-    const msg = error
-      ? { jsonrpc: "2.0", id, error }
-      : { jsonrpc: "2.0", id, result: result ?? {} };
-    this._write(msg);
+  /**
+   * Exactly one JSON-RPC response per agent request id.
+   * @param {string|number} id
+   * @param {any} [result]
+   * @param {{ code?: number, message?: string } | null} [error]
+   */
+  _respond(id, result, error = null) {
+    this._ensureOnce().respond(id, result, error);
   }
 
   _write(obj) {
@@ -670,6 +751,11 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   cancel() {
+    // ACP: cancel open permission requests with cancelled outcome first,
+    // then notify the agent (prompt turn abort).
+    this._cancelOpenPermissionGates();
+    // Do not clear once-responder here — in-flight fs/terminal may still
+    // need to answer; beginRequest opens a new slot per id on the next request.
     if (!this.sessionId) return;
     this.notify("session/cancel", { sessionId: this.sessionId });
   }
@@ -782,6 +868,12 @@ export class GrokAcpClient extends EventEmitter {
 
   async dispose() {
     this._rejectAllPending(new Error("Agent disposed"));
+    try {
+      this._once?.clear();
+    } catch {
+      /* ignore */
+    }
+    this._once = null;
     try {
       this.terminals.disposeAll();
     } catch {

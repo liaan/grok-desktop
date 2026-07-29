@@ -110,6 +110,7 @@ export function useAgentEvents(opts: {
       window.grokDesktop.on("agent:session-update", (params) => {
         const update = params?.update ?? params;
         const kind = update?.sessionUpdate || update?.session_update;
+
         if (kind === "available_commands_update") {
           setAgentCommands(agentCommandsFromUpdate(update));
           // Do not return before usage: stream meta often rides this event
