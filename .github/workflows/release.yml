@@ -40,8 +40,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          # Project build toolchain (Electron 35). Separate from the action
-          # runtime — checkout/setup-node/artifact actions use Node 24.
+          # Project build toolchain (Electron 35). Action runtimes are Node 24.
           node-version: "20"
           cache: npm
 
@@ -60,10 +59,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Persist electron + electron-builder toolsets (NSIS, icons, winCodeSign, …).
-      # Without this, every CI run re-downloads and can die on ECONNRESET mid-build.
+      # Persist electron + electron-builder toolsets across runs (NSIS, icons, …).
+      # actions/cache@v5 = Node 24 runtime (v4 is deprecated on GH runners).
       - name: Cache Electron toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ github.workspace }}/.cache/electron
@@ -79,23 +78,45 @@ jobs:
           ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
+          echo "node=$(node -v) npm=$(npm -v)"
+          echo "electron-builder=$(./node_modules/.bin/electron-builder --version || true)"
+
           npm run build
-          # Transient CDN/GitHub resets are common on Windows matrix; retry builder only.
-          max=4
-          for attempt in $(seq 1 "$max"); do
-            # Drop partial win-unpacked / half-written installers from a failed attempt.
+
+          # Prefer local install (npm ci). Fall back to npx only if missing.
+          EB="./node_modules/.bin/electron-builder"
+          if [ ! -x "$EB" ]; then
+            EB="npx electron-builder"
+          fi
+
+          # Retry only for flaky network downloads (ECONNRESET on Windows is common).
+          # Do not use `set -e` around the if-retry body — failed attempts must continue.
+          max=3
+          attempt=1
+          while [ "$attempt" -le "$max" ]; do
+            echo "=== electron-builder attempt ${attempt}/${max} (${{ matrix.args }}) ==="
+            # Clean partial output from a previous failed attempt
             rm -rf release
-            if npx electron-builder ${{ matrix.args }} --publish never; then
+            set +e
+            $EB ${{ matrix.args }} --publish never
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              echo "electron-builder succeeded on attempt ${attempt}"
+              ls -la release || true
               exit 0
             fi
+            echo "electron-builder exited ${status} on attempt ${attempt}"
             if [ "$attempt" -eq "$max" ]; then
               echo "electron-builder failed after ${max} attempts"
-              exit 1
+              exit "$status"
             fi
-            delay=$((attempt * 25))
-            echo "electron-builder failed (attempt ${attempt}/${max}); retrying in ${delay}s..."
+            delay=$((attempt * 30))
+            echo "Retrying in ${delay}s..."
             sleep "$delay"
+            attempt=$((attempt + 1))
           done
 
       - name: Prepare release artifacts
