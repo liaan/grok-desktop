@@ -308,8 +308,13 @@ export function dispatchInboundMessage(msg, handlers) {
         }),
       )
       .catch((err) => {
+        const rawCode = err?.code;
+        const code =
+          typeof rawCode === "number" && Number.isFinite(rawCode)
+            ? rawCode
+            : -32000;
         handlers.once.respond(c.id, null, {
-          code: err?.code ?? -32000,
+          code,
           message: err?.message || String(err),
         });
       });

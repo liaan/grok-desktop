@@ -187,9 +187,14 @@ export class GrokAcpClient extends EventEmitter {
   async start(opts = {}) {
     if (this.proc) return this;
 
-    // `--reasoning-effort` is an `agent` flag (before the transport subcommand).
-    // Top-level `grok --reasoning-effort … agent stdio` is ignored by the CLI.
+    // Agent flags go after `agent` and before the transport (`stdio`).
+    // Top-level `grok --flag … agent stdio` is ignored by the CLI.
     const args = ["agent"];
+    if (this.permissionMode === "always-approve") {
+      // Match TUI/CLI always-approve so the agent sets yoloMode for the process
+      // (session/_meta alone is not enough on resume / late UI toggles).
+      args.push("--always-approve");
+    }
     if (this.reasoningEffort) {
       args.push("--reasoning-effort", this.reasoningEffort);
     }
@@ -474,9 +479,17 @@ export class GrokAcpClient extends EventEmitter {
           id: c.id,
           method: c.method,
           error: err?.message || String(err),
+          code: err?.code,
         });
+        // JSON-RPC error.code MUST be a number. Node fs uses string codes
+        // (ENOENT); passing those through can stall the agent mid-tool.
+        const rawCode = err?.code;
+        const code =
+          typeof rawCode === "number" && Number.isFinite(rawCode)
+            ? rawCode
+            : -32000;
         this._respond(c.id, null, {
-          code: err?.code ?? -32000,
+          code,
           message: err?.message || String(err),
         });
       });
@@ -600,16 +613,53 @@ export class GrokAcpClient extends EventEmitter {
       }
 
       if (isFsReadMethod(method)) {
+        // Grok write/edit: when clientCapabilities.fs.writeTextFile is true the
+        // agent often fs/read_text_file's the path first, then write_text_file.
+        // ENOENT must NOT be a hard JSON-RPC error — that stalls the tool forever
+        // (create-new-file write hangs on "pending" / Working…).
         const filePath = this._resolveFsPath(params?.path);
-        const text = await fs.promises.readFile(filePath, "utf8");
+        let text = "";
+        try {
+          text = await fs.promises.readFile(filePath, "utf8");
+        } catch (err) {
+          if (err?.code === "ENOENT") {
+            debugLog("acp", "fs-read-missing", { path: filePath });
+            this._respond(id, { content: "" });
+            return;
+          }
+          throw err;
+        }
+        // Optional line/limit (1-based line, ACP fs/read_text_file)
+        const line = Number(params?.line);
+        const limit = Number(params?.limit);
+        if (Number.isFinite(line) && line >= 1) {
+          const lines = text.split("\n");
+          const start = Math.max(0, Math.floor(line) - 1);
+          const take =
+            Number.isFinite(limit) && limit >= 0
+              ? Math.floor(limit)
+              : lines.length - start;
+          text = lines.slice(start, start + take).join("\n");
+        }
         this._respond(id, { content: text });
         return;
       }
 
       if (isFsWriteMethod(method)) {
         const filePath = this._resolveFsPath(params?.path);
+        const content =
+          params?.content != null
+            ? String(params.content)
+            : params?.text != null
+              ? String(params.text)
+              : "";
         await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-        await fs.promises.writeFile(filePath, params?.content ?? "", "utf8");
+        await fs.promises.writeFile(filePath, content, "utf8");
+        debugLog("acp", "fs-write-ok", {
+          path: filePath,
+          bytes: content.length,
+        });
+        // ACP: empty result on success (null or {})
         this._respond(id, {});
         return;
       }

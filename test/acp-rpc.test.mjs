@@ -172,6 +172,59 @@ test("permission oneshot settles once", async () => {
 
 // --- concurrent permission + fs ---
 
+test("fs/read ENOENT returns empty content (write-before-create)", async () => {
+  /** @type {object[]} */
+  const out = [];
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    readFile: async () => {
+      const err = new Error("ENOENT: no such file");
+      err.code = "ENOENT";
+      throw err;
+    },
+    resolvePath: (p) => p,
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 77,
+    method: "fs/read_text_file",
+    params: { path: "/proj/docs/NEWFILE.md" },
+  });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  const reply = out.find((m) => m.id === 77);
+  assert.ok(reply);
+  assert.equal(reply.error, undefined);
+  assert.equal(reply.result.content, "");
+});
+
+test("fs/read other errors use numeric JSON-RPC codes (not Node string codes)", async () => {
+  /** @type {object[]} */
+  const out = [];
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    readFile: async () => {
+      const err = new Error("EACCES: permission denied");
+      err.code = "EACCES"; // Node string code — must not leak into JSON-RPC
+      throw err;
+    },
+    resolvePath: (p) => p,
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 78,
+    method: "fs/read_text_file",
+    params: { path: "/secret" },
+  });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  const reply = out.find((m) => m.id === 78);
+  assert.ok(reply?.error);
+  assert.equal(typeof reply.error.code, "number");
+  assert.equal(reply.error.code, -32000);
+  assert.match(String(reply.error.message), /EACCES|permission/i);
+});
+
 test("fs/read completes while permission is still open (concurrent)", async () => {
   /** @type {object[]} */
   const out = [];

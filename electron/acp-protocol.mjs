@@ -113,8 +113,25 @@ export function createAcpClientRuntime(opts) {
         });
         return;
       }
-      const content = await opts.readFile(path);
-      once.respond(id, { content });
+      try {
+        const content = await opts.readFile(path);
+        once.respond(id, { content });
+      } catch (err) {
+        // Missing file: empty content (Grok write probes path via read first)
+        if (err?.code === "ENOENT") {
+          once.respond(id, { content: "" });
+          return;
+        }
+        const rawCode = err?.code;
+        const code =
+          typeof rawCode === "number" && Number.isFinite(rawCode)
+            ? rawCode
+            : -32000;
+        once.respond(id, null, {
+          code,
+          message: err?.message || String(err),
+        });
+      }
       return;
     }
 
@@ -129,7 +146,13 @@ export function createAcpClientRuntime(opts) {
         });
         return;
       }
-      await opts.writeFile(path, params?.content ?? "");
+      const body =
+        params?.content != null
+          ? String(params.content)
+          : params?.text != null
+            ? String(params.text)
+            : "";
+      await opts.writeFile(path, body);
       once.respond(id, {});
       return;
     }
