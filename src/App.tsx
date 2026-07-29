@@ -36,10 +36,11 @@ import {
 } from "./lib/desktop-commands";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
-import { uid } from "./lib/timeline";
+import { finalizeOpenTools, formatOptionLabel, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAgentSafety } from "./hooks/useAgentSafety";
 import { useProjectSession } from "./hooks/useProjectSession";
+import { classifyOptionId } from "../shared/permission-options.mjs";
 import type {
   AppInfo,
   AuthStatus,
@@ -503,18 +504,22 @@ export default function App() {
       await window.grokDesktop.prompt(text, {
         images: images.map(({ data, mimeType }) => ({ data, mimeType })),
       });
+      // ACP: session/prompt returns when the turn ends. Grok sometimes omits
+      // final tool_call_update status — close any cards still open.
+      setItems((prev) => finalizeOpenTools(prev, "completed"));
       setConn("online");
     } catch (e: any) {
       const msg = e?.message || String(e);
       // Cancel often surfaces as an error — treat gently if we have more work
       const cancelled = /cancel/i.test(msg);
       if (cancelled) {
+        setItems((prev) => finalizeOpenTools(prev, "cancelled"));
         setConn("online");
       } else {
         setConn("error");
         setError(msg);
         setItems((prev) => [
-          ...prev,
+          ...finalizeOpenTools(prev, "failed"),
           {
             id: uid("sys"),
             kind: "system",
@@ -594,6 +599,8 @@ export default function App() {
         sendNowRef.current = item;
         setInput("");
         if (overrideText === undefined) setPendingImages([]);
+        // ACP: client SHOULD mark open tools cancelled when stopping the turn
+        setItems((prev) => finalizeOpenTools(prev, "cancelled"));
         void window.grokDesktop.cancel();
         return;
       }
@@ -619,6 +626,7 @@ export default function App() {
     if (!item) return;
     sendNowRef.current = item;
     if (busyRef.current) {
+      setItems((prev) => finalizeOpenTools(prev, "cancelled"));
       void window.grokDesktop.cancel();
     } else {
       // Idle with leftover queue (shouldn't happen often)
@@ -1209,7 +1217,11 @@ export default function App() {
             {conn === "busy" && (
               <button
                 className="btn danger"
-                onClick={() => window.grokDesktop.cancel()}
+                onClick={() => {
+                  // ACP prompt-turn: mark open tools cancelled as soon as we stop
+                  setItems((prev) => finalizeOpenTools(prev, "cancelled"));
+                  void window.grokDesktop.cancel();
+                }}
               >
                 Stop
               </button>
@@ -1259,6 +1271,87 @@ export default function App() {
             onAllowAllPermissions={() => void onAllowAllPermissions()}
           />
         </div>
+
+        {/* Sticky Approvals: agent escalations must never hide behind scroll /
+            "Working…" — session events show permission_prompt even when the
+            tool card looks in_progress. */}
+        {permissions.length > 0 ? (
+          <div
+            className="approvals-dock"
+            role="region"
+            aria-label="Tool approvals required"
+          >
+            <div className="approvals-dock-head">
+              <strong>
+                {permissions.length === 1
+                  ? "Approval required"
+                  : `${permissions.length} approvals required`}
+              </strong>
+              <span className="approvals-dock-hint">
+                Auto mode still escalates some writes/edits — the agent is
+                blocked until you choose.
+              </span>
+              {permissions.length > 1 ? (
+                <button
+                  type="button"
+                  className="btn primary btn-sm"
+                  onClick={() => void onAllowAllPermissions()}
+                >
+                  Allow all once
+                </button>
+              ) : null}
+            </div>
+            <div className="approvals-dock-list">
+              {permissions.map((p) => {
+                const tool = p.params?.toolCall;
+                const title =
+                  tool?.title || tool?.kind || "Tool needs approval";
+                const options = p.params?.options?.length
+                  ? p.params.options
+                  : [
+                      { optionId: "allow-once", name: "Allow once" },
+                      { optionId: "reject", name: "Reject" },
+                    ];
+                return (
+                  <div key={p.reqId} className="approvals-dock-item">
+                    <div className="approvals-dock-title" title={title}>
+                      {title}
+                    </div>
+                    <div className="approvals-dock-actions">
+                      {options.map((opt) => {
+                        const cls = classifyOptionId(
+                          opt.optionId,
+                          options,
+                        );
+                        const allow =
+                          cls === "allow_once" || cls === "allow_always";
+                        return (
+                          <button
+                            key={opt.optionId}
+                            type="button"
+                            className={allow ? "btn primary btn-sm" : "btn btn-sm"}
+                            onClick={() =>
+                              void onPermission(p.reqId, opt.optionId)
+                            }
+                          >
+                            {formatOptionLabel(opt.optionId, opt.name)}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="btn danger btn-sm"
+                        onClick={() => void onPermission(p.reqId, "cancelled")}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         <div className="composer">
           <div

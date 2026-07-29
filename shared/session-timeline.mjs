@@ -1,6 +1,15 @@
 /**
  * Shared ACP sessionUpdate → timeline item reducer.
  * Used by the renderer (live stream) and main process (disk history rebuild).
+ *
+ * Tool status notes (ACP prompt-turn + Grok quirks):
+ * - Spec: tool_call → optional permission → tool_call_update(in_progress) →
+ *   tool_call_update(completed|failed). Clients must key updates by toolCallId.
+ * - session/update is progress-only; it does not replace client RPCs (fs/*,
+ *   terminal/*, request_permission).
+ * - Grok write/edit often send a final tool_call_update with content:[{type:diff}]
+ *   (and/or rawOutput) but omit status. Without inference those cards stick on
+ *   pending/in_progress even though the agent already moved on.
  */
 
 let seq = 0;
@@ -8,6 +17,92 @@ let seq = 0;
 export function uid(prefix = "id") {
   seq += 1;
   return `${prefix}_${Date.now()}_${seq}`;
+}
+
+/** @param {unknown} status */
+export function isOpenToolStatus(status) {
+  const st = String(status || "").toLowerCase();
+  return !st || st === "pending" || st === "in_progress";
+}
+
+/** @param {unknown} status */
+export function isTerminalToolStatus(status) {
+  const st = String(status || "").toLowerCase();
+  return (
+    st === "completed" ||
+    st === "failed" ||
+    st === "error" ||
+    st === "cancelled" ||
+    st === "canceled"
+  );
+}
+
+/**
+ * Grok (and some ACP agents) attach the final result (diff / rawOutput) on a
+ * tool_call_update without setting status:"completed". Treat those as done so
+ * the UI does not hang while the agent continues.
+ *
+ * Do not treat arbitrary text content alone as final — intermediate progress
+ * updates may include text without a terminal status.
+ *
+ * @param {any} update
+ * @returns {boolean}
+ */
+export function looksLikeFinalToolResult(update) {
+  if (!update || typeof update !== "object") return false;
+  if (update.rawOutput != null || update.raw_output != null) return true;
+  const content = update.content;
+  if (!Array.isArray(content) || content.length === 0) return false;
+  // File write/edit result: ACP ToolCallContent::Diff
+  if (
+    content.some(
+      (c) =>
+        c &&
+        (c.type === "diff" ||
+          c.type === "Diff" ||
+          c.oldText != null ||
+          c.newText != null ||
+          c.old_text != null ||
+          c.new_text != null),
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve status for a tool_call_update. Explicit status always wins.
+ * @param {any} update
+ * @param {string | undefined | null} previousStatus
+ * @returns {string}
+ */
+export function resolveToolUpdateStatus(update, previousStatus) {
+  if (update?.status != null && String(update.status) !== "") {
+    return String(update.status);
+  }
+  if (looksLikeFinalToolResult(update) && isOpenToolStatus(previousStatus)) {
+    return "completed";
+  }
+  return previousStatus || "pending";
+}
+
+/**
+ * Close open tool cards (turn ended, cancel, or hydrate safety net).
+ * @param {any[]} items
+ * @param {string} [status]
+ * @returns {any[]}
+ */
+export function finalizeOpenTools(items, status = "completed") {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  let changed = false;
+  const next = items.map((item) => {
+    if (item?.kind !== "tool") return item;
+    if (!isOpenToolStatus(item.status)) return item;
+    changed = true;
+    return { ...item, status };
+  });
+  return changed ? next : items;
 }
 
 /**
@@ -107,6 +202,27 @@ export function applySessionUpdate(items, params) {
         rawId != null && String(rawId) !== ""
           ? String(rawId)
           : uid("tool");
+      // Upsert: agent may re-emit tool_call for the same id
+      const existing = next.findIndex(
+        (i) => i.kind === "tool" && String(i.toolCallId) === toolCallId,
+      );
+      if (existing >= 0 && next[existing].kind === "tool") {
+        next[existing] = {
+          ...next[existing],
+          title:
+            update.title ||
+            update.tool ||
+            update.kind ||
+            next[existing].title,
+          status: update.status || next[existing].status || "pending",
+          raw:
+            update.rawInput ??
+            update.raw_input ??
+            update.arguments ??
+            next[existing].raw,
+        };
+        return next;
+      }
       next.push({
         id: uid("tool"),
         kind: "tool",
@@ -128,13 +244,26 @@ export function applySessionUpdate(items, params) {
         (i) => i.kind === "tool" && String(i.toolCallId) === toolCallId,
       );
       if (idx >= 0 && next[idx].kind === "tool") {
+        const prev = next[idx];
         next[idx] = {
-          ...next[idx],
-          status: update.status || next[idx].status,
-          content: update.content ?? next[idx].content,
-          title: update.title || next[idx].title,
-          raw: update.rawInput ?? update.raw_input ?? next[idx].raw,
+          ...prev,
+          status: resolveToolUpdateStatus(update, prev.status),
+          content: update.content ?? prev.content,
+          title: update.title || prev.title,
+          raw: update.rawInput ?? update.raw_input ?? prev.raw,
         };
+      } else {
+        // ACP v2-style upsert: some agents only send tool_call_update
+        next.push({
+          id: uid("tool"),
+          kind: "tool",
+          toolCallId,
+          title: update.title || update.tool || update.kind || "Tool call",
+          status: resolveToolUpdateStatus(update, update.status || "pending"),
+          content: update.content,
+          raw: update.rawInput ?? update.raw_input ?? update.arguments,
+          at,
+        });
       }
       return next;
     }
@@ -158,6 +287,11 @@ export function applySessionUpdate(items, params) {
         at,
       });
       return next;
+    }
+    case "turn_completed":
+    case "turn_complete": {
+      // Safety net when the agent omits final tool status on the last tools.
+      return finalizeOpenTools(next, "completed");
     }
     case "hook_execution": {
       // Pre/post tool hooks (project/user). When a hook *crashes* (exit ≠ 0)

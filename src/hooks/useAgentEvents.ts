@@ -106,6 +106,12 @@ export function useAgentEvents(opts: {
 
   useEffect(() => {
     void syncPermissionsFromMain();
+    // Safety net: if a permission push was dropped (HMR, late subscribe, focus),
+    // the agent still waits and the UI stays on "Working…" with no Approvals.
+    // Poll while we may be mid-turn or whenever main already holds gates.
+    const poll = window.setInterval(() => {
+      void syncPermissionsFromMain();
+    }, 1500);
     const offs = [
       window.grokDesktop.on("agent:session-update", (params) => {
         const update = params?.update ?? params;
@@ -158,6 +164,39 @@ export function useAgentEvents(opts: {
         setPermissions((prev) => {
           if (prev.some((x) => x.reqId === p.reqId)) return prev;
           return [...prev, p];
+        });
+        // Agent is blocked on approval — do not leave the tool looking "in_progress"
+        // (that reads as hung Working… with no Approvals UI).
+        const toolId = toolCallIdFromPermission(p);
+        const title = p.params?.toolCall?.title;
+        setItems((prev) => {
+          const id = toolId ? String(toolId) : null;
+          let matched = false;
+          const next = prev.map((item) => {
+            if (item.kind !== "tool") return item;
+            if (id && String(item.toolCallId) === id) {
+              matched = true;
+              const st = String(item.status || "").toLowerCase();
+              if (st === "completed" || st === "failed" || st === "error") {
+                return item;
+              }
+              return { ...item, status: "pending" };
+            }
+            return item;
+          });
+          if (matched || !title) return next;
+          for (let i = next.length - 1; i >= 0; i--) {
+            const item = next[i];
+            if (item.kind !== "tool") continue;
+            if (item.title !== title) continue;
+            const st = String(item.status || "").toLowerCase();
+            if (st === "pending" || st === "in_progress" || !st) {
+              const copy = [...next];
+              copy[i] = { ...item, status: "pending" };
+              return copy;
+            }
+          }
+          return next;
         });
       }),
       window.grokDesktop.on("agent:permission-dismiss", (payload) => {
@@ -230,7 +269,10 @@ export function useAgentEvents(opts: {
         setSettingsOpen(true);
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      window.clearInterval(poll);
+      offs.forEach((off) => off());
+    };
   }, [
     openingRef,
     syncPermissionsFromMain,

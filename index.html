@@ -11,21 +11,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss: http://127.0.0.1:* http://localhost:*;"
     />
     <title>Grok Desktop</title>
-    <script>
-      /* Apply theme before paint to avoid flash */
-      (function () {
-        try {
-          var t = localStorage.getItem("grok-desktop-theme");
-          if (t === "light" || t === "dark") {
-            document.documentElement.setAttribute("data-theme", t);
-          } else {
-            document.documentElement.setAttribute("data-theme", "dark");
-          }
-        } catch (e) {
-          document.documentElement.setAttribute("data-theme", "dark");
-        }
-      })();
-    </script>
+    <!-- External script only; CSP script-src 'self' blocks inline scripts -->
+    <script src="./theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

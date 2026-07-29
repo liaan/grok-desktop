@@ -35,6 +35,7 @@ import {
 import {
   cancelAllPermissions,
   listPendingPermissionRequests,
+  pendingPermissionCount,
   registerPermissionRequest,
   settlePermission,
 } from "./pending-permissions.mjs";
@@ -298,13 +299,39 @@ function ensureAgent(cwd, opts = {}) {
           send("agent:permission-dismiss", { reqId: id });
         },
       });
-      debugLog("permission", "request", {
-        reqId,
-        tool: request.params?.toolCall?.title || request.params?.toolCall?.kind,
-        toolCallId: request.params?.toolCall?.toolCallId,
-      });
+      const tool =
+        request.params?.toolCall?.title ||
+        request.params?.toolCall?.kind ||
+        "tool";
+      const toolCallId = request.params?.toolCall?.toolCallId;
+      // Always log — silent missed approvals look like a hung "Working…" turn.
+      console.warn(
+        `[permission] request ${reqId} tool=${tool} toolCallId=${toolCallId || "?"}`,
+      );
+      debugLog("permission", "request", { reqId, tool, toolCallId });
       // One ACP request → one JSON-RPC response after UI settle (no rebroadcast).
       send("agent:permission-request", request);
+      // Retry push once — renderer HMR / late subscribe can drop the first event.
+      setTimeout(() => {
+        if (pendingPermissionCount() === 0) return;
+        const still = listPendingPermissionRequests().find(
+          (p) => p.reqId === reqId,
+        );
+        if (still) send("agent:permission-request", still);
+      }, 750);
+      // Make escalations unmissable when the window is in the background.
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (typeof mainWindow.flashFrame === "function") {
+            mainWindow.flashFrame(true);
+          }
+          if (process.platform === "darwin" && app.dock?.bounce) {
+            app.dock.bounce("informational");
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     });
 
     agent.on("plan-approval-request", ({ params, respond }) => {
