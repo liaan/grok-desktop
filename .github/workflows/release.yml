@@ -35,11 +35,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
+          # Project build toolchain (Electron 35). Separate from the action
+          # runtime — checkout/setup-node/artifact actions use Node 24.
           node-version: "20"
           cache: npm
 
@@ -86,7 +88,7 @@ jobs:
           ls -la
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: grok-desktop-${{ matrix.label }}
           path: |
@@ -106,7 +108,7 @@ jobs:
 
     steps:
       - name: Download installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: dist-installers
           merge-multiple: true
@@ -120,7 +122,8 @@ jobs:
         run: echo "app_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        # v3 runs on Node 24 (v2 is Node 20 and deprecated on GH runners).
+        uses: softprops/action-gh-release@v3
         with:
           name: Grok Desktop ${{ github.ref_name }}
           draft: false
