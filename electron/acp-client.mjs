@@ -18,7 +18,8 @@ import { resolveProjectPath } from "./path-safety.mjs";
 import { sessionsRootForCwd } from "./sessions.mjs";
 import {
   normalizePermissionMode,
-  toAgentPermissionMode,
+  sessionPermissionMeta,
+  yoloModeChangedExtNotification,
 } from "./permission-mode.mjs";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -273,14 +274,10 @@ export class GrokAcpClient extends EventEmitter {
 
   /**
    * Meta passed on session/new and session/load so the agent starts in the
-   * same permission mode the Desktop UI shows.
+   * same permission mode the Desktop UI shows (grok-build yoloMode + autoMode).
    */
   _sessionPermissionMeta() {
-    const mode = this.permissionMode || "ask";
-    return {
-      yoloMode: mode === "always-approve",
-      permissionMode: toAgentPermissionMode(mode),
-    };
+    return sessionPermissionMeta(this.permissionMode || "ask");
   }
 
   /**
@@ -812,7 +809,9 @@ export class GrokAcpClient extends EventEmitter {
 
   /**
    * Apply permission mode on the client and push it into the live agent session.
-   * Does **not** inject chat prompts as a settings bus.
+   * Live path matches TUI/pager: ACP `ext_notification` → `x.ai/yolo_mode_changed`
+   * (`yolo_mode` / `auto_mode` / `permission_mode`). Do **not** use
+   * `session/set_mode` for tool permission — that API is plan/default/ask only.
    *
    * @param {string} mode
    * @returns {Promise<{
@@ -829,15 +828,11 @@ export class GrokAcpClient extends EventEmitter {
       return { mode: this.permissionMode, agentSynced: false };
     }
 
-    const agentMode = toAgentPermissionMode(this.permissionMode);
     try {
-      await this.request(
-        "session/set_mode",
-        {
-          sessionId: this.sessionId,
-          modeId: agentMode,
-        },
-        { timeoutMs: 15_000 },
+      // Fire-and-forget notification (same as pager); no response expected.
+      this.notify(
+        "ext_notification",
+        yoloModeChangedExtNotification(this.permissionMode),
       );
       return { mode: this.permissionMode, agentSynced: true };
     } catch (err) {

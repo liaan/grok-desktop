@@ -4,6 +4,8 @@ export function isOpenToolStatus(status: unknown): boolean;
 
 export function isTerminalToolStatus(status: unknown): boolean;
 
+export function isBashBackgroundedRawOutput(rawOut: any): boolean;
+
 export function looksLikeFinalToolResult(update: any): boolean;
 
 export function resolveToolUpdateStatus(

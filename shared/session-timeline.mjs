@@ -2,14 +2,21 @@
  * Shared ACP sessionUpdate → timeline item reducer.
  * Used by the renderer (live stream) and main process (disk history rebuild).
  *
- * Tool status notes (ACP prompt-turn + Grok quirks):
- * - Spec: tool_call → optional permission → tool_call_update(in_progress) →
- *   tool_call_update(completed|failed). Clients must key updates by toolCallId.
- * - session/update is progress-only; it does not replace client RPCs (fs/*,
- *   terminal/*, request_permission).
- * - Grok write/edit often send a final tool_call_update with content:[{type:diff}]
- *   (and/or rawOutput) but omit status. Without inference those cards stick on
- *   pending/in_progress even though the agent already moved on.
+ * Tool status (ACP + grok-build wire, see agent `acp_conversion` / `tool_calls`):
+ * - Clients must key updates by toolCallId. session/update is progress-only;
+ *   it does not replace client RPCs (fs/*, terminal/*, request_permission).
+ * - Grok lifecycle for normal tools:
+ *   1. tool_call status=pending
+ *   2. tool_call_update refine/start — title/kind/locations/rawInput; write and
+ *      search_replace attach proposed Diff content here with **no** status
+ *   3. optional permission update (title/kind/rawInput, no status)
+ *   4. final tool_call_update from acp_tool_update — **status** completed|failed
+ *      plus content and typically typed rawOutput (serde tag `type`)
+ * - Grok rarely emits in_progress for normal tools (bash-mode / backend do).
+ * - Bash with signal "backgrounded" is the intentional final omit of status;
+ *   do not infer completed from rawOutput alone in that case.
+ * - Diff without status is a **start preview**, not a final result. Older
+ *   session dumps that truly omitted final status stay open until turn_completed.
  */
 
 let seq = 0;
@@ -38,42 +45,44 @@ export function isTerminalToolStatus(status) {
 }
 
 /**
- * Grok (and some ACP agents) attach the final result (diff / rawOutput) on a
- * tool_call_update without setting status:"completed". Treat those as done so
- * the UI does not hang while the agent continues.
+ * True when typed rawOutput is a bash tool result with signal "backgrounded".
+ * Grok omits status on that update on purpose (task continues in background).
  *
- * Do not treat arbitrary text content alone as final — intermediate progress
- * updates may include text without a terminal status.
+ * @param {any} rawOut
+ * @returns {boolean}
+ */
+export function isBashBackgroundedRawOutput(rawOut) {
+  if (rawOut == null || typeof rawOut !== "object") return false;
+  const type = String(rawOut.type || "");
+  if (type !== "Bash" && type !== "bash") return false;
+  return String(rawOut.signal || "") === "backgrounded";
+}
+
+/**
+ * Whether a tool_call_update (with status omitted) should be treated as a
+ * terminal success for UI purposes.
+ *
+ * Grok true finals almost always set status; when status is missing we only
+ * infer completion from a typed rawOutput (ToolOutput serde tag), and never
+ * for bash-backgrounded. Diff content alone is **not** final — write and
+ * search_replace send proposed Diff on the start/refine update before the
+ * tool runs (and often before permission).
  *
  * @param {any} update
  * @returns {boolean}
  */
 export function looksLikeFinalToolResult(update) {
   if (!update || typeof update !== "object") return false;
-  // Grok final tool payloads include a typed rawOutput (ListDir, Bash, …).
-  // Do not treat bare/empty rawOutput as terminal — avoids early UI "completed"
-  // while client RPCs (e.g. terminal/wait_for_exit) are still open.
+  // Explicit non-empty status means the agent already decided; callers should
+  // use resolveToolUpdateStatus. This helper only covers status-omitted cases.
   const rawOut = update.rawOutput ?? update.raw_output;
   if (rawOut != null && typeof rawOut === "object" && rawOut.type) {
+    // Bare/empty objects without type are not final (avoids early completed
+    // while client RPCs e.g. terminal/wait_for_exit are still open).
+    if (isBashBackgroundedRawOutput(rawOut)) return false;
     return true;
   }
-  const content = update.content;
-  if (!Array.isArray(content) || content.length === 0) return false;
-  // File write/edit result: ACP ToolCallContent::Diff
-  if (
-    content.some(
-      (c) =>
-        c &&
-        (c.type === "diff" ||
-          c.type === "Diff" ||
-          c.oldText != null ||
-          c.newText != null ||
-          c.old_text != null ||
-          c.new_text != null),
-    )
-  ) {
-    return true;
-  }
+  // Diff / text content without typed rawOutput: intermediate or incomplete.
   return false;
 }
 

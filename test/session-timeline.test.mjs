@@ -1,17 +1,39 @@
 /**
- * Timeline reducer: tool status inference for ACP tool_call / tool_call_update.
- * Grok write/edit often omit status:"completed" on the final diff update.
+ * Timeline reducer: tool status aligned with grok-build ACP emissions.
+ *
+ * Real sequence (write / search_replace):
+ *   tool_call pending → start update with Diff + no status → optional
+ *   permission (no status) → final with status + Diff + typed rawOutput.
+ * Diff alone is a start preview, not a final.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applySessionUpdate,
   finalizeOpenTools,
+  isBashBackgroundedRawOutput,
   looksLikeFinalToolResult,
   resolveToolUpdateStatus,
 } from "../shared/session-timeline.mjs";
 
-test("looksLikeFinalToolResult: diff content is final", () => {
+const writeStartDiff = {
+  type: "diff",
+  path: "docs/BACKLOG.md",
+  oldText: "",
+  newText: "# Product backlog\n",
+};
+
+/** Shape mirrors ToolOutput::SearchReplace serde tag from grok-build. */
+const searchReplaceRawOutput = {
+  type: "SearchReplace",
+  EditsApplied: {
+    absolute_path: "/proj/docs/BACKLOG.md",
+    new_string: "# Product backlog\n",
+    old_string: "",
+  },
+};
+
+test("looksLikeFinalToolResult: Diff-only start is not final", () => {
   assert.equal(
     looksLikeFinalToolResult({
       content: [
@@ -23,13 +45,20 @@ test("looksLikeFinalToolResult: diff content is final", () => {
         },
       ],
     }),
-    true,
+    false,
   );
 });
 
 test("looksLikeFinalToolResult: typed rawOutput is final", () => {
   assert.equal(
     looksLikeFinalToolResult({ rawOutput: { type: "ListDir", Content: {} } }),
+    true,
+  );
+  assert.equal(
+    looksLikeFinalToolResult({
+      content: [writeStartDiff],
+      rawOutput: searchReplaceRawOutput,
+    }),
     true,
   );
 });
@@ -53,6 +82,52 @@ test("looksLikeFinalToolResult: text-only content is not assumed final", () => {
   );
 });
 
+test("isBashBackgroundedRawOutput: signal backgrounded on Bash type", () => {
+  assert.equal(
+    isBashBackgroundedRawOutput({
+      type: "Bash",
+      signal: "backgrounded",
+      exit_code: 0,
+      command: "sleep 999",
+    }),
+    true,
+  );
+  assert.equal(
+    isBashBackgroundedRawOutput({
+      type: "Bash",
+      signal: null,
+      exit_code: 0,
+      command: "echo hi",
+    }),
+    false,
+  );
+  assert.equal(
+    isBashBackgroundedRawOutput({ type: "ListDir", Content: {} }),
+    false,
+  );
+});
+
+test("looksLikeFinalToolResult: bash-backgrounded rawOutput is not final", () => {
+  assert.equal(
+    looksLikeFinalToolResult({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "started…" },
+        },
+      ],
+      rawOutput: {
+        type: "Bash",
+        signal: "backgrounded",
+        exit_code: 0,
+        command: "npm run dev",
+        output: [],
+      },
+    }),
+    false,
+  );
+});
+
 test("resolveToolUpdateStatus: explicit status wins", () => {
   assert.equal(
     resolveToolUpdateStatus(
@@ -61,9 +136,20 @@ test("resolveToolUpdateStatus: explicit status wins", () => {
     ),
     "failed",
   );
+  assert.equal(
+    resolveToolUpdateStatus(
+      {
+        status: "completed",
+        content: [writeStartDiff],
+        rawOutput: searchReplaceRawOutput,
+      },
+      "pending",
+    ),
+    "completed",
+  );
 });
 
-test("resolveToolUpdateStatus: diff without status → completed", () => {
+test("resolveToolUpdateStatus: Diff without status stays open (start preview)", () => {
   assert.equal(
     resolveToolUpdateStatus(
       {
@@ -73,45 +159,104 @@ test("resolveToolUpdateStatus: diff without status → completed", () => {
       },
       "in_progress",
     ),
+    "in_progress",
+  );
+  assert.equal(
+    resolveToolUpdateStatus(
+      {
+        content: [
+          { type: "diff", path: "BACKLOG.md", oldText: "", newText: "# hi" },
+        ],
+      },
+      "pending",
+    ),
+    "pending",
+  );
+});
+
+test("resolveToolUpdateStatus: typed rawOutput without status → completed", () => {
+  assert.equal(
+    resolveToolUpdateStatus(
+      { rawOutput: { type: "ListDir", Content: {} } },
+      "pending",
+    ),
     "completed",
   );
 });
 
-test("write tool_call_update with diff completes open card (Grok quirk)", () => {
+test("resolveToolUpdateStatus: bash-backgrounded does not complete", () => {
+  assert.equal(
+    resolveToolUpdateStatus(
+      {
+        rawOutput: {
+          type: "Bash",
+          signal: "backgrounded",
+          exit_code: 0,
+          command: "sleep 1",
+        },
+      },
+      "in_progress",
+    ),
+    "in_progress",
+  );
+  assert.equal(
+    resolveToolUpdateStatus(
+      {
+        rawOutput: {
+          type: "Bash",
+          signal: "backgrounded",
+          exit_code: 0,
+          command: "sleep 1",
+        },
+      },
+      "pending",
+    ),
+    "pending",
+  );
+});
+
+test("write start Diff keeps card open; final status completes", () => {
   let items = [];
   items = applySessionUpdate(items, {
     update: {
       sessionUpdate: "tool_call",
       toolCallId: "call-write-20",
       title: "write",
+      status: "pending",
       rawInput: { file_path: "docs/BACKLOG.md", content: "…" },
     },
   });
   assert.equal(items.length, 1);
   assert.equal(items[0].status, "pending");
 
+  // grok-build send_tool_call_start: Diff + no status (proposed edit)
   items = applySessionUpdate(items, {
     update: {
       sessionUpdate: "tool_call_update",
       toolCallId: "call-write-20",
       kind: "edit",
       title: "Write `docs/BACKLOG.md`",
-      content: [
-        {
-          type: "diff",
-          path: "docs/BACKLOG.md",
-          oldText: "",
-          newText: "# Product backlog\n",
-        },
-      ],
-      // no status — matches live Grok 0.2.114 session dumps
+      content: [writeStartDiff],
+      rawInput: { file_path: "docs/BACKLOG.md", content: "…" },
+    },
+  });
+  assert.equal(items[0].status, "pending");
+  assert.ok(Array.isArray(items[0].content));
+
+  // True final from acp_tool_update: status + Diff + typed rawOutput
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-write-20",
+      status: "completed",
+      content: [writeStartDiff],
+      rawOutput: searchReplaceRawOutput,
     },
   });
   assert.equal(items[0].status, "completed");
-  assert.ok(Array.isArray(items[0].content));
 });
 
-test("edit tool batch: both finish from diff updates without status", () => {
+test("edit batch: Diff-only start stays open until status", () => {
   let items = [];
   items = applySessionUpdate(items, {
     update: {
@@ -141,11 +286,32 @@ test("edit tool batch: both finish from diff updates without status", () => {
       content: [{ type: "diff", path: "b.md", oldText: "x", newText: "y" }],
     },
   });
+  assert.equal(items.find((i) => i.toolCallId === "w1")?.status, "pending");
+  assert.equal(items.find((i) => i.toolCallId === "e1")?.status, "pending");
+
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "w1",
+      status: "completed",
+      content: [{ type: "diff", path: "a.md", oldText: "", newText: "a" }],
+      rawOutput: { type: "SearchReplace", EditsApplied: {} },
+    },
+  });
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "e1",
+      status: "completed",
+      content: [{ type: "diff", path: "b.md", oldText: "x", newText: "y" }],
+      rawOutput: { type: "SearchReplace", EditsApplied: {} },
+    },
+  });
   assert.equal(items.find((i) => i.toolCallId === "w1")?.status, "completed");
   assert.equal(items.find((i) => i.toolCallId === "e1")?.status, "completed");
 });
 
-test("tool_call_update upsert when tool_call was never seen", () => {
+test("tool_call_update upsert Diff-only stays open (no prior tool_call)", () => {
   let items = [];
   items = applySessionUpdate(items, {
     update: {
@@ -157,7 +323,68 @@ test("tool_call_update upsert when tool_call was never seen", () => {
   });
   assert.equal(items.length, 1);
   assert.equal(items[0].toolCallId, "only-update");
+  assert.equal(items[0].status, "pending");
+});
+
+test("typed rawOutput without status completes via applySessionUpdate", () => {
+  let items = [];
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "ld1",
+      title: "list_dir",
+      status: "pending",
+    },
+  });
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "ld1",
+      rawOutput: { type: "ListDir", Content: { entries: [] } },
+    },
+  });
   assert.equal(items[0].status, "completed");
+});
+
+test("bash-backgrounded update keeps tool open via applySessionUpdate", () => {
+  let items = [];
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "bash-bg",
+      title: "run_terminal_cmd",
+      status: "pending",
+    },
+  });
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "bash-bg",
+      status: "in_progress",
+    },
+  });
+  items = applySessionUpdate(items, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "bash-bg",
+      // status intentionally omitted (grok-build bash signal=backgrounded)
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "… running in background" },
+        },
+      ],
+      rawOutput: {
+        type: "Bash",
+        signal: "backgrounded",
+        exit_code: 0,
+        command: "npm run dev",
+        output: [],
+        timed_out: false,
+      },
+    },
+  });
+  assert.equal(items[0].status, "in_progress");
 });
 
 test("explicit in_progress without final payload stays open", () => {
