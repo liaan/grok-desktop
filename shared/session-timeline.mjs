@@ -50,7 +50,13 @@ export function isTerminalToolStatus(status) {
  */
 export function looksLikeFinalToolResult(update) {
   if (!update || typeof update !== "object") return false;
-  if (update.rawOutput != null || update.raw_output != null) return true;
+  // Grok final tool payloads include a typed rawOutput (ListDir, Bash, …).
+  // Do not treat bare/empty rawOutput as terminal — avoids early UI "completed"
+  // while client RPCs (e.g. terminal/wait_for_exit) are still open.
+  const rawOut = update.rawOutput ?? update.raw_output;
+  if (rawOut != null && typeof rawOut === "object" && rawOut.type) {
+    return true;
+  }
   const content = update.content;
   if (!Array.isArray(content) || content.length === 0) return false;
   // File write/edit result: ACP ToolCallContent::Diff

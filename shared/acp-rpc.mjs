@@ -116,6 +116,18 @@ export function isTerminalMethod(method) {
 }
 
 /**
+ * JSON-RPC 2.0 error codes must be integers. Node fs/spawn use string codes
+ * (ENOENT, EACCES); never pass those through on the wire — agents can hang.
+ * @param {unknown} code
+ * @param {number} [fallback=-32000]
+ * @returns {number}
+ */
+export function jsonRpcErrorCode(code, fallback = -32000) {
+  if (typeof code === "number" && Number.isFinite(code)) return code;
+  return fallback;
+}
+
+/**
  * Build a JSON-RPC success response (same id as the request).
  * @param {string|number} id
  * @param {any} [result]
@@ -134,7 +146,7 @@ export function buildJsonRpcError(id, error) {
     jsonrpc: "2.0",
     id,
     error: {
-      code: error?.code ?? -32000,
+      code: jsonRpcErrorCode(error?.code),
       message: error?.message || String(error || "ACP error"),
     },
   };
@@ -308,13 +320,8 @@ export function dispatchInboundMessage(msg, handlers) {
         }),
       )
       .catch((err) => {
-        const rawCode = err?.code;
-        const code =
-          typeof rawCode === "number" && Number.isFinite(rawCode)
-            ? rawCode
-            : -32000;
         handlers.once.respond(c.id, null, {
-          code,
+          code: jsonRpcErrorCode(err?.code),
           message: err?.message || String(err),
         });
       });

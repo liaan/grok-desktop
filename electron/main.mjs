@@ -309,9 +309,9 @@ function ensureAgent(cwd, opts = {}) {
         `[permission] request ${reqId} tool=${tool} toolCallId=${toolCallId || "?"}`,
       );
       debugLog("permission", "request", { reqId, tool, toolCallId });
-      // One ACP request → one JSON-RPC response after UI settle (no rebroadcast).
+      // JSON-RPC is still answered once (pending map). Re-push the UI event once
+      // so HMR / late renderer subscribe still show the approval card.
       send("agent:permission-request", request);
-      // Retry push once — renderer HMR / late subscribe can drop the first event.
       setTimeout(() => {
         if (pendingPermissionCount() === 0) return;
         const still = listPendingPermissionRequests().find(
@@ -853,10 +853,10 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:cancel", async () => {
-    // Main-owned UI gates + agent oneshots: both must settle cancelled.
-    cancelAllPermissions(() => ({
-      outcome: { outcome: "cancelled" },
-    }));
+    // ACP turn cancel: answer every open agent→client request (tool
+    // permissions + plan approval + ask-user), dismiss renderer modals,
+    // then notify the agent and tear down tool terminals.
+    clearPendingPermissions();
     agent?.cancel();
     return true;
   });
@@ -898,13 +898,46 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:set-permission-mode", async (_e, value) => {
+    const prev = normalizePermissionMode(loadState().permissionMode);
     const mode = normalizePermissionMode(value);
     const state = loadState();
     state.permissionMode = mode;
     delete state.alwaysApprove;
     saveState(state);
-    /** @type {{ mode: string, agentSynced: boolean, error?: string }} */
+    /** @type {{ mode: string, agentSynced: boolean, error?: string, restarted?: boolean }} */
     let result = { mode, agentSynced: false };
+
+    // Process-level `grok agent --always-approve` is fixed at spawn. Crossing
+    // Always ↔ Ask/Auto must restart the agent so CLI flags match the UI
+    // (session/set_mode alone does not clear process yolo).
+    const prevAlways = prev === "always-approve";
+    const nextAlways = mode === "always-approve";
+    if (agent?.ready && agent.cwd && prevAlways !== nextAlways) {
+      const cwd = agent.cwd;
+      const sid = agent.sessionId;
+      clearPendingPermissions();
+      try {
+        await agent.dispose();
+      } catch {
+        /* ignore */
+      }
+      agent = null;
+      try {
+        await ensureAgent(cwd, {
+          resumeSessionId: sid || null,
+        });
+        result = { mode, agentSynced: true, restarted: true };
+      } catch (err) {
+        result = {
+          mode,
+          agentSynced: false,
+          restarted: true,
+          error: err?.message || String(err),
+        };
+      }
+      return result;
+    }
+
     if (agent?.setPermissionMode) {
       result = await agent.setPermissionMode(mode);
     }

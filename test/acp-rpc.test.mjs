@@ -13,6 +13,7 @@ import {
   isFsReadMethod,
   buildJsonRpcResult,
   buildJsonRpcError,
+  jsonRpcErrorCode,
 } from "../shared/acp-rpc.mjs";
 import { createAcpClientRuntime } from "../electron/acp-protocol.mjs";
 import {
@@ -196,6 +197,17 @@ test("fs/read ENOENT returns empty content (write-before-create)", async () => {
   assert.ok(reply);
   assert.equal(reply.error, undefined);
   assert.equal(reply.result.content, "");
+});
+
+test("jsonRpcErrorCode coerces Node string codes to integers", () => {
+  assert.equal(jsonRpcErrorCode("ENOENT"), -32000);
+  assert.equal(jsonRpcErrorCode("EACCES"), -32000);
+  assert.equal(jsonRpcErrorCode(-32601), -32601);
+  assert.equal(jsonRpcErrorCode(undefined), -32000);
+  const errMsg = buildJsonRpcError(1, { code: "ENOENT", message: "missing" });
+  assert.equal(typeof errMsg.error.code, "number");
+  assert.equal(errMsg.error.code, -32000);
+  assert.equal(errMsg.error.message, "missing");
 });
 
 test("fs/read other errors use numeric JSON-RPC codes (not Node string codes)", async () => {

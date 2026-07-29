@@ -92,9 +92,19 @@ export function useAgentEvents(opts: {
       try {
         const list = await window.grokDesktop.listPendingPermissions();
         if (Array.isArray(list)) {
-          setPermissions(
-            list.filter((p): p is PermissionRequest => Boolean(p?.reqId)),
+          const next = list.filter(
+            (p): p is PermissionRequest => Boolean(p?.reqId),
           );
+          // Avoid re-render loops (and scroll side-effects) when nothing changed.
+          setPermissions((prev) => {
+            if (
+              prev.length === next.length &&
+              prev.every((p, i) => p.reqId === next[i]?.reqId)
+            ) {
+              return prev;
+            }
+            return next;
+          });
         }
       } catch {
         /* ignore */

@@ -37,6 +37,7 @@ import {
   isFsWriteMethod,
   isPermissionMethod,
   isTerminalMethod,
+  jsonRpcErrorCode,
 } from "../shared/acp-rpc.mjs";
 import {
   handleAskUserQuestion,
@@ -481,15 +482,8 @@ export class GrokAcpClient extends EventEmitter {
           error: err?.message || String(err),
           code: err?.code,
         });
-        // JSON-RPC error.code MUST be a number. Node fs uses string codes
-        // (ENOENT); passing those through can stall the agent mid-tool.
-        const rawCode = err?.code;
-        const code =
-          typeof rawCode === "number" && Number.isFinite(rawCode)
-            ? rawCode
-            : -32000;
         this._respond(c.id, null, {
-          code,
+          code: jsonRpcErrorCode(err?.code),
           message: err?.message || String(err),
         });
       });
@@ -725,7 +719,7 @@ export class GrokAcpClient extends EventEmitter {
       }
     } catch (err) {
       this._respond(id, null, {
-        code: err?.code ?? -32000,
+        code: jsonRpcErrorCode(err?.code),
         message: err?.message || String(err),
       });
     }
@@ -801,11 +795,17 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   cancel() {
-    // ACP: cancel open permission requests with cancelled outcome first,
-    // then notify the agent (prompt turn abort).
+    // ACP: Client MUST respond to pending request_permission with cancelled.
+    // Also settle extension gates via main (plan/ask) — caller should use
+    // clearPendingPermissions. Kill tool shells so terminal/wait_for_exit
+    // cannot park the turn after cancel.
     this._cancelOpenPermissionGates();
-    // Do not clear once-responder here — in-flight fs/terminal may still
-    // need to answer; beginRequest opens a new slot per id on the next request.
+    try {
+      this.terminals.disposeAll();
+    } catch {
+      /* ignore */
+    }
+    // Do not clear once-responder here — in-flight fs may still need to answer.
     if (!this.sessionId) return;
     this.notify("session/cancel", { sessionId: this.sessionId });
   }

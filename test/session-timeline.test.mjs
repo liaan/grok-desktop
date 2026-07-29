@@ -27,11 +27,16 @@ test("looksLikeFinalToolResult: diff content is final", () => {
   );
 });
 
-test("looksLikeFinalToolResult: rawOutput is final", () => {
+test("looksLikeFinalToolResult: typed rawOutput is final", () => {
   assert.equal(
     looksLikeFinalToolResult({ rawOutput: { type: "ListDir", Content: {} } }),
     true,
   );
+});
+
+test("looksLikeFinalToolResult: bare rawOutput without type is not final", () => {
+  assert.equal(looksLikeFinalToolResult({ rawOutput: {} }), false);
+  assert.equal(looksLikeFinalToolResult({ rawOutput: "partial" }), false);
 });
 
 test("looksLikeFinalToolResult: text-only content is not assumed final", () => {

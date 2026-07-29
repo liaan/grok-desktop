@@ -122,13 +122,8 @@ export function createAcpClientRuntime(opts) {
           once.respond(id, { content: "" });
           return;
         }
-        const rawCode = err?.code;
-        const code =
-          typeof rawCode === "number" && Number.isFinite(rawCode)
-            ? rawCode
-            : -32000;
         once.respond(id, null, {
-          code,
+          code: err?.code, // buildJsonRpcError coerces non-integers
           message: err?.message || String(err),
         });
       }

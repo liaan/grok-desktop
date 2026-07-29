@@ -167,6 +167,8 @@ export default function App() {
   const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  /** When false, user scrolled up to read — do not yank them back down on stream. */
+  const stickToBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const busyRef = useRef(false);
@@ -295,11 +297,55 @@ export default function App() {
       : "Grok Desktop";
   }, [project]);
 
+  /** Within this many px of the bottom we treat the viewport as "pinned". */
+  const NEAR_BOTTOM_PX = 80;
+
+  const timelineNearBottom = useCallback((el: HTMLElement) => {
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return gap <= NEAR_BOTTOM_PX;
+  }, []);
+
+  // Track whether the user is reading history vs following the live tail.
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [items, permissions]);
+    const onScroll = () => {
+      stickToBottomRef.current = timelineNearBottom(el);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    // Only reset pin when switching projects/chats — never on unrelated re-renders.
+    stickToBottomRef.current = true;
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [project, sessionId, timelineNearBottom]);
+
+  /**
+   * Fingerprint of timeline content only. Idle polls (permissions, usage, etc.)
+   * must NOT appear here or reading a finished answer gets yanked to the bottom.
+   */
+  const timelineScrollKey = useMemo(() => {
+    const last = items[items.length - 1];
+    if (!last) return "empty";
+    const tail =
+      last.kind === "assistant" || last.kind === "thought" || last.kind === "user"
+        ? String((last as { text?: string }).text?.length ?? 0)
+        : last.kind === "tool"
+          ? `${last.status}:${String((last as { content?: unknown }).content ? 1 : 0)}`
+          : last.kind;
+    return `${items.length}:${last.id}:${last.kind}:${tail}`;
+  }, [items]);
+
+  // Auto-scroll only when timeline *content* changes and the user is following the tail.
+  // Never depend on permissions / usage polls — those fire while you're idle reading.
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    // User scrolled back to the bottom manually — resume following.
+    if (!stickToBottomRef.current) {
+      if (timelineNearBottom(el)) stickToBottomRef.current = true;
+      else return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [timelineScrollKey, timelineNearBottom]);
 
   const signedIn = Boolean(auth?.authenticated && !auth?.expired);
 
@@ -479,6 +525,8 @@ export default function App() {
     const images = payload.images;
     if (!text && images.length === 0) return;
 
+    // Sending a message always jumps back to the live tail.
+    stickToBottomRef.current = true;
     busyRef.current = true;
     setConn("busy");
     const timelineImages: TimelineImage[] = images.map((img) => ({
