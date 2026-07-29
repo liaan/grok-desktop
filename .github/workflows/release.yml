@@ -60,13 +60,16 @@ jobs:
         run: npm ci
 
       # Persist electron + electron-builder toolsets across runs (NSIS, icons, …).
+      # IMPORTANT: cache MUST live outside the repo. package.json has "type":"module",
+      # and electron-builder's icon-tool.js is CJS — if it runs under the project tree
+      # Node treats it as ESM and fails with "require is not defined".
       # actions/cache@v5 = Node 24 runtime (v4 is deprecated on GH runners).
       - name: Cache Electron toolchains
         uses: actions/cache@v5
         with:
           path: |
-            ${{ github.workspace }}/.cache/electron
-            ${{ github.workspace }}/.cache/electron-builder
+            ${{ runner.temp }}/electron-cache
+            ${{ runner.temp }}/electron-builder-cache
           key: ${{ runner.os }}-${{ runner.arch }}-eb-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-eb-
@@ -75,12 +78,15 @@ jobs:
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
-          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          # Outside workspace — see Cache Electron toolchains comment above.
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: |
           set -uo pipefail
           mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
           echo "node=$(node -v) npm=$(npm -v)"
+          echo "ELECTRON_CACHE=${ELECTRON_CACHE}"
+          echo "ELECTRON_BUILDER_CACHE=${ELECTRON_BUILDER_CACHE}"
           echo "electron-builder=$(./node_modules/.bin/electron-builder --version || true)"
 
           npm run build
