@@ -8,6 +8,7 @@
  * @typedef {{
  *   settle: (outcome: any) => void,
  *   request: { reqId: string, params: any },
+ *   ownerId: string | null,
  * }} PendingPermissionEntry
  */
 
@@ -52,13 +53,20 @@ export function slimPermissionParams(params) {
 }
 
 /**
+ * @param {string | null | undefined} [ownerId] When set, only that window's gates
  * @returns {Array<{ reqId: string, params: any }>}
  */
-export function listPendingPermissionRequests() {
-  return [...pending.entries()].map(([reqId, entry]) => ({
-    reqId,
-    params: entry.request?.params || {},
-  }));
+export function listPendingPermissionRequests(ownerId) {
+  return [...pending.entries()]
+    .filter(([, entry]) =>
+      ownerId == null || ownerId === ""
+        ? true
+        : entry.ownerId === ownerId,
+    )
+    .map(([reqId, entry]) => ({
+      reqId,
+      params: entry.request?.params || {},
+    }));
 }
 
 /**
@@ -70,11 +78,12 @@ export function listPendingPermissionRequests() {
  *   params: any,
  *   respond: (outcome: any) => void,
  *   onSettled?: (reqId: string, outcome: any) => void,
+ *   ownerId?: string | null,
  * }} opts
  * @returns {{ reqId: string, params: any }} UI payload (slim)
  */
 export function registerPermissionRequest(opts) {
-  const { reqId, params, respond, onSettled } = opts;
+  const { reqId, params, respond, onSettled, ownerId = null } = opts;
   const slim = slimPermissionParams(params);
   let settled = false;
   const settle = (outcome) => {
@@ -93,18 +102,26 @@ export function registerPermissionRequest(opts) {
     }
   };
   const request = { reqId, params: slim };
-  pending.set(reqId, { settle, request });
+  pending.set(reqId, {
+    settle,
+    request,
+    ownerId: ownerId == null ? null : String(ownerId),
+  });
   return request;
 }
 
 /**
  * @param {string} reqId
  * @param {any} outcome
+ * @param {string | null | undefined} [ownerId] When set, reject cross-window settle
  * @returns {boolean}
  */
-export function settlePermission(reqId, outcome) {
+export function settlePermission(reqId, outcome, ownerId) {
   const entry = pending.get(reqId);
   if (!entry) return false;
+  if (ownerId != null && ownerId !== "") {
+    if (entry.ownerId !== String(ownerId)) return false;
+  }
   entry.settle(outcome);
   return true;
 }
@@ -114,15 +131,22 @@ export function settlePermission(reqId, outcome) {
  * ACP requires pending session/request_permission to resolve with cancelled.
  * Each settle is single-shot (registerPermissionRequest guards double settle).
  * @param {(outcome: any) => any} [cancelOutcome]
+ * @param {string | null | undefined} [ownerId] When set, only cancel that window
  */
-export function cancelAllPermissions(cancelOutcome) {
+export function cancelAllPermissions(cancelOutcome, ownerId) {
   const makeOutcome =
     typeof cancelOutcome === "function"
       ? cancelOutcome
       : () => ({ outcome: { outcome: "cancelled" } });
-  const entries = [...pending.values()];
-  pending.clear();
-  for (const entry of entries) {
+  const scope =
+    ownerId == null || ownerId === "" ? null : String(ownerId);
+  const entries = [...pending.entries()].filter(([, entry]) =>
+    scope == null ? true : entry.ownerId === scope,
+  );
+  for (const [reqId] of entries) {
+    pending.delete(reqId);
+  }
+  for (const [, entry] of entries) {
     try {
       entry.settle(makeOutcome());
     } catch {
@@ -131,6 +155,15 @@ export function cancelAllPermissions(cancelOutcome) {
   }
 }
 
-export function pendingPermissionCount() {
-  return pending.size;
+/**
+ * @param {string | null | undefined} [ownerId]
+ */
+export function pendingPermissionCount(ownerId) {
+  if (ownerId == null || ownerId === "") return pending.size;
+  const scope = String(ownerId);
+  let n = 0;
+  for (const entry of pending.values()) {
+    if (entry.ownerId === scope) n++;
+  }
+  return n;
 }

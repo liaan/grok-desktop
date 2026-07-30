@@ -14,9 +14,11 @@ import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
 import { AcpTerminalManager } from "./acp-terminals.mjs";
-import { resolveProjectPath } from "./path-safety.mjs";
+import { expandUserPath, resolveProjectPath } from "./path-safety.mjs";
+import { readFileForAcp } from "./fs-content.mjs";
 import { sessionsRootForCwd } from "./sessions.mjs";
 import {
+
   normalizePermissionMode,
   sessionPermissionMeta,
   yoloModeChangedExtNotification,
@@ -162,7 +164,8 @@ export class GrokAcpClient extends EventEmitter {
     if (empty) {
       throw Object.assign(new Error("Path is required"), { code: -32602 });
     }
-    const asStr = String(filePath);
+    // Agents often pass ~/… — Node does not expand tilde.
+    const asStr = expandUserPath(String(filePath).trim());
     const abs = path.isAbsolute(asStr)
       ? path.resolve(asStr)
       : path.resolve(this.cwd || process.cwd(), asStr);
@@ -608,10 +611,26 @@ export class GrokAcpClient extends EventEmitter {
         // agent often fs/read_text_file's the path first, then write_text_file.
         // ENOENT must NOT be a hard JSON-RPC error — that stalls the tool forever
         // (create-new-file write hangs on "pending" / Working…).
+        //
+        // Images / binaries: metadata-only text (see fs-content.mjs). No base64
+        // smuggling through ACP read_text_file — attach in composer for vision.
         const filePath = this._resolveFsPath(params?.path);
-        let text = "";
         try {
-          text = await fs.promises.readFile(filePath, "utf8");
+          const line = Number(params?.line);
+          const limit = Number(params?.limit);
+          const result = await readFileForAcp(filePath, {
+            line: Number.isFinite(line) ? line : undefined,
+            limit: Number.isFinite(limit) ? limit : undefined,
+          });
+          if (result.kind !== "text") {
+            debugLog("acp", "fs-read-nontext", {
+              path: filePath,
+              kind: result.kind,
+              mime: result.mime,
+              chars: result.content?.length,
+            });
+          }
+          this._respond(id, { content: result.content });
         } catch (err) {
           if (err?.code === "ENOENT") {
             debugLog("acp", "fs-read-missing", { path: filePath });
@@ -620,19 +639,6 @@ export class GrokAcpClient extends EventEmitter {
           }
           throw err;
         }
-        // Optional line/limit (1-based line, ACP fs/read_text_file)
-        const line = Number(params?.line);
-        const limit = Number(params?.limit);
-        if (Number.isFinite(line) && line >= 1) {
-          const lines = text.split("\n");
-          const start = Math.max(0, Math.floor(line) - 1);
-          const take =
-            Number.isFinite(limit) && limit >= 0
-              ? Math.floor(limit)
-              : lines.length - start;
-          text = lines.slice(start, start + take).join("\n");
-        }
-        this._respond(id, { content: text });
         return;
       }
 

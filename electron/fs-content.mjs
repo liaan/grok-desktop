@@ -1,0 +1,169 @@
+/**
+ * ACP fs/read_text_file content shaping: binary sniff + honest non-text replies.
+ *
+ * ACP only has a text read. Images/binaries get a short metadata message —
+ * we do not smuggle multi‑MB base64 through a text API (that is not vision).
+ * Path expansion lives in path-safety.mjs.
+ */
+import fs from "node:fs";
+import path from "node:path";
+
+/**
+ * @param {Buffer} buf
+ * @returns {string | null} mime type if known image magic
+ */
+export function sniffImageMime(buf) {
+  if (!buf || buf.length < 4) return null;
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buf.length >= 6 &&
+    buf[0] === 0x47 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46
+  ) {
+    return "image/gif";
+  }
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return "image/bmp";
+  return null;
+}
+
+/**
+ * @param {string} filePath
+ * @returns {string | null}
+ */
+export function mimeFromExtension(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+  };
+  return map[ext] || null;
+}
+
+/**
+ * Heuristic: NUL in the first 8KiB ⇒ binary.
+ * @param {Buffer} buf
+ */
+export function isLikelyBinary(buf) {
+  if (!buf || buf.length === 0) return false;
+  const n = Math.min(buf.length, 8192);
+  for (let i = 0; i < n; i++) {
+    if (buf[i] === 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Build the ACP fs/read_text_file `content` string for a file on disk.
+ *
+ * @param {string} filePath Absolute path (already resolved)
+ * @param {{ line?: number, limit?: number }} [opts]
+ * @returns {Promise<{ content: string, kind: 'text' | 'image' | 'binary', mime?: string }>}
+ */
+export async function readFileForAcp(filePath, opts = {}) {
+  const buf = await fs.promises.readFile(filePath);
+  const magicMime = sniffImageMime(buf);
+  const extMime = mimeFromExtension(filePath);
+
+  // SVG is text
+  if (extMime === "image/svg+xml" && !isLikelyBinary(buf)) {
+    return applyLineLimit(buf.toString("utf8"), opts, "text", extMime);
+  }
+
+  if (
+    magicMime ||
+    (extMime &&
+      extMime.startsWith("image/") &&
+      extMime !== "image/svg+xml" &&
+      isLikelyBinary(buf))
+  ) {
+    const imageMime = magicMime || extMime || "application/octet-stream";
+    // Metadata only — vision belongs on attach / agent image embed, not text smuggling
+    return {
+      kind: "image",
+      mime: imageMime,
+      content:
+        `[binary image ${imageMime}, ${buf.length} bytes — not UTF-8 text]\n` +
+        `path: ${filePath}\n` +
+        `Attach the image in the composer for vision, or open it in a viewer. ` +
+        `ACP fs/read_text_file cannot return pixels.`,
+    };
+  }
+
+  if (isLikelyBinary(buf)) {
+    const label = extMime || "application/octet-stream";
+    return {
+      kind: "binary",
+      mime: label,
+      content:
+        `[binary file ${label}, ${buf.length} bytes — not UTF-8 text]\n` +
+        `path: ${filePath}\n` +
+        `Use a shell tool (file, xxd, …) for binary inspection.`,
+    };
+  }
+
+  // Invalid UTF-8 without NULs: Buffer.toString replaces bad bytes with U+FFFD
+  // and may change byte length when re-encoded.
+  const text = buf.toString("utf8");
+  const reencodedLen = Buffer.byteLength(text, "utf8");
+  const replacementCount = (text.match(/\uFFFD/g) || []).length;
+  if (reencodedLen !== buf.length || replacementCount > 0) {
+    return {
+      kind: "binary",
+      content:
+        `[binary file, ${buf.length} bytes — not valid UTF-8 text]\n` +
+        `path: ${filePath}\n`,
+    };
+  }
+  return applyLineLimit(text, opts, "text", undefined);
+}
+
+/**
+ * @param {string} text
+ * @param {{ line?: number, limit?: number }} opts
+ * @param {'text' | 'image' | 'binary'} kind
+ * @param {string | undefined} mime
+ */
+function applyLineLimit(text, opts, kind, mime) {
+  const line = Number(opts?.line);
+  const limit = Number(opts?.limit);
+  if (Number.isFinite(line) && line >= 1) {
+    const lines = text.split("\n");
+    const start = Math.max(0, Math.floor(line) - 1);
+    const take =
+      Number.isFinite(limit) && limit >= 0
+        ? Math.floor(limit)
+        : lines.length - start;
+    text = lines.slice(start, start + take).join("\n");
+  }
+  return { content: text, kind, mime };
+}

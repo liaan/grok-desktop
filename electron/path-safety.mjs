@@ -9,8 +9,38 @@
  * “Allow outside project”.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { listLinkedWorktreeRoots } from "./git-worktrees.mjs";
+
+/**
+ * Expand leading `~` / `~/` to the user home (POSIX + Windows-friendly).
+ * Path concern — lives here so content helpers do not own path policy.
+ * @param {string} p
+ * @returns {string}
+ */
+export function expandUserPath(p) {
+  const s = String(p ?? "");
+  if (s === "~") return os.homedir();
+  if (s.startsWith("~/") || s.startsWith("~\\")) {
+    return path.join(os.homedir(), s.slice(2));
+  }
+  // ~username — only expand bare ~user when it matches current user
+  if (/^~[^/\\]/.test(s)) {
+    const name = s.slice(1).split(/[/\\]/)[0];
+    try {
+      if (name && name === os.userInfo().username) {
+        return path.join(
+          os.homedir(),
+          s.slice(1 + name.length).replace(/^[/\\]/, ""),
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return s;
+}
 
 /**
  * Realpath `resolved` if it exists; otherwise realpath the nearest existing
@@ -117,9 +147,10 @@ export function assertPathInProject(root, target) {
     throw new Error("Path is required");
   }
   const resolvedRoot = path.resolve(root);
-  const resolved = path.isAbsolute(target)
-    ? path.resolve(target)
-    : path.resolve(resolvedRoot, target);
+  const expanded = expandUserPath(String(target).trim());
+  const resolved = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(resolvedRoot, expanded);
 
   const roots = allowedRoots(resolvedRoot);
   if (!isUnderAnyRoot(roots, resolved)) {
@@ -149,7 +180,7 @@ export function resolveProjectPath(root, target, opts = {}) {
   if (!allowOutside) {
     return assertPathInProject(root, target);
   }
-  const raw = String(target);
+  const raw = expandUserPath(String(target).trim());
   return path.isAbsolute(raw)
     ? path.resolve(raw)
     : path.resolve(path.resolve(root), raw);

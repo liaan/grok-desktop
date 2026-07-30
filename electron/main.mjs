@@ -11,7 +11,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
-import { GrokAcpClient } from "./acp-client.mjs";
 import {
   cancelLogin,
   getAuthStatus,
@@ -30,16 +29,25 @@ import {
   listSessionsForCwd,
   loadSessionOpenState,
   mostRecentSession,
-  startBackgroundTaskFileTail,
 } from "./sessions.mjs";
 import {
-  cancelAllPermissions,
   listPendingPermissionRequests,
-  pendingPermissionCount,
-  registerPermissionRequest,
   settlePermission,
 } from "./pending-permissions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
+import {
+  applyPermissionModeToAllWindows,
+  clearPendingPermissions,
+  createWindowSession,
+  disposeAgentQuick,
+  focusedSession,
+  openSessionOnWindow,
+  ownerIdFor,
+  send,
+  sessionFromEvent,
+  setDesktopStateLoader,
+  windowSessions,
+} from "./window-session.mjs";
 import {
   maybeWarmDockerSandbox,
   probeSandbox,
@@ -56,23 +64,11 @@ import {
   getDebugLogPath,
   isDebugLogging,
   setDebugLogging,
-  summarizeSessionUpdate,
 } from "./debug-log.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
-
-/** @type {BrowserWindow | null} */
-let mainWindow = null;
-/** @type {GrokAcpClient | null} */
-let agent = null;
-/** Stop fn for updates.jsonl background-task tail */
-let stopBackgroundTaskTail = null;
-/** Plan approval / ask-user extension method responders */
-const pendingPlanApprovals = new Map();
-const pendingUserQuestions = new Map();
-/** Serialize agent lifecycle (open/switch/dispose). */
-let agentChain = Promise.resolve();
+const APP_WINDOW_TITLE = "Grok Desktop";
 
 const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 
@@ -139,286 +135,6 @@ function saveState(state) {
   fs.writeFileSync(storePath, JSON.stringify(state, null, 2));
 }
 
-function send(channel, payload) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    try {
-      mainWindow.webContents.send(channel, payload);
-    } catch (err) {
-      debugLog("ipc", "send-failed", {
-        channel,
-        error: err?.message || String(err),
-      });
-    }
-  }
-}
-
-const APP_WINDOW_TITLE = "Grok Desktop";
-
-/**
- * Taskbar / title-bar label. Project shortname first so Windows taskbar
- * truncation (from the right) still shows which window is which
- * (e.g. "grok-desktop · Grok" → "grok-desk…", not "Grok - w…").
- * @param {string | null | undefined} cwd
- */
-function setWindowTitle(cwd) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (!cwd) {
-    mainWindow.setTitle(APP_WINDOW_TITLE);
-    return;
-  }
-  const trimmed = String(cwd).replace(/[/\\]+$/, "");
-  const short =
-    path.basename(trimmed) ||
-    trimmed ||
-    String(cwd);
-  mainWindow.setTitle(`${short} · Grok`);
-}
-
-function makeReqId(prefix) {
-  if (typeof crypto.randomUUID === "function") {
-    return `${prefix}_${crypto.randomUUID()}`;
-  }
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/**
- * Clear all pending UI gates. Each stored callback is a main-owned settle
- * wrapper that also dismisses the renderer modal.
- */
-function clearPendingPermissions() {
-  cancelAllPermissions();
-  const plans = [...pendingPlanApprovals.values()];
-  const asks = [...pendingUserQuestions.values()];
-  pendingPlanApprovals.clear();
-  pendingUserQuestions.clear();
-  for (const settle of plans) {
-    try {
-      settle({ type: "abandoned" });
-    } catch {
-      /* ignore */
-    }
-  }
-  for (const settle of asks) {
-    try {
-      settle({ type: "declined" });
-    } catch {
-      /* ignore */
-    }
-  }
-  // Drop any leftover modal / approval list state in the renderer
-  send("agent:permissions-cleared", {});
-}
-
-/**
- * Follow updates.jsonl for background task events for the live session.
- * @param {string} cwd
- * @param {string | null | undefined} sessionId
- */
-function restartBackgroundTaskTail(cwd, sessionId) {
-  try {
-    stopBackgroundTaskTail?.();
-  } catch {
-    /* ignore */
-  }
-  stopBackgroundTaskTail = null;
-  if (!cwd || !sessionId) return;
-  stopBackgroundTaskTail = startBackgroundTaskFileTail({
-    cwd,
-    sessionId,
-    onParams: (params) => {
-      send("agent:session-update", params);
-    },
-  });
-}
-
-/**
- * Ensure agent process for cwd, optionally resuming a CLI session.
- * Serialized — concurrent open/switch cannot race dispose/start.
- * @param {string} cwd
- * @param {{ resumeSessionId?: string | null, forceNew?: boolean }} [opts]
- */
-function ensureAgent(cwd, opts = {}) {
-  const run = async () => {
-    const resumeSessionId = opts.resumeSessionId || null;
-    const forceNew = Boolean(opts.forceNew);
-
-    if (agent?.ready && agent.cwd === cwd && agent.proc) {
-      if (forceNew) {
-        clearPendingPermissions();
-        await agent.newSession();
-        restartBackgroundTaskTail(cwd, agent.sessionId);
-        return agent;
-      }
-      if (resumeSessionId && resumeSessionId !== agent.sessionId) {
-        clearPendingPermissions();
-        await agent.loadSession(resumeSessionId);
-        restartBackgroundTaskTail(cwd, agent.sessionId);
-        return agent;
-      }
-      if (resumeSessionId && resumeSessionId === agent.sessionId) {
-        restartBackgroundTaskTail(cwd, agent.sessionId);
-        return agent;
-      }
-      if (!resumeSessionId && !forceNew) {
-        restartBackgroundTaskTail(cwd, agent.sessionId);
-        return agent;
-      }
-    }
-
-    if (agent) {
-      clearPendingPermissions();
-      await agent.dispose();
-      agent = null;
-    }
-
-    const state = loadState();
-    agent = new GrokAcpClient({
-      cwd,
-      permissionMode: state.permissionMode,
-      reasoningEffort: state.reasoningEffort,
-      allowOutsideProject: Boolean(state.allowOutsideProject),
-      sandboxTerminal: state.sandboxTerminal !== false,
-      clientVersion: app.getVersion(),
-    });
-
-    agent.on("session-update", (params) => {
-      if (isDebugLogging()) {
-        debugLog("acp", "session-update", summarizeSessionUpdate(params));
-      }
-      send("agent:session-update", params);
-    });
-
-    agent.on("permission-request", ({ params, respond }) => {
-      const reqId = makeReqId("perm");
-      const request = registerPermissionRequest({
-        reqId,
-        params,
-        respond,
-        onSettled: (id, outcome) => {
-          debugLog("permission", "respond", { reqId: id, outcome });
-          send("agent:permission-dismiss", { reqId: id });
-        },
-      });
-      const tool =
-        request.params?.toolCall?.title ||
-        request.params?.toolCall?.kind ||
-        "tool";
-      const toolCallId = request.params?.toolCall?.toolCallId;
-      // Always log — silent missed approvals look like a hung "Working…" turn.
-      console.warn(
-        `[permission] request ${reqId} tool=${tool} toolCallId=${toolCallId || "?"}`,
-      );
-      debugLog("permission", "request", { reqId, tool, toolCallId });
-      // JSON-RPC is still answered once (pending map). Re-push the UI event once
-      // so HMR / late renderer subscribe still show the approval card.
-      send("agent:permission-request", request);
-      setTimeout(() => {
-        if (pendingPermissionCount() === 0) return;
-        const still = listPendingPermissionRequests().find(
-          (p) => p.reqId === reqId,
-        );
-        if (still) send("agent:permission-request", still);
-      }, 750);
-      // Make escalations unmissable when the window is in the background.
-      try {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          if (typeof mainWindow.flashFrame === "function") {
-            mainWindow.flashFrame(true);
-          }
-          if (process.platform === "darwin" && app.dock?.bounce) {
-            app.dock.bounce("informational");
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    });
-
-    agent.on("plan-approval-request", ({ params, respond }) => {
-      const reqId = makeReqId("plan");
-      let settled = false;
-      /** @type {ReturnType<typeof setTimeout> | null} */
-      let timer = null;
-      const settle = (decision) => {
-        if (settled) return;
-        settled = true;
-        if (timer) clearTimeout(timer);
-        timer = null;
-        pendingPlanApprovals.delete(reqId);
-        try {
-          respond(decision || { type: "abandoned" });
-        } catch {
-          /* ignore */
-        }
-        send("agent:plan-approval-dismiss", {
-          reqId,
-          timedOut: Boolean(decision?.timedOut),
-        });
-      };
-      // Main owns timeout so map + UI dismiss go through the same settle path
-      timer = setTimeout(
-        () => settle({ type: "abandoned", timedOut: true }),
-        30 * 60_000,
-      );
-      pendingPlanApprovals.set(reqId, settle);
-      send("agent:plan-approval-request", { reqId, params });
-    });
-
-    agent.on("user-question-request", ({ params, respond }) => {
-      const reqId = makeReqId("ask");
-      let settled = false;
-      /** @type {ReturnType<typeof setTimeout> | null} */
-      let timer = null;
-      const settle = (decision) => {
-        if (settled) return;
-        settled = true;
-        if (timer) clearTimeout(timer);
-        timer = null;
-        pendingUserQuestions.delete(reqId);
-        try {
-          respond(decision || { type: "declined" });
-        } catch {
-          /* ignore */
-        }
-        send("agent:user-question-dismiss", {
-          reqId,
-          timedOut: Boolean(decision?.timedOut),
-        });
-      };
-      timer = setTimeout(
-        () => settle({ type: "declined", timedOut: true }),
-        10 * 60_000,
-      );
-      pendingUserQuestions.set(reqId, settle);
-      send("agent:user-question-request", { reqId, params });
-    });
-
-    agent.on("stderr", (text) => send("agent:stderr", text));
-    agent.on("error", (err) =>
-      send("agent:error", { message: err?.message || String(err) }),
-    );
-    agent.on("exit", (info) => {
-      clearPendingPermissions();
-      send("agent:exit", info);
-    });
-    // Do not push agent:ready for conn — renderer only trusts open IPC results
-    agent.on("ready", (info) => send("agent:ready", info));
-
-    await agent.start({
-      resumeSessionId: forceNew ? null : resumeSessionId,
-    });
-    restartBackgroundTaskTail(cwd, agent.sessionId);
-    return agent;
-  };
-
-  const next = agentChain.then(run, run);
-  agentChain = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
-}
-
 function rememberProjectSession(cwd, sessionId) {
   if (!cwd || !sessionId) return;
   const state = loadState();
@@ -433,11 +149,16 @@ function rememberProjectSession(cwd, sessionId) {
 }
 
 function openSettingsFromMenu() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send("app:open-settings");
+  const ws = focusedSession();
+  if (ws?.win && !ws.win.isDestroyed()) {
+    ws.win.show();
+    ws.win.focus();
+    send(ws, "app:open-settings");
   }
+}
+
+function newWindowFromMenu() {
+  createWindow();
 }
 
 /**
@@ -447,13 +168,21 @@ function openSettingsFromMenu() {
  */
 function installApplicationMenu() {
   const isMac = process.platform === "darwin";
-  /** @type {import('electron').MenuItemConstructorOptions[]} */
+  /** @type {import('electron').MenuItemConstructorOptions} */
   const settingsItem = {
     label: "Settings…",
     accelerator: "CmdOrCtrl+,",
     click: () => openSettingsFromMenu(),
   };
+  /** @type {import('electron').MenuItemConstructorOptions} */
+  const newWindowItem = {
+    label: "New Window",
+    accelerator: "CmdOrCtrl+N",
+    click: () => newWindowFromMenu(),
+  };
   /** @type {import('electron').MenuItemConstructorOptions[]} */
+  // macOS menu bar (left → right): App name | File | Edit | View | Window | Help
+  // Packaged builds only pick this up after rebuild — Dock/Applications is NOT live source.
   const template = [
     ...(isMac
       ? [
@@ -462,6 +191,8 @@ function installApplicationMenu() {
             submenu: [
               { role: "about" },
               { type: "separator" },
+              // Most discoverable place on Mac (same row as Settings)
+              newWindowItem,
               settingsItem,
               { type: "separator" },
               { role: "services" },
@@ -474,16 +205,16 @@ function installApplicationMenu() {
             ],
           },
         ]
-      : [
-          {
-            label: "File",
-            submenu: [
-              settingsItem,
-              { type: "separator" },
-              { role: "quit" },
-            ],
-          },
-        ]),
+      : []),
+    {
+      label: "File",
+      submenu: [
+        newWindowItem,
+        { type: "separator" },
+        ...(isMac ? [] : [settingsItem, { type: "separator" }]),
+        isMac ? { role: "close" } : { role: "quit" },
+      ],
+    },
     {
       label: "Edit",
       submenu: [
@@ -515,6 +246,8 @@ function installApplicationMenu() {
     {
       label: "Window",
       submenu: [
+        newWindowItem,
+        { type: "separator" },
         { role: "minimize" },
         { role: "zoom" },
         ...(isMac
@@ -582,16 +315,20 @@ function createWindow() {
     winOpts.trafficLightPosition = { x: 14, y: 16 };
   }
 
-  mainWindow = new BrowserWindow(winOpts);
+  const win = new BrowserWindow(winOpts);
+  createWindowSession(win);
 
   if (isDev) {
-    mainWindow.loadURL("http://127.0.0.1:5173");
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    win.loadURL("http://127.0.0.1:5173");
+    // Only auto-open DevTools for the first window to avoid spam
+    if (windowSessions.size <= 1) {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     // Never open data:/blob: via openExternal
     if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url);
@@ -600,7 +337,7 @@ function createWindow() {
   });
 
   // Keep navigation inside the app shell; open http(s) externally
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  win.webContents.on("will-navigate", (event, url) => {
     const allowed =
       url.startsWith("http://127.0.0.1:") ||
       url.startsWith("http://localhost:") ||
@@ -611,6 +348,8 @@ function createWindow() {
       void shell.openExternal(url);
     }
   });
+
+  return win;
 }
 
 function registerIpc() {
@@ -690,8 +429,13 @@ function registerIpc() {
     return inspectBackbone(cwd || process.cwd());
   });
 
-  ipcMain.handle("project:pick", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle("project:pick", async (e) => {
+    const ws = sessionFromEvent(e);
+    const parent =
+      ws?.win && !ws.win.isDestroyed()
+        ? ws.win
+        : BrowserWindow.getFocusedWindow() || undefined;
+    const result = await dialog.showOpenDialog(parent, {
       properties: ["openDirectory", "createDirectory"],
       title: "Open project folder",
     });
@@ -708,80 +452,28 @@ function registerIpc() {
   });
 
   /**
-   * Open a project and attach an ACP session.
+   * Open a project and attach an ACP session on the calling window.
    * @param {string} cwd
    * @param {{ mode?: 'continue' | 'new' | 'resume', sessionId?: string }} [opts]
    *   - continue (default): resume most recent session for cwd (CLI `-c`)
    *   - new: brand-new session (CLI `/new`)
    *   - resume: load opts.sessionId (CLI `--resume id`)
    */
-  ipcMain.handle("project:open", async (_e, cwd, opts = {}) => {
+  ipcMain.handle("project:open", async (e, cwd, opts = {}) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) throw new Error("No window for project:open");
     if (!cwd || !fs.existsSync(cwd)) {
       throw new Error(`Project path not found: ${cwd}`);
     }
-
-    const mode = opts?.mode || "continue";
-    let resumeSessionId = null;
-    let forceNew = false;
-
-    if (mode === "new") {
-      forceNew = true;
-    } else if (mode === "resume" && opts?.sessionId) {
-      resumeSessionId = opts.sessionId;
-    } else {
-      // continue — CLI `-c`: most recent on disk by lastActiveAt
-      resumeSessionId = mostRecentSession(cwd)?.id || null;
-    }
-
-    let client;
-    try {
-      client = await ensureAgent(cwd, {
-        resumeSessionId,
-        forceNew,
-      });
-    } catch (err) {
-      // Corrupt / missing session — fall back to a new chat
-      if (resumeSessionId && !forceNew) {
-        console.warn(
-          "[project:open] resume failed, starting new session:",
-          err?.message || err,
-        );
-        client = await ensureAgent(cwd, { forceNew: true });
-        resumeSessionId = null;
-        forceNew = true;
-      } else {
-        throw err;
-      }
-    }
-
-    rememberProjectSession(cwd, client.sessionId);
-    setWindowTitle(client.cwd);
-    restartBackgroundTaskTail(cwd, client.sessionId);
-
-    let history = [];
-    /** @type {any[]} */
-    let backgroundTasks = [];
-    /** @type {any} */
-    let usage = null;
-    if (client.sessionId && !forceNew) {
-      const loaded = loadSessionOpenState(cwd, client.sessionId);
-      history = loaded.items || [];
-      backgroundTasks = loaded.tasks || [];
-      usage = loaded.usage || null;
-    }
-
-    const sessions = listSessionsForCwd(cwd);
-
-    return {
-      cwd: client.cwd,
-      sessionId: client.sessionId,
-      grokBinary: client.grokPath,
-      resumed: Boolean(resumeSessionId) && !forceNew,
-      history,
-      backgroundTasks,
-      usage,
-      sessions,
-    };
+    return openSessionOnWindow(ws, {
+      cwd,
+      mode: opts?.mode || "continue",
+      sessionId: opts?.sessionId,
+      mostRecent: mostRecentSession,
+      loadState: loadSessionOpenState,
+      listSessions: listSessionsForCwd,
+      remember: rememberProjectSession,
+    });
   });
 
   ipcMain.handle("sessions:list", async (_e, cwd) => {
@@ -789,111 +481,86 @@ function registerIpc() {
     return listSessionsForCwd(cwd);
   });
 
-  ipcMain.handle("sessions:open", async (_e, { cwd, sessionId, mode }) => {
+  ipcMain.handle("sessions:open", async (e, { cwd, sessionId, mode }) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) throw new Error("No window for sessions:open");
     if (!cwd || !fs.existsSync(cwd)) {
       throw new Error(`Project path not found: ${cwd}`);
     }
-    let forceNew = mode === "new";
-    let resumeSessionId = forceNew ? null : sessionId;
-    let client;
-    let resumeWarning = null;
-    try {
-      client = await ensureAgent(cwd, {
-        resumeSessionId,
-        forceNew,
-      });
-    } catch (err) {
-      if (resumeSessionId && !forceNew) {
-        console.warn(
-          "[sessions:open] resume failed, starting new session:",
-          err?.message || err,
-        );
-        resumeWarning =
-          err?.message ||
-          "Could not resume that chat; started a new session.";
-        client = await ensureAgent(cwd, { forceNew: true });
-        forceNew = true;
-        resumeSessionId = null;
-      } else {
-        throw err;
-      }
-    }
-    rememberProjectSession(cwd, client.sessionId);
-    setWindowTitle(client.cwd);
-    restartBackgroundTaskTail(cwd, client.sessionId);
-
-    let history = [];
-    /** @type {any[]} */
-    let backgroundTasks = [];
-    /** @type {any} */
-    let usage = null;
-    if (!forceNew && client.sessionId) {
-      const loaded = loadSessionOpenState(cwd, client.sessionId);
-      history = loaded.items || [];
-      backgroundTasks = loaded.tasks || [];
-      usage = loaded.usage || null;
-    }
-
-    return {
-      cwd: client.cwd,
-      sessionId: client.sessionId,
-      grokBinary: client.grokPath,
-      resumed: Boolean(resumeSessionId) && !forceNew,
-      history,
-      backgroundTasks,
-      usage,
-      sessions: listSessionsForCwd(cwd),
-      warning: resumeWarning,
-    };
+    return openSessionOnWindow(ws, {
+      cwd,
+      mode: mode === "new" ? "new" : "resume",
+      sessionId,
+      mostRecent: mostRecentSession,
+      loadState: loadSessionOpenState,
+      listSessions: listSessionsForCwd,
+      remember: rememberProjectSession,
+    });
   });
 
-  ipcMain.handle("agent:prompt", async (_e, { text, images = [] }) => {
+  ipcMain.handle("agent:prompt", async (e, { text, images = [] }) => {
+    const agent = sessionFromEvent(e)?.agent;
     if (!agent?.ready) throw new Error("Agent not connected. Open a project first.");
     return agent.prompt(text, { images });
   });
 
-  ipcMain.handle("agent:cancel", async () => {
+  ipcMain.handle("agent:cancel", async (e) => {
     // ACP turn cancel: answer every open agent→client request (tool
     // permissions + plan approval + ask-user), dismiss renderer modals,
     // then notify the agent and tear down tool terminals.
-    clearPendingPermissions();
-    agent?.cancel();
+    const ws = sessionFromEvent(e);
+    if (ws) clearPendingPermissions(ws);
+    ws?.agent?.cancel();
     return true;
   });
 
-  ipcMain.handle("agent:permission-respond", async (_e, { reqId, outcome }) => {
-    return settlePermission(reqId, outcome);
+  ipcMain.handle("agent:permission-respond", async (e, { reqId, outcome }) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) return false;
+    return settlePermission(reqId, outcome, ownerIdFor(ws));
   });
 
   /** Mirror open gates after renderer reload / HMR (main is source of truth). */
-  ipcMain.handle("agent:list-pending-permissions", async () => {
-    return listPendingPermissionRequests();
+  ipcMain.handle("agent:list-pending-permissions", async (e) => {
+    const ws = sessionFromEvent(e);
+    // No window → empty list (do not leak other windows' gates)
+    if (!ws) return [];
+    return listPendingPermissionRequests(ownerIdFor(ws));
   });
 
-  ipcMain.handle("agent:plan-approval-respond", async (_e, { reqId, decision }) => {
-    const settle = pendingPlanApprovals.get(reqId);
+  ipcMain.handle("agent:plan-approval-respond", async (e, { reqId, decision }) => {
+    const ws = sessionFromEvent(e);
+    const settle = ws?.pendingPlanApprovals.get(reqId);
     if (!settle) return false;
     settle(decision || { type: "abandoned" });
     return true;
   });
 
-  ipcMain.handle("agent:user-question-respond", async (_e, { reqId, decision }) => {
-    const settle = pendingUserQuestions.get(reqId);
+  ipcMain.handle("agent:user-question-respond", async (e, { reqId, decision }) => {
+    const ws = sessionFromEvent(e);
+    const settle = ws?.pendingUserQuestions.get(reqId);
     if (!settle) return false;
     settle(decision || { type: "declined" });
     return true;
   });
 
+  /**
+   * Apply global permission mode to every live window agent.
+   * Always ↔ Ask/Auto crosses a process-level CLI flag and must restart
+   * **all** windows (not only the caller).
+   * @param {string} mode
+   * @param {string} prev
+   */
+
   /** @deprecated prefer agent:set-permission-mode */
   ipcMain.handle("agent:set-always-approve", async (_e, value) => {
+    const prev = normalizePermissionMode(loadState().permissionMode);
     const mode = value ? "always-approve" : "ask";
     const state = loadState();
     state.permissionMode = mode;
     delete state.alwaysApprove;
     saveState(state);
-    if (agent?.setPermissionMode) {
-      await agent.setPermissionMode(mode);
-    }
+    await applyPermissionModeToAllWindows(mode, prev);
     return mode === "always-approve";
   });
 
@@ -904,55 +571,27 @@ function registerIpc() {
     state.permissionMode = mode;
     delete state.alwaysApprove;
     saveState(state);
-    /** @type {{ mode: string, agentSynced: boolean, error?: string, restarted?: boolean }} */
-    let result = { mode, agentSynced: false };
-
-    // Process-level `grok agent --always-approve` is fixed at spawn. Crossing
-    // Always ↔ Ask/Auto must restart the agent so CLI flags match the UI
-    // (session/set_mode alone does not clear process yolo).
-    const prevAlways = prev === "always-approve";
-    const nextAlways = mode === "always-approve";
-    if (agent?.ready && agent.cwd && prevAlways !== nextAlways) {
-      const cwd = agent.cwd;
-      const sid = agent.sessionId;
-      clearPendingPermissions();
-      try {
-        await agent.dispose();
-      } catch {
-        /* ignore */
-      }
-      agent = null;
-      try {
-        await ensureAgent(cwd, {
-          resumeSessionId: sid || null,
-        });
-        result = { mode, agentSynced: true, restarted: true };
-      } catch (err) {
-        result = {
-          mode,
-          agentSynced: false,
-          restarted: true,
-          error: err?.message || String(err),
-        };
-      }
-      return result;
-    }
-
-    if (agent?.setPermissionMode) {
-      result = await agent.setPermissionMode(mode);
-    }
-    return result;
+    return applyPermissionModeToAllWindows(mode, prev);
   });
 
-  ipcMain.handle("agent:set-reasoning-effort", async (_e, value) => {
+  ipcMain.handle("agent:set-reasoning-effort", async (e, value) => {
     const effort = normalizeReasoningEffort(value);
     const state = loadState();
     state.reasoningEffort = effort;
     saveState(state);
     /** @type {{ effort: string, agentSynced: boolean, error?: string }} */
     let result = { effort, agentSynced: false };
+    const agent = sessionFromEvent(e)?.agent;
     if (agent?.setReasoningEffort) {
       result = await agent.setReasoningEffort(effort);
+    }
+    for (const other of windowSessions.values()) {
+      if (other.agent === agent || !other.agent?.setReasoningEffort) continue;
+      try {
+        await other.agent.setReasoningEffort(effort);
+      } catch {
+        /* ignore */
+      }
     }
     return result;
   });
@@ -961,7 +600,9 @@ function registerIpc() {
     const state = loadState();
     state.allowOutsideProject = Boolean(value);
     saveState(state);
-    agent?.setAllowOutsideProject(state.allowOutsideProject);
+    for (const ws of windowSessions.values()) {
+      ws.agent?.setAllowOutsideProject(state.allowOutsideProject);
+    }
     return state.allowOutsideProject;
   });
 
@@ -970,7 +611,9 @@ function registerIpc() {
     // Explicit boolean from UI — do not use `!== false` here (undefined would stick ON)
     state.sandboxTerminal = Boolean(value);
     saveState(state);
-    agent?.setSandboxTerminal(state.sandboxTerminal);
+    for (const ws of windowSessions.values()) {
+      ws.agent?.setSandboxTerminal(state.sandboxTerminal);
+    }
     // Start Docker image pull/build off the UI thread when sandbox is (re)enabled
     if (state.sandboxTerminal) {
       maybeWarmDockerSandbox();
@@ -1028,55 +671,58 @@ function registerIpc() {
     return p;
   });
 
-  ipcMain.handle("git:branch", async (_e, cwd) => {
-    const root = typeof cwd === "string" && cwd ? cwd : agent?.cwd;
+  ipcMain.handle("git:branch", async (e, cwd) => {
+    const root =
+      typeof cwd === "string" && cwd
+        ? cwd
+        : sessionFromEvent(e)?.agent?.cwd;
     if (!root) return { branch: null, detached: false };
     return getGitBranch(root);
   });
 
-  ipcMain.handle("fs:read-file", async (_e, filePath) => {
-    const root = agent?.cwd;
+  ipcMain.handle("fs:read-file", async (e, filePath) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, filePath);
     return fs.promises.readFile(safe, "utf8");
   });
 
-  ipcMain.handle("fs:list-dir", async (_e, dirPath) => {
-    const root = agent?.cwd;
+  ipcMain.handle("fs:list-dir", async (e, dirPath) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, dirPath);
     const entries = await fs.promises.readdir(safe, { withFileTypes: true });
     return entries
-      .filter((e) => !e.name.startsWith("."))
+      .filter((ent) => !ent.name.startsWith("."))
       .slice(0, 200)
-      .map((e) => {
+      .map((ent) => {
         // Treat symlinks-to-dirs as directories so the browser can enter them
         // (still gated by assertPathInProject on the next listDir).
-        let isDirectory = e.isDirectory();
-        if (!isDirectory && e.isSymbolicLink()) {
+        let isDirectory = ent.isDirectory();
+        if (!isDirectory && ent.isSymbolicLink()) {
           try {
-            isDirectory = fs.statSync(path.join(safe, e.name)).isDirectory();
+            isDirectory = fs.statSync(path.join(safe, ent.name)).isDirectory();
           } catch {
             isDirectory = false;
           }
         }
         return {
-          name: e.name,
+          name: ent.name,
           isDirectory,
-          path: path.join(safe, e.name),
+          path: path.join(safe, ent.name),
         };
       });
   });
 
   // Renderer shell helpers are always project-scoped (ignore allowOutsideProject).
-  ipcMain.handle("shell:open-path", async (_e, target) => {
-    const root = agent?.cwd;
+  ipcMain.handle("shell:open-path", async (e, target) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     return shell.openPath(assertPathInProject(root, target));
   });
 
-  ipcMain.handle("shell:show-item", async (_e, target) => {
-    const root = agent?.cwd;
+  ipcMain.handle("shell:show-item", async (e, target) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     shell.showItemInFolder(assertPathInProject(root, target));
   });
@@ -1090,51 +736,8 @@ function registerIpc() {
   });
 }
 
-/**
- * Tear down the agent without blocking quit (used by auto-update restart
- * and before-quit). Force-kills the child if dispose hangs.
- */
-function disposeAgentQuick() {
-  try {
-    stopBackgroundTaskTail?.();
-  } catch {
-    /* ignore */
-  }
-  stopBackgroundTaskTail = null;
-  const a = agent;
-  agent = null;
-  setWindowTitle(null);
-  if (!a) return;
-  try {
-    clearPendingPermissions();
-  } catch {
-    /* ignore */
-  }
-  try {
-    const p = a.dispose();
-    if (p && typeof p.then === "function") {
-      p.catch(() => {});
-    }
-  } catch {
-    /* ignore */
-  }
-  // Force-kill if the child is still around after a short grace period
-  try {
-    if (a.proc && !a.proc.killed) {
-      setTimeout(() => {
-        try {
-          if (a.proc && !a.proc.killed) a.proc.kill("SIGKILL");
-        } catch {
-          /* ignore */
-        }
-      }, 800);
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 app.whenReady().then(() => {
+  setDesktopStateLoader(loadState);
   installApplicationMenu();
   registerIpc();
   createWindow();

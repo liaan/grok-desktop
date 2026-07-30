@@ -173,7 +173,16 @@ Desktop is a shell. Config ownership:
 
 Terminals spawn in the project `cwd` (or the path the agent passes). Output is buffered (default 1 MiB, truncated from the start). Dispose / cwd change releases all terminals.
 
-**Shell packaging:** Agents often send `command: "/bin/bash -lc '…'"` as one string. The client **must** unwrap that into `spawn("/bin/bash", ["-lc", script])` — never spawn the multi-word string as an executable (ENOENT). PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **Electron main does not hot-reload** — quit the app fully after changing `acp-terminals.mjs`.
+**Shell packaging / quotes:** Agents often send `command: "/bin/bash -lc '…'"` as one string (or freeform lines with nested quotes). The client **must never** spawn a multi-word string as the executable (ENOENT). Normalization lives in `electron/terminal-spawn.mjs` + `electron/shell-argv.mjs` (wired from `acp-terminals.mjs`):
+
+1. **Real argv** (`command` = single token, `args` = list) → `spawn(cmd, args)` — no re-quoting (preserves `don't` in commit messages).
+2. **Packed shell line** → tokenize with `shellSplit` (POSIX quotes), extract `-c` script body, then `spawn(bash, ["-lc", script])`. Never regex-strip outer quotes.
+3. **Split packing** (`command: "bash -lc"`, `args: [script]`) → same as (2); glue script from args.
+4. **Freeform** → `spawn(bash, ["-lc", originalString])` as **one** argv element so the agent's quotes stay intact.
+5. **Multi-line / heredoc** → write a temp `run.sh` and `spawn(bash, [file])` (avoids ENAMETOOLONG).
+6. When re-packing argv into a shell line (sandbox Docker/WSL path mapping, freeform glue), use `shellJoin` / `shellEscape` — **never** `args.join(" ")` (that breaks spaces and apostrophes).
+
+PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **Electron main does not hot-reload** — quit the app fully after changing `acp-terminals.mjs` / `terminal-spawn.mjs` / `shell-argv.mjs` / `terminal-sandbox.mjs`.
 
 **Slash commands:** Type `/` in the composer. Agent skills (`/review`, `/code-review`, `/design`, `/implement`, …) are sent as normal `session/prompt` text (same as CLI). Desktop-local commands are handled in the GUI and never reach the agent.
 

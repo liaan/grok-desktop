@@ -16,6 +16,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { shellJoin } from "./shell-argv.mjs";
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 /**
@@ -834,8 +835,9 @@ function materializeInnerCommand(inner) {
     ? inner.fileArgs.map(String)
     : [];
   if (inner.shell) {
-    // Host shell:true (Windows .cmd shims) → real argv inside the jail
-    const line = [file, ...fileArgs].join(" ");
+    // Host shell:true (Windows .cmd shims) → real argv inside the jail.
+    // Must shellJoin — bare join(" ") breaks spaces/apostrophes in args.
+    const line = shellJoin([file, ...fileArgs]);
     return { file: "/bin/bash", fileArgs: ["-lc", line] };
   }
   return { file, fileArgs };
@@ -900,8 +902,9 @@ export function mapInnerCommandForDocker(inner, projectRoot) {
     }
   }
 
-  // Windows host path or other absolute — re-pack as bash -lc
-  const line = [file, ...fileArgs].join(" ");
+  // Windows host path or other absolute — re-pack as bash -lc.
+  // shellJoin keeps each arg as one shell word (spaces, quotes, apostrophes).
+  const line = shellJoin([file, ...fileArgs]);
   return { file: "/bin/bash", fileArgs: ["-lc", line] };
 }
 
@@ -1051,9 +1054,14 @@ function planWslBwrap(p) {
     base === "bash.exe" ||
     /^[A-Za-z]:[\\/]/.test(innerFile)
   ) {
-    // Host Windows path executable — run via bash -lc of the original line
-    if (/^[A-Za-z]:[\\/]/.test(innerFile) && base !== "bash" && base !== "bash.exe") {
-      const line = [innerFile, ...innerArgs].join(" ");
+    // Host Windows path executable — run via bash -lc of the original line.
+    // shellJoin — never join(" ") or commit messages / paths with spaces break.
+    if (
+      /^[A-Za-z]:[\\/]/.test(innerFile) &&
+      base !== "bash" &&
+      base !== "bash.exe"
+    ) {
+      const line = shellJoin([innerFile, ...innerArgs]);
       innerFile = "/bin/bash";
       innerArgs = ["-lc", line];
     } else {

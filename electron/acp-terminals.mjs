@@ -4,18 +4,26 @@
  *
  * Methods: terminal/create | output | wait_for_exit | kill | release
  *
- * Critical: the Grok agent often packs a full shell line as `command` with
- * empty or bogus `args` (e.g. command = `/bin/bash -lc 'git status'`).
- * Spawning that string as an executable → ENOENT. Always normalize to argv.
+ * Spawn argv planning lives in terminal-spawn.mjs (normalize + multi-line files).
+ * This module owns process lifecycle, output buffer, and sandbox hookup.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { buildGrokEnv, windowsGitBashPath } from "./grok-home.mjs";
+import { buildGrokEnv } from "./grok-home.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
+import {
+  resolveRetrySpawnPlan,
+  resolveSpawnPlan,
+} from "./terminal-spawn.mjs";
+// Re-export for tests that import from acp-terminals historically
+export {
+  materializeMultilineScript,
+  maybeMaterializeScriptSpawn,
+  normalizeTerminalSpawn,
+  resolveSpawnPlan,
+} from "./terminal-spawn.mjs";
 import { planSandboxedSpawn } from "./terminal-sandbox.mjs";
 import { debugLog } from "./debug-log.mjs";
 
@@ -44,47 +52,6 @@ const KILL_ESCALATE_MS = 1500;
  */
 
 /**
- * Resolve bash for host tool shells.
- *
- * On Windows, prefer Git for Windows bash over `System32\bash.exe` (WSL
- * launcher). WSL bash + Windows cwd often mis-handles host git and can leave
- * tool cards stuck on "pending".
- */
-function bashPath() {
-  if (process.platform === "win32") {
-    const gitBash = windowsGitBashPath();
-    if (gitBash) return gitBash;
-    // No Git for Windows — avoid silent WSL bash against a Windows cwd when
-    // possible; still fall back to PATH for exotic setups.
-    return "bash";
-  }
-  for (const p of ["/bin/bash", "/usr/bin/bash"]) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch {
-      /* ignore */
-    }
-  }
-  return "/bin/bash";
-}
-
-function shPath() {
-  if (process.platform === "win32") {
-    const bash = bashPath();
-    if (bash !== "bash" && bash.toLowerCase().endsWith("bash.exe")) {
-      const sh = path.join(path.dirname(bash), "sh.exe");
-      try {
-        if (fs.existsSync(sh)) return sh;
-      } catch {
-        /* ignore */
-      }
-    }
-    return "sh";
-  }
-  return fs.existsSync("/bin/sh") ? "/bin/sh" : "sh";
-}
-
-/**
  * Env so agent tool shells never block on editors / credential TTY prompts.
  * ACP terminals use stdin "ignore" — interactive git/gpg hangs forever ("pending").
  * @param {Record<string, string | undefined>} env
@@ -98,118 +65,13 @@ function applyNonInteractiveToolEnv(env) {
     GCM_INTERACTIVE: "never",
     GIT_PAGER: "cat",
     PAGER: "cat",
-    // Fail fast instead of hanging on SSH passphrase prompts. Host shells
-    // fail closed on unknown hosts (do not rewrite the user's known_hosts).
     GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
-    // Signed commits: do not open pinentry TTY (will fail closed if signing required)
     GPG_TTY: "",
   };
   for (const [k, v] of Object.entries(defaults)) {
     if (env[k] == null || env[k] === "") env[k] = v;
   }
   return env;
-}
-
-/**
- * Strip matching outer quotes from a shell script payload.
- * @param {string} s
- */
-function stripOuterQuotes(s) {
-  const t = s.trim();
-  if (t.length >= 2) {
-    const a = t[0];
-    const b = t[t.length - 1];
-    if ((a === "'" && b === "'") || (a === '"' && b === '"')) {
-      return t.slice(1, -1);
-    }
-  }
-  return t;
-}
-
-/**
- * If `command` is a full shell invocation line, return { shell, flag, script }.
- * Matches what the Grok agent packs: `/bin/bash -lc 'git status'`
- * @param {string} command
- * @returns {{ shell: string, flag: string, script: string } | null}
- */
-function parseEmbeddedShellLine(command) {
-  const c = command.trim();
-  // /bin/bash -lc '…' | bash -c "…" | /bin/sh -c … | bash -l -c '…'
-  const m = c.match(
-    /^(?:\/usr)?(?:\/bin\/)?(bash|sh|zsh)((?:\s+-[lcp]+)+)\s+([\s\S]+)$/i,
-  );
-  if (!m) return null;
-  const shellName = m[1].toLowerCase();
-  const flagTokens = m[2].trim().split(/\s+/);
-  const script = stripOuterQuotes(m[3]);
-  const joined = flagTokens.join("");
-  const flag = /c/i.test(joined) ? (/l/i.test(joined) ? "-lc" : "-c") : "-lc";
-  const shell =
-    shellName === "bash"
-      ? bashPath()
-      : shellName === "zsh"
-        ? process.platform === "win32"
-          ? "zsh"
-          : fs.existsSync("/bin/zsh")
-            ? "/bin/zsh"
-            : "zsh"
-        : shPath();
-  return { shell, flag, script };
-}
-
-/**
- * Normalize agent packing into a safe spawn argv.
- * Never returns a multi-word string as the executable path.
- *
- * @param {string} command
- * @param {string[]} argsIn
- * @returns {{ execCommand: string, args: string[], useShell: boolean }}
- */
-export function normalizeTerminalSpawn(command, argsIn) {
-  const isWin = process.platform === "win32";
-  const bash = bashPath();
-  const args = Array.isArray(argsIn)
-    ? argsIn.map(String).filter((a) => a.length > 0)
-    : [];
-
-  // 1) Full shell line stuffed into `command` (with or without extra args)
-  const embedded = parseEmbeddedShellLine(command);
-  if (embedded) {
-    // If agent also passed the script as args, prefer embedded script
-    return {
-      execCommand: embedded.shell,
-      args: [embedded.flag, embedded.script],
-      useShell: false,
-    };
-  }
-
-  // 2) command is a single token, args are real argv
-  if (args.length > 0 && !/\s/.test(command)) {
-    return {
-      execCommand: command,
-      args,
-      // Windows needs shell for .cmd shims (npm, etc.)
-      useShell: isWin,
-    };
-  }
-
-  // 3) command has spaces OR metacharacters → always bash -lc (never spawn as path)
-  if (/\s/.test(command) || /[|&;<>$`"'\\]/.test(command) || args.length > 0) {
-    const script =
-      args.length > 0 ? [command, ...args].join(" ") : command;
-    return {
-      execCommand: bash,
-      args: ["-lc", script],
-      useShell: false,
-    };
-  }
-
-  // 4) Simple single-token command (e.g. "ls", "git")
-  return {
-    execCommand: command,
-    args: [],
-    useShell: isWin,
-  };
 }
 
 /**
@@ -388,24 +250,13 @@ export class AcpTerminalManager extends EventEmitter {
     }
     const env = applyNonInteractiveToolEnv(buildGrokEnv(envExtra));
 
-    let { execCommand, args, useShell } = normalizeTerminalSpawn(
-      command,
-      rawArgs,
-    );
-
-    // Safety: never spawn a multi-word string as the executable
-    if (/\s/.test(execCommand)) {
-      const fixed = normalizeTerminalSpawn(execCommand, args);
-      execCommand = fixed.execCommand;
-      args = fixed.args;
-      useShell = fixed.useShell;
-      if (/\s/.test(execCommand)) {
-        // Last resort
-        execCommand = bashPath();
-        args = ["-lc", command];
-        useShell = false;
-      }
-    }
+    const planned = resolveSpawnPlan(command, rawArgs, {
+      fallbackCommand: command,
+      cwd,
+    });
+    const execCommand = planned.execCommand;
+    const args = planned.args;
+    const useShell = planned.useShell;
 
     const id = `term_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     /** @type {ManagedTerminal} */
@@ -424,7 +275,7 @@ export class AcpTerminalManager extends EventEmitter {
       command: execCommand,
       args,
       cwd,
-      cleanup: null,
+      cleanup: planned.cleanup,
       sandboxBackend: null,
     };
 
@@ -436,7 +287,8 @@ export class AcpTerminalManager extends EventEmitter {
      * @param {boolean} shell
      */
     const spawnOnce = (file, fileArgs, shell) => {
-      runTermCleanup(term);
+      // Do NOT runTermCleanup here — multi-line temp scripts must stay on disk
+      // until the process exits. Retry paths clear cleanup explicitly first.
       const plan = this.sandboxTerminal
         ? planSandboxedSpawn({
             file,
@@ -462,7 +314,21 @@ export class AcpTerminalManager extends EventEmitter {
         backend: plan.backend,
       };
       if (typeof plan.cleanup === "function") {
-        term.cleanup = plan.cleanup;
+        // Compose sandbox temp cleanup with multi-line script cleanup
+        const prev = term.cleanup;
+        const sand = plan.cleanup;
+        term.cleanup = () => {
+          try {
+            sand();
+          } catch {
+            /* ignore */
+          }
+          try {
+            prev?.();
+          } catch {
+            /* ignore */
+          }
+        };
       }
       return spawn(plan.file, plan.fileArgs, {
         cwd: plan.cwd,
@@ -542,19 +408,22 @@ export class AcpTerminalManager extends EventEmitter {
         // Only the active process may finish the terminal
         if (term.proc !== child) return;
 
-        // ENOENT: retry once via absolute bash -lc (common GUI-packaging failure)
+        // ENOENT: retry once via absolute bash (common GUI-packaging failure)
         if (err?.code === "ENOENT" && !term._retried) {
           term._retried = true;
           try {
-            const script =
-              rawArgs.length > 0
-                ? [command, ...rawArgs].join(" ")
-                : command;
-            const retry = spawnOnce(bashPath(), ["-lc", script], false);
+            const retryPlan = resolveRetrySpawnPlan(command, rawArgs, { cwd });
+            runTermCleanup(term);
+            term.cleanup = retryPlan.cleanup;
+            const retry = spawnOnce(
+              retryPlan.execCommand,
+              retryPlan.args,
+              retryPlan.useShell,
+            );
             term.proc = retry;
             term.pid = retry.pid ?? null;
-            term.command = bashPath();
-            term.args = ["-lc", script];
+            term.command = retryPlan.execCommand;
+            term.args = retryPlan.args;
             attachProcess(retry, "retry");
             return;
           } catch (err2) {
