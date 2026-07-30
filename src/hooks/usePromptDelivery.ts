@@ -206,7 +206,9 @@ export function usePromptDelivery(opts: {
         return true;
       }
 
-      await deliverPrompt({ text, images });
+      // Do not await the full turn — Composer clears the draft on this true.
+      // deliverPrompt owns busy/queue drain for the rest of the turn.
+      void deliverPrompt({ text, images });
       return true;
     },
     [
