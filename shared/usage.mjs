@@ -102,16 +102,19 @@ export function formatTokens(n) {
 }
 
 /**
- * Agent reports costUsdTicks — empirically ~1e9 ticks per USD on recent builds.
+ * Agent costUsdTicks scale (grok-build `USD_TICKS_PER_USD`):
+ * 1 USD = 1e10 ticks. Same as CLI / headless `ticks_to_usd`.
  * @param {number} ticks
  * @returns {string | null}
  */
 export function formatCostUsd(ticks) {
   if (!ticks || ticks <= 0) return null;
-  const usd = ticks / 1e9;
-  if (usd < 0.01) return `$${usd.toFixed(3)}`;
+  const usd = ticks / 1e10;
+  // Compact status-bar precision; CLI detailed view uses more decimals.
+  if (usd < 0.1) return `$${usd.toFixed(3)}`;
   if (usd < 10) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(1)}`;
+  if (usd < 100) return `$${usd.toFixed(1)}`;
+  return `$${Math.round(usd)}`;
 }
 
 /**

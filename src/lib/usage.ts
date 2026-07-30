@@ -23,7 +23,7 @@ export type SessionUsage = {
   cachedReadTokens: number;
   reasoningTokens: number;
   modelCalls: number;
-  /** Opaque cost units from the agent (costUsdTicks); display via formatCost */
+  /** Agent cost ticks (1 USD = 1e10 ticks; grok-build USD_TICKS_PER_USD) */
   costUsdTicks: number;
   lastModel?: string;
 };

@@ -4,6 +4,8 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import { isAuthError, type ConnState } from "../lib/conn";
+import { basen } from "../lib/path-utils";
 import { uid } from "../lib/timeline";
 import type {
   AppInfo,
@@ -13,16 +15,6 @@ import type {
   TimelineItem,
 } from "../vite-env";
 import type { SlashCommand } from "../lib/commands";
-
-type ConnState = "idle" | "connecting" | "online" | "busy" | "error";
-
-function basename(p: string) {
-  return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
-}
-
-function isAuthError(msg: string) {
-  return /auth|login|unauthor|401|credential|sign in|sign-in/i.test(msg);
-}
 
 /**
  * Open / resume project sessions and apply agent open results.
@@ -53,8 +45,6 @@ export function useProjectSession(opts: {
   setError: Dispatch<SetStateAction<string | null>>;
   setItems: Dispatch<SetStateAction<TimelineItem[]>>;
   setAgentCommands: Dispatch<SetStateAction<SlashCommand[]>>;
-  setCmdIndex: Dispatch<SetStateAction<number>>;
-  setSlashDismissed: Dispatch<SetStateAction<boolean>>;
   clearPromptQueue: () => void;
 }) {
   const {
@@ -81,8 +71,6 @@ export function useProjectSession(opts: {
     setError,
     setItems,
     setAgentCommands,
-    setCmdIndex,
-    setSlashDismissed,
     clearPromptQueue,
   } = opts;
 
@@ -105,8 +93,7 @@ export function useProjectSession(opts: {
       // Await so we do not mark online with a stale empty mirror.
       await syncPermissionsFromMain();
       setAgentCommands([]);
-      setCmdIndex(0);
-      setSlashDismissed(false);
+      // Composer draft/slash menu remounts via key=sessionId — no reset needed.
       clearPromptQueue();
       promptQueueRef.current = [];
       sendNowRef.current = null;
@@ -163,7 +150,6 @@ export function useProjectSession(opts: {
       sendNowRef,
       setAgentCommands,
       setAuth,
-      setCmdIndex,
       setConn,
       setError,
       setInfo,
@@ -173,7 +159,6 @@ export function useProjectSession(opts: {
       clearPromptQueue,
       setSessionId,
       setSessions,
-      setSlashDismissed,
     ],
   );
 
@@ -197,7 +182,7 @@ export function useProjectSession(opts: {
 
       openingRef.current = true;
       setConn("connecting");
-      setOpeningLabel(basename(cwd));
+      setOpeningLabel(basen(cwd));
       setError(null);
       setItems([]);
       clearSessionScoped();
@@ -291,3 +276,5 @@ export function useProjectSession(opts: {
 
   return { openProject, openSession, isAuthError };
 }
+
+export { isAuthError };

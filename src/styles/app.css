@@ -632,6 +632,9 @@ button {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* We own stick-to-bottom; browser anchoring fights fast streams and can
+     fire scroll events that falsely unlock the pin. */
+  overflow-anchor: none;
   padding: 20px 24px 12px;
   display: flex;
   flex-direction: column;

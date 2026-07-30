@@ -20,14 +20,13 @@ import {
 } from "../lib/usage";
 import type { PlanApprovalRequest } from "../components/PlanApprovalDialog";
 import type { AskUserRequest } from "../components/AskUserDialog";
+import type { ConnState } from "../lib/conn";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
 import {
   classifyOptionId,
   extractToolCallId,
   permissionOutcomeFromUi,
 } from "../../shared/permission-options.mjs";
-
-type ConnState = "idle" | "connecting" | "online" | "busy" | "error";
 
 function isAllowChoice(optionId: string, options?: PermissionRequest["params"]["options"]): boolean {
   if (optionId === "cancelled" || optionId === "cancel") return false;

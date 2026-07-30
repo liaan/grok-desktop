@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   basen,
   isLexicallyUnder,
@@ -16,7 +16,7 @@ type FileEntry = { name: string; isDirectory: boolean; path: string };
  * Right rail: project file browser + background Tasks dock.
  * Tool approvals live inline in the chat timeline (not here).
  */
-export function SidePanel({
+export const SidePanel = memo(function SidePanel({
   project,
   backgroundTasks,
   sessionMode,
@@ -272,4 +272,4 @@ export function SidePanel({
       </div>
     </aside>
   );
-}
+});

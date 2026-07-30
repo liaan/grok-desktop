@@ -1,10 +1,11 @@
+import { memo } from "react";
 import type { SessionUsage } from "../lib/usage";
 import { formatUsageBar, formatUsageTooltip } from "../lib/usage";
 
 /**
  * Bottom status strip for the main column — privacy, token usage, git branch.
  */
-export function StatusBar({
+export const StatusBar = memo(function StatusBar({
   privacyMode,
   onOpenSettings,
   gitBranch,
@@ -74,4 +75,4 @@ export function StatusBar({
       </div>
     </footer>
   );
-}
+});
