@@ -10,6 +10,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { buildGrokEnv } from "./grok-home.mjs";
 import { resolveProjectPath } from "./path-safety.mjs";
