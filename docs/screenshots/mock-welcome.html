@@ -6,7 +6,6 @@
   <style>
     :root {
       --bg: #0c0c0f;
-      --bg-soft: #1a1a22;
       --border: #2a2a35;
       --text: #f2f2f5;
       --text-muted: #9a9aab;
@@ -57,7 +56,7 @@
       margin: 10px 0 0;
       font-size: 15px;
       color: var(--text-muted);
-      max-width: 420px;
+      max-width: 460px;
       line-height: 1.5;
     }
     .chips {
@@ -109,6 +108,11 @@
       font-weight: 500;
     }
     .flow .arrow { opacity: 0.4; }
+    .ver {
+      margin-top: 28px;
+      font-size: 11px;
+      color: #666;
+    }
   </style>
 </head>
 <body>
@@ -125,12 +129,14 @@
     </svg>
     <h1>Grok Desktop</h1>
     <p class="tagline">
-      GUI for the Grok Build coding agent — same skills, MCP, and sessions as the CLI.
+      GUI for the Grok Build coding agent — same skills, MCP, sessions, and
+      multi-window projects as the CLI, with tool approvals and sandboxing.
     </p>
     <div class="chips">
-      <span class="chip"><strong>12</strong> skills</span>
+      <span class="chip"><strong>14</strong> skills</span>
       <span class="chip"><strong>3</strong> MCP servers</span>
       <span class="chip">CLI detected</span>
+      <span class="chip">Sandbox on</span>
     </div>
     <button class="btn">Sign in with browser</button>
     <p class="secondary">or use an API key · <a href="#">Install Grok CLI</a></p>
@@ -141,6 +147,7 @@
       <span class="arrow">→</span>
       <span class="box">Chat · tools · approvals</span>
     </div>
+    <div class="ver">v0.1.34 · Windows + macOS installers</div>
   </div>
 </body>
 </html>

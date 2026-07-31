@@ -13,7 +13,6 @@
       --text: #f2f2f5;
       --text-muted: #9a9aab;
       --accent: #a78bfa;
-      --accent-2: #60a5fa;
       --success: #34d399;
       --warn: #fbbf24;
       --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -39,25 +38,51 @@
       border: 1px solid #2e2e3a;
       box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 80px rgba(251, 191, 36, 0.08);
       display: grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr 320px;
       background: var(--bg);
     }
     .main { display: flex; flex-direction: column; min-width: 0; }
     .topbar {
-      padding: 14px 18px;
+      padding: 12px 18px;
       border-bottom: 1px solid var(--border-soft);
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .topbar-title { font-size: 15px; font-weight: 650; color: var(--text); }
+    .cwd { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+    .topbar-right {
+      display: flex;
       align-items: center;
-      font-size: 13px;
+      gap: 10px;
+    }
+    .field {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
       color: var(--text-muted);
     }
-    .topbar strong { color: var(--text); }
+    .field select {
+      appearance: none;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 4px 20px 4px 8px;
+      font-size: 12px;
+    }
     .busy {
       color: var(--warn);
       display: flex;
       align-items: center;
       gap: 8px;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      background: rgba(251, 191, 36, 0.08);
     }
     .busy .dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -68,7 +93,7 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.35; }
     }
-    .timeline { flex: 1; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+    .timeline { flex: 1; padding: 20px 22px 12px; display: flex; flex-direction: column; gap: 12px; }
     .msg {
       max-width: 88%;
       border-radius: 14px;
@@ -84,8 +109,8 @@
     .meta { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
     .body { font-size: 14px; line-height: 1.5; }
     .tool {
-      border: 1px solid #2a2a38;
-      background: #12121a;
+      border: 1px solid #2e3a55;
+      background: #10131b;
       border-radius: 12px;
       padding: 12px;
       max-width: 88%;
@@ -102,10 +127,61 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
+      white-space: pre-wrap;
     }
+    /* sticky approvals dock under timeline — matches ApprovalsDock */
+    .approvals-dock {
+      margin: 0 16px 12px;
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      background: linear-gradient(180deg, rgba(251, 191, 36, 0.12), rgba(20, 16, 8, 0.9));
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.35);
+    }
+    .approvals-dock-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 8px 12px;
+      margin-bottom: 10px;
+    }
+    .approvals-dock-head strong { font-size: 14px; }
+    .approvals-dock-hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      flex: 1 1 200px;
+    }
+    .approvals-dock-item {
+      border: 1px solid rgba(251, 191, 36, 0.25);
+      background: rgba(0,0,0,0.25);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .approvals-dock-title { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+    .approvals-dock-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+      border-color: #6d28d9;
+      color: white;
+      font-weight: 600;
+    }
+    .btn.danger {
+      background: rgba(248, 113, 113, 0.12);
+      border-color: rgba(248, 113, 113, 0.35);
+      color: #fecaca;
+    }
+    .btn.sm { padding: 6px 10px; font-size: 12px; }
     .panel {
       border-left: 1px solid var(--border);
-      background: #0e0e14;
+      background: #0f0f14;
       display: flex;
       flex-direction: column;
     }
@@ -136,7 +212,6 @@
     }
     .perm-card h3 { margin: 0 0 6px; font-size: 14px; }
     .kind { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-    .subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
     .input {
       font-family: var(--mono);
       font-size: 12px;
@@ -147,26 +222,6 @@
       color: var(--text-muted);
       margin-bottom: 12px;
       white-space: pre-wrap;
-    }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn {
-      border: 1px solid var(--border);
-      background: var(--bg-soft);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 8px 12px;
-      font-size: 13px;
-    }
-    .btn.primary {
-      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
-      border-color: #6d28d9;
-      color: white;
-      font-weight: 600;
-    }
-    .btn.danger {
-      background: rgba(248, 113, 113, 0.12);
-      border-color: rgba(248, 113, 113, 0.35);
-      color: #fecaca;
     }
     .hint {
       margin-top: 14px;
@@ -180,22 +235,48 @@
   <div class="window">
     <main class="main">
       <div class="topbar">
-        <div>Project: <strong>grok-desktop</strong></div>
-        <div class="busy"><span class="dot"></span> Waiting for approval…</div>
+        <div>
+          <div class="topbar-title">grok-desktop</div>
+          <div class="cwd">~/Development/grok-desktop</div>
+        </div>
+        <div class="topbar-right">
+          <label class="field">Perms
+            <select><option selected>Ask</option><option>Auto</option><option>Always</option></select>
+          </label>
+          <div class="busy"><span class="dot"></span> Waiting for approval…</div>
+        </div>
       </div>
       <div class="timeline">
         <div class="msg user">
           <div class="meta">You</div>
-          <div class="body">Add a project-root safety gate for ACP file ops and terminal cwd.</div>
+          <div class="body">Add Cmd+` window cycling and harden auto-update network errors.</div>
         </div>
         <div class="tool">
           <div class="tool-header">
             <span>search_replace</span>
             <span class="tool-status">pending</span>
           </div>
-          <div class="tool-subtitle">Create electron/path-safety.mjs</div>
-          <div class="tool-input">path: electron/path-safety.mjs
-+ export function assertPathInProject(root, target) { … }</div>
+          <div class="tool-subtitle">Edit electron/main.mjs</div>
+          <div class="tool-input">path: electron/main.mjs
++ function cycleAppWindows(dir = 1) { … }
++ before-input-event → Cmd+` / Ctrl+Tab</div>
+        </div>
+      </div>
+      <div class="approvals-dock">
+        <div class="approvals-dock-head">
+          <strong>Approval required</strong>
+          <span class="approvals-dock-hint">
+            Auto mode still escalates some writes — the agent is blocked until you choose.
+          </span>
+        </div>
+        <div class="approvals-dock-item">
+          <div class="approvals-dock-title">search_replace · edit electron/main.mjs</div>
+          <div class="approvals-dock-actions">
+            <button class="btn primary sm">Allow once</button>
+            <button class="btn sm">Allow always</button>
+            <button class="btn sm">Reject</button>
+            <button class="btn danger sm">Cancel</button>
+          </div>
         </div>
       </div>
     </main>
@@ -203,22 +284,21 @@
       <div class="panel-tabs">
         <span class="active">Approvals (1)</span>
         <span>Files</span>
+        <span>Tasks</span>
       </div>
       <div class="panel-body">
         <div class="perm-card">
           <h3>search_replace</h3>
-          <div class="kind">edit · tool_01f2a</div>
-          <div class="subtitle">Create shared path gate for ACP fs + terminals</div>
-          <div class="input">electron/path-safety.mjs
-+ assertPathInProject
-+ resolveProjectPath</div>
-          <div class="actions">
-            <button class="btn primary">Allow once</button>
-            <button class="btn">Reject</button>
-            <button class="btn danger">Cancel</button>
+          <div class="kind">edit · tool_call</div>
+          <div class="input">electron/main.mjs
++ cycleAppWindows
++ Cmd+` / Cmd+Shift+`</div>
+          <div class="approvals-dock-actions">
+            <button class="btn primary sm">Allow once</button>
+            <button class="btn sm">Reject</button>
           </div>
         </div>
-        <p class="hint">Tools pause here unless you enable <strong>Always approve tools</strong> in the sidebar. Project-root safety stays on by default.</p>
+        <p class="hint">Bottom <strong>Approvals</strong> dock stays visible while tools run. Sidebar <strong>Perms</strong> = Ask / Auto / Always.</p>
       </div>
     </aside>
   </div>

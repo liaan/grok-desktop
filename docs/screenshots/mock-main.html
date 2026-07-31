@@ -18,7 +18,6 @@
       --success: #34d399;
       --warn: #fbbf24;
       --user-bubble: #1e293b;
-      --radius: 12px;
       --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
       --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
     }
@@ -48,7 +47,6 @@
       grid-template-columns: 260px 1fr 300px;
       background: var(--bg);
     }
-    /* sidebar */
     .sidebar {
       border-right: 1px solid var(--border);
       background: linear-gradient(180deg, #101016 0%, #0c0c0f 100%);
@@ -77,6 +75,29 @@
       color: var(--text-muted);
       font-weight: 600;
     }
+    .sec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .sec-head h2 { margin: 0; }
+    .linkish {
+      font-size: 12px;
+      color: var(--accent);
+      border: none;
+      background: none;
+      padding: 0;
+      cursor: default;
+    }
+    .account {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-soft);
+    }
+    .account .name { font-size: 13px; font-weight: 600; }
+    .account .meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
     .session {
       padding: 10px 12px;
       border-radius: 10px;
@@ -90,7 +111,6 @@
       background: transparent;
       border-color: transparent;
     }
-    .session.idle:hover { background: var(--bg-soft); }
     .btn {
       border: 1px solid var(--border);
       background: var(--bg-soft);
@@ -109,6 +129,7 @@
       font-weight: 600;
       text-align: center;
     }
+    .btn.sm { width: auto; padding: 6px 12px; margin: 0; }
     .recent {
       padding: 8px 10px;
       border-radius: 8px;
@@ -126,16 +147,8 @@
       border-top: 1px solid var(--border-soft);
       font-size: 12px;
       color: var(--text-muted);
+      line-height: 1.45;
     }
-    .footer label {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-      color: var(--text);
-      font-size: 13px;
-    }
-    /* main */
     .main {
       display: flex;
       flex-direction: column;
@@ -144,23 +157,72 @@
     }
     .topbar {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      padding: 12px 16px;
+      gap: 12px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border-soft);
-      min-height: 52px;
+      min-height: 56px;
     }
-    .topbar-project {
-      font-size: 13px;
+    .topbar-project { min-width: 0; }
+    .topbar-title { font-size: 15px; font-weight: 650; }
+    .cwd {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 360px;
+    }
+    .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .chip {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      color: var(--success);
+      background: rgba(52, 211, 153, 0.08);
+    }
+    .chip.muted {
+      border-color: var(--border);
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.03);
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .field {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
       color: var(--text-muted);
     }
-    .topbar-project strong { color: var(--text); font-weight: 600; }
+    .field select {
+      appearance: none;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 4px 22px 4px 8px;
+      font-size: 12px;
+    }
     .status {
       display: flex;
       align-items: center;
       gap: 8px;
       font-size: 12px;
       color: var(--success);
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      background: rgba(52, 211, 153, 0.08);
     }
     .status .dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -170,10 +232,10 @@
     .timeline {
       flex: 1;
       overflow: hidden;
-      padding: 20px 24px;
+      padding: 18px 22px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
     }
     .msg {
       max-width: 92%;
@@ -224,8 +286,8 @@
     }
     .cmd-args { font-size: 14px; margin-top: 4px; }
     .tool {
-      border: 1px solid #2a2a38;
-      background: #12121a;
+      border: 1px solid #2e3a55;
+      background: #10131b;
       border-radius: 12px;
       padding: 10px 12px;
       max-width: 92%;
@@ -243,38 +305,27 @@
       font-weight: 500;
       text-transform: lowercase;
     }
-    .tool-input {
+    .tool-input, .tool-output {
       margin: 8px 0 0;
       font-family: var(--mono);
       font-size: 12px;
-      color: var(--text-muted);
-      background: rgba(0,0,0,0.35);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
       white-space: pre-wrap;
     }
-    .tool-output {
-      margin: 8px 0 0;
-      font-family: var(--mono);
-      font-size: 12px;
-      background: #0a0a0e;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      color: var(--text);
-      white-space: pre-wrap;
-    }
+    .tool-input { color: var(--text-muted); background: rgba(0,0,0,0.35); }
+    .tool-output { color: var(--text); background: #0a0a0e; }
     .composer {
       border-top: 1px solid var(--border-soft);
-      padding: 12px 16px 16px;
+      padding: 12px 16px 10px;
     }
     .composer-box {
       border: 1px solid var(--border);
       border-radius: 14px;
       background: var(--bg-elevated);
       padding: 12px 14px;
-      min-height: 72px;
+      min-height: 64px;
       color: var(--text-muted);
       font-size: 14px;
     }
@@ -284,14 +335,19 @@
       gap: 8px;
       margin-top: 10px;
     }
-    .composer-actions .btn {
-      width: auto;
-      padding: 8px 16px;
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 16px 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px solid transparent;
     }
-    /* right panel */
+    .status-bar .git { color: var(--text-muted); }
     .panel {
       border-left: 1px solid var(--border);
-      background: #0e0e14;
+      background: #0f0f14;
       display: flex;
       flex-direction: column;
     }
@@ -331,15 +387,28 @@
     }
     .file-row.dir { color: var(--text); font-weight: 650; }
     .file-row.file { color: var(--text-muted); font-weight: 400; }
-    .caption {
-      position: absolute;
-      bottom: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 12px;
-      color: #666;
-      display: none;
+    .tasks-dock {
+      border-top: 1px solid var(--border-soft);
+      padding: 10px 12px;
+      background: #0c0c12;
     }
+    .tasks-dock h3 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+    .task {
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-soft);
+      margin-bottom: 6px;
+    }
+    .task .t { font-weight: 600; }
+    .task .s { color: var(--success); font-size: 11px; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -358,22 +427,36 @@
         </svg>
         <div>
           <h1>Grok Desktop</h1>
-          <p>12 skills · 3 MCP</p>
+          <p>xAI · Grok Build GUI</p>
         </div>
       </div>
       <div class="sec">
         <button class="btn primary">Open project…</button>
-        <button class="btn" style="text-align:center">New chat</button>
       </div>
       <div class="sec">
-        <h2>Chats</h2>
+        <h2>Account</h2>
+        <div class="account">
+          <div class="name">team@x.ai</div>
+          <div class="meta">14 skills · 3 MCP</div>
+          <button class="btn" style="text-align:center;margin:8px 0 0">Sign out</button>
+        </div>
+      </div>
+      <div class="sec" style="flex:1;min-height:0">
+        <div class="sec-head">
+          <h2>Chats</h2>
+          <button class="linkish">+ New</button>
+        </div>
         <div class="session">
-          <div class="name">Harden path safety gate</div>
+          <div class="name">Multi-window + shell packaging</div>
           <div class="meta">Active · just now</div>
         </div>
         <div class="session idle">
-          <div class="name">Release packaging</div>
+          <div class="name">Auto-update install path</div>
           <div class="meta">Yesterday</div>
+        </div>
+        <div class="session idle">
+          <div class="name">Approvals dock</div>
+          <div class="meta">2 days ago</div>
         </div>
       </div>
       <div class="sec">
@@ -388,26 +471,39 @@
         </div>
       </div>
       <div class="footer">
-        <label><input type="checkbox" /> Always approve tools</label>
-        <label><input type="checkbox" /> Allow outside project</label>
-        <div style="margin-top:6px">Session: a3f8c2…</div>
-        <div>App v0.1.7</div>
+        <div>Session a3f8c2…</div>
+        <div>App v0.1.34 · grok CLI</div>
       </div>
     </aside>
 
     <main class="main">
       <div class="topbar">
-        <div class="topbar-project">Project: <strong>grok-desktop</strong></div>
-        <div class="status"><span class="dot"></span> Connected</div>
+        <div class="topbar-project">
+          <div class="topbar-title">grok-desktop</div>
+          <div class="cwd">~/Development/grok-desktop</div>
+          <div class="chips">
+            <span class="chip">Sandbox on</span>
+            <span class="chip muted">Project-scoped</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <label class="field">Perms
+            <select><option>Ask</option><option>Auto</option><option>Always</option></select>
+          </label>
+          <label class="field">Effort
+            <select><option>High</option><option>Medium</option><option>Low</option><option>X-High</option></select>
+          </label>
+          <div class="status"><span class="dot"></span> Connected</div>
+        </div>
       </div>
       <div class="timeline">
         <div class="msg user user-command">
-          <div class="meta"><span class="meta-role">You · command</span><span>14:02</span></div>
+          <div class="meta"><span class="meta-role">You · command</span><span>11:02</span></div>
           <div class="cmd-invocation">
             <span class="cmd-badge">skill</span>
             <code class="cmd-name">/review</code>
           </div>
-          <div class="cmd-args">local changes — path safety + file browser</div>
+          <div class="cmd-args">local — multi-window focus + Cmd+` cycle</div>
         </div>
         <div class="tool">
           <div class="tool-header">
@@ -415,23 +511,27 @@
             <span class="tool-status">completed</span>
           </div>
           <div class="tool-input">git status --short</div>
-          <div class="tool-output">M  electron/path-safety.mjs
-M  src/components/SidePanel.tsx
-A  src/lib/tool-display.ts</div>
+          <div class="tool-output">M  electron/main.mjs
+M  electron/auto-update.mjs
+M  electron/window-session.mjs</div>
         </div>
         <div class="msg">
-          <div class="meta"><span class="meta-role">Grok</span><span>14:02</span></div>
-          <div class="body">Looks solid. Project-root safety is centralized, tool cards are readable, and the file browser uses theme weight (bold folders, muted files) instead of yellow highlights.
+          <div class="meta"><span class="meta-role">Grok</span><span>11:02</span></div>
+          <div class="body">Looks good. New Window stays focused, titles come from session state, and <strong>Cmd+`</strong> cycles shells on Mac (Cmd+Tab is still app switcher).
 
-Ready to ship as <strong>v0.1.7</strong>.</div>
+Ship as <strong>v0.1.34</strong> — update checks also retry on flaky GitHub network errors.</div>
         </div>
       </div>
       <div class="composer">
-        <div class="composer-box">Message Grok…  (type / for skills)</div>
+        <div class="composer-box">Message Grok…  (type / for skills · File → New Window for another project)</div>
         <div class="composer-actions">
-          <button class="btn">Cancel</button>
-          <button class="btn primary">Send</button>
+          <button class="btn sm">Cancel</button>
+          <button class="btn primary sm">Send</button>
         </div>
+      </div>
+      <div class="status-bar">
+        <span>42.1k in · 8.4k out · $0.12</span>
+        <span class="git">⎇ master</span>
       </div>
     </main>
 
@@ -446,8 +546,15 @@ Ready to ship as <strong>v0.1.7</strong>.</div>
         <div class="file-row file"><span>📄</span> README.md</div>
         <div class="file-row dir"><span>📁</span> electron</div>
         <div class="file-row dir"><span>📁</span> src</div>
+        <div class="file-row dir"><span>📁</span> docs</div>
         <div class="file-row file"><span>📄</span> package.json</div>
-        <div class="file-row dir"><span>📁</span> shared</div>
+      </div>
+      <div class="tasks-dock">
+        <h3>Tasks</h3>
+        <div class="task">
+          <div class="t">Review complete</div>
+          <div class="s">done · 12s</div>
+        </div>
       </div>
     </aside>
   </div>
