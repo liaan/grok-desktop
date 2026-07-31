@@ -187,6 +187,32 @@ function newWindowFromMenu() {
 }
 
 /**
+ * App shell windows only (not detached DevTools).
+ * @returns {import('electron').BrowserWindow[]}
+ */
+function appShellWindows() {
+  return [...windowSessions.values()]
+    .map((ws) => ws.win)
+    .filter((w) => w && !w.isDestroyed());
+}
+
+/**
+ * Cycle focus among Grok Desktop windows.
+ * macOS: Cmd+Tab is *apps*; same-app windows are Cmd+` (standard) —
+ * Electron does not always wire that, so we handle it ourselves.
+ * @param {1 | -1} [dir]
+ */
+function cycleAppWindows(dir = 1) {
+  const wins = appShellWindows().sort((a, b) => a.id - b.id);
+  if (wins.length < 2) return;
+  const focused = BrowserWindow.getFocusedWindow();
+  let idx = wins.findIndex((w) => w === focused);
+  if (idx < 0) idx = 0;
+  const next = wins[(idx + dir + wins.length) % wins.length];
+  focusWindow(next);
+}
+
+/**
  * Standard app menu with Edit roles.
  * Without role-based Cut/Copy/Paste/Select All, Cmd/Ctrl+V often does nothing
  * in packaged Electron apps (macOS especially).
@@ -286,8 +312,35 @@ function installApplicationMenu() {
         { role: "minimize" },
         { role: "zoom" },
         ...(isMac
-          ? [{ type: "separator" }, { role: "front" }]
-          : [{ role: "close" }]),
+          ? [
+              { type: "separator" },
+              // Cmd+Tab = apps. Same-app windows = Cmd+` (Mac standard).
+              {
+                label: "Cycle Through Windows",
+                accelerator: "Cmd+`",
+                click: () => cycleAppWindows(1),
+              },
+              {
+                label: "Cycle Through Windows (Reverse)",
+                accelerator: "Cmd+Shift+`",
+                click: () => cycleAppWindows(-1),
+              },
+              { type: "separator" },
+              { role: "front" },
+            ]
+          : [
+              {
+                label: "Next Window",
+                accelerator: "Ctrl+Tab",
+                click: () => cycleAppWindows(1),
+              },
+              {
+                label: "Previous Window",
+                accelerator: "Ctrl+Shift+Tab",
+                click: () => cycleAppWindows(-1),
+              },
+              { role: "close" },
+            ]),
       ],
     },
     {
@@ -350,6 +403,25 @@ function createWindow() {
   const win = new BrowserWindow(winOpts);
   // Session owns page-title guard + empty-shell title.
   createWindowSession(win);
+
+  // Cmd+` / Ctrl+Tab: cycle shells even if the menu accelerator is swallowed.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = input.key;
+    const isBacktick = key === "`" || key === "~";
+    if (process.platform === "darwin") {
+      if (input.meta && !input.alt && !input.control && isBacktick) {
+        event.preventDefault();
+        cycleAppWindows(input.shift ? -1 : 1);
+      }
+      return;
+    }
+    // Windows / Linux: Ctrl+Tab between shells (same idea as browser tabs).
+    if (input.control && !input.meta && !input.alt && key === "Tab") {
+      event.preventDefault();
+      cycleAppWindows(input.shift ? -1 : 1);
+    }
+  });
 
   let revealed = false;
   const reveal = () => {

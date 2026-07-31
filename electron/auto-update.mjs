@@ -452,6 +452,85 @@ function ensureWired(hooks = {}) {
 }
 
 /**
+ * Transient Chromium / network failures that often succeed on retry
+ * (VPN flip, Wi‑Fi roam, sleep/wake, DNS blip).
+ * @param {unknown} err
+ */
+function isTransientNetworkError(err) {
+  const msg = String(err?.message || err || "");
+  return /ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_FAILED|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|network changed|temporarily unavailable/i.test(
+    msg,
+  );
+}
+
+/**
+ * Short user-facing detail — electron-updater often appends the full Atom XML
+ * feed on parse failures, which makes the dialog unreadable.
+ * @param {unknown} err
+ * @returns {{ title: string, message: string, detail: string, transient: boolean }}
+ */
+function formatUpdateCheckError(err) {
+  const raw = String(err?.message || err || "Unknown error");
+  const transient = isTransientNetworkError(err);
+  // Drop giant Atom/XML dumps and keep the first meaningful line
+  const withoutXml = raw
+    .replace(/,?\s*XML:\s*[\s\S]*$/i, "")
+    .replace(/<\?xml[\s\S]*$/i, "")
+    .trim();
+  const head = withoutXml.split("\n")[0]?.slice(0, 280) || withoutXml.slice(0, 280);
+
+  if (transient || /Unable to find latest version on GitHub/i.test(raw)) {
+    return {
+      title: "Could not reach GitHub",
+      message: "Network glitch while checking for updates.",
+      detail:
+        "The release feed is fine — this is usually a brief network change (Wi‑Fi, VPN, or sleep). Try again in a moment.\n\n" +
+        "If it keeps failing, use Open Releases and install the latest DMG/Setup once.\n\n" +
+        head,
+      transient: true,
+    };
+  }
+
+  return {
+    title: "Could not check for updates",
+    message: "Auto-update check failed.",
+    detail:
+      head +
+      "\n\nIf this build is older than the first release that ships update metadata (latest.yml), download the latest installer once from Releases — later checks will work in-app.",
+    transient: false,
+  };
+}
+
+/**
+ * checkForUpdates with a few retries on transient network errors.
+ * @param {import('electron-updater').AppUpdater} autoUpdater
+ * @param {{ attempts?: number, delayMs?: number }} [opts]
+ */
+async function checkForUpdatesWithRetry(autoUpdater, opts = {}) {
+  const attempts = Math.max(1, opts.attempts ?? 3);
+  const delayMs = opts.delayMs ?? 1200;
+  /** @type {unknown} */
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await autoUpdater.checkForUpdates();
+    } catch (err) {
+      lastErr = err;
+      const retry =
+        i < attempts - 1 && isTransientNetworkError(err);
+      console.warn(
+        `[auto-update] check attempt ${i + 1}/${attempts} failed:`,
+        err?.message || err,
+        retry ? "(retrying)" : "",
+      );
+      if (!retry) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Background check a few seconds after launch (packaged only).
  * @param {{ disposeAgent?: () => void | Promise<void> }} [hooks]
  */
@@ -461,9 +540,14 @@ export function setupAutoUpdater(hooks = {}) {
   if (!autoUpdater) return;
 
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      console.warn("[auto-update] silent check failed:", err?.message || err);
-    });
+    checkForUpdatesWithRetry(autoUpdater, { attempts: 3, delayMs: 2000 }).catch(
+      (err) => {
+        console.warn(
+          "[auto-update] silent check failed:",
+          err?.message || err,
+        );
+      },
+    );
   }, 5000);
 }
 
@@ -521,7 +605,11 @@ export async function checkForUpdatesInteractive(hooks = {}) {
   busy = true;
   try {
     // Checking dialog is non-blocking; result dialogs come after resolve.
-    const result = await autoUpdater.checkForUpdates();
+    // Retry transient net::ERR_NETWORK_CHANGED etc. (common on Mac Wi‑Fi/VPN).
+    const result = await checkForUpdatesWithRetry(autoUpdater, {
+      attempts: 3,
+      delayMs: 1500,
+    });
     const updateInfo = result?.updateInfo;
     const latest = updateInfo?.version;
     const current = app.getVersion();
@@ -562,18 +650,16 @@ export async function checkForUpdatesInteractive(hooks = {}) {
     return { ok: true, latest: current, current };
   } catch (err) {
     busy = false;
-    const msg = err?.message || String(err);
-    console.warn("[auto-update] check failed:", msg);
+    const formatted = formatUpdateCheckError(err);
+    console.warn("[auto-update] check failed:", err?.message || err);
     const { response } = await box({
       type: "warning",
       buttons: ["OK", "Open Releases"],
       defaultId: 0,
       cancelId: 0,
-      title: "Could not check for updates",
-      message: "Auto-update check failed.",
-      detail:
-        msg +
-        "\n\nIf this build is older than the first release that ships update metadata (latest.yml), download the latest installer once from Releases — later checks will work in-app.",
+      title: formatted.title,
+      message: formatted.message,
+      detail: formatted.detail,
     });
     if (response === 1) {
       const { shell } = await import("electron");
@@ -581,7 +667,12 @@ export async function checkForUpdatesInteractive(hooks = {}) {
         "https://github.com/liaan/grok-desktop/releases/latest",
       );
     }
-    return { ok: false, reason: "error", error: msg };
+    return {
+      ok: false,
+      reason: "error",
+      error: err?.message || String(err),
+      transient: formatted.transient,
+    };
   }
 }
 
