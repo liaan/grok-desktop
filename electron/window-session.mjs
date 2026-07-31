@@ -129,27 +129,84 @@ export function send(ws, channel, payload) {
   }
 }
 
-const APP_WINDOW_TITLE = "Grok Desktop";
+export const APP_WINDOW_TITLE = "Grok Desktop";
 
 /**
- * Taskbar / title-bar label. Project shortname first so Windows taskbar
- * truncation (from the right) still shows which window is which
- * (e.g. "grok-desktop · Grok" → "grok-desk…", not "Grok - w…").
+ * Native title from session state: project basename, else empty shell.
+ * Multi empty shells use window id (not DevTools BrowserWindows).
  * @param {WindowSession | null | undefined} ws
  * @param {string | null | undefined} cwd
  */
 export function setWindowTitle(ws, cwd) {
   if (!ws?.win || ws.win.isDestroyed()) return;
-  if (!cwd) {
-    ws.win.setTitle(APP_WINDOW_TITLE);
+  if (cwd) {
+    const trimmed = String(cwd).replace(/[/\\]+$/, "");
+    const short =
+      path.basename(trimmed) ||
+      trimmed ||
+      String(cwd);
+    ws.win.setTitle(`${short} · Grok`);
     return;
   }
-  const trimmed = String(cwd).replace(/[/\\]+$/, "");
-  const short =
-    path.basename(trimmed) ||
-    trimmed ||
-    String(cwd);
-  ws.win.setTitle(`${short} · Grok`);
+  let shells = 0;
+  for (const s of windowSessions.values()) {
+    if (s.win && !s.win.isDestroyed()) shells++;
+  }
+  ws.win.setTitle(
+    shells <= 1 ? APP_WINDOW_TITLE : `${APP_WINDOW_TITLE} · ${ws.win.id}`,
+  );
+}
+
+/** @param {any} client */
+async function killAgentClient(client) {
+  if (!client) return;
+  try {
+    const p = client.dispose();
+    if (p && typeof p.then === "function") await p.catch(() => {});
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (client.proc && !client.proc.killed) {
+      client.proc.kill("SIGKILL");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Drop the project/agent on a live window (keep the BrowserWindow).
+ * Title follows session state — no separate "reset title" API.
+ * Nulls agent before kill so the client `exit` handler does not push
+ * "Agent process exited" into the renderer.
+ * @param {WindowSession | null | undefined} ws
+ * @returns {boolean}
+ */
+export function clearProjectOnWindow(ws) {
+  if (!ws || ws.disposed || !ws.win || ws.win.isDestroyed()) return false;
+  ws.generation = (ws.generation || 0) + 1;
+  try {
+    ws.stopBackgroundTaskTail?.();
+  } catch {
+    /* ignore */
+  }
+  ws.stopBackgroundTaskTail = null;
+  const a = ws.agent;
+  ws.agent = null;
+  try {
+    clearPendingPermissions(ws);
+  } catch {
+    /* ignore */
+  }
+  ws.agentChain = ws.agentChain
+    .then(() => killAgentClient(a), () => killAgentClient(a))
+    .then(
+      () => undefined,
+      () => undefined,
+    );
+  setWindowTitle(ws, null);
+  return true;
 }
 
 export function makeReqId(prefix) {
@@ -513,6 +570,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
 
 
 export function disposeWindowSession(ws) {
+  if (ws.disposed) return;
   ws.disposed = true;
   ws.generation = (ws.generation || 0) + 1;
   try {
@@ -529,31 +587,13 @@ export function disposeWindowSession(ws) {
     /* ignore */
   }
 
-  const killClient = async (client) => {
-    if (!client) return;
-    try {
-      const p = client.dispose();
-      if (p && typeof p.then === "function") await p.catch(() => {});
-    } catch {
-      /* ignore */
-    }
-    try {
-      if (client.proc && !client.proc.killed) {
-        client.proc.kill("SIGKILL");
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
   // Serialize with ensureAgent so mid-flight start() cannot outlive the window.
   const cleanup = async () => {
-    await killClient(a);
-    // ensureAgent may have assigned a new client after we snapped `a`
+    await killAgentClient(a);
     const leftover = ws.agent;
     ws.agent = null;
     if (leftover && leftover !== a) {
-      await killClient(leftover);
+      await killAgentClient(leftover);
     }
   };
   ws.agentChain = ws.agentChain.then(cleanup, cleanup).then(
@@ -726,6 +766,8 @@ export async function applyPermissionModeToAllWindows(mode, prev) {
 
 /**
  * Create and register a WindowSession for a BrowserWindow.
+ * Owns shell chrome that is session-scoped: block page title clobber,
+ * apply empty-shell title. Project titles come from openSessionOnWindow.
  * @param {import('electron').BrowserWindow} win
  * @returns {WindowSession}
  */
@@ -741,5 +783,11 @@ export function createWindowSession(win) {
     disposed: false,
     generation: 0,
   };
-  return trackWindowSession(ws);
+  // Main owns native titles; HTML <title> / document.title must not clobber.
+  win.on("page-title-updated", (e) => {
+    e.preventDefault();
+  });
+  trackWindowSession(ws);
+  setWindowTitle(ws, null);
+  return ws;
 }

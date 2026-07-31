@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getInfo: () => ipcRenderer.invoke("app:get-info"),
   pickProject: () => ipcRenderer.invoke("project:pick"),
   openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),
+  /** Drop agent on this window; title returns to empty shell. */
+  closeProject: () => ipcRenderer.invoke("project:close"),
   listSessions: (cwd) => ipcRenderer.invoke("sessions:list", cwd),
   openSession: (opts) => ipcRenderer.invoke("sessions:open", opts || {}),
   prompt: (text, opts) =>

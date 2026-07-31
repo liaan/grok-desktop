@@ -36,8 +36,10 @@ import {
 } from "./pending-permissions.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
 import {
+  APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
   clearPendingPermissions,
+  clearProjectOnWindow,
   createWindowSession,
   disposeAgentQuick,
   focusedSession,
@@ -68,7 +70,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
-const APP_WINDOW_TITLE = "Grok Desktop";
 
 const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 
@@ -157,8 +158,32 @@ function openSettingsFromMenu() {
   }
 }
 
+/**
+ * Show a window; take key focus only while this app is still frontmost
+ * (macOS menu tracking restores the previous key window after the click).
+ * @param {import('electron').BrowserWindow} win
+ */
+function focusWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    if (process.platform === "darwin" && !app.isActive()) return;
+    if (win.isFocused()) return;
+    win.moveTop();
+    win.focus();
+    if (process.platform === "darwin") {
+      app.focus({ steal: true });
+    }
+  } catch {
+    /* window may have closed mid-focus */
+  }
+}
+
 function newWindowFromMenu() {
-  createWindow();
+  const win = createWindow();
+  // Re-assert focus after menu tracking ends (one deferred pass is enough).
+  setImmediate(() => focusWindow(win));
 }
 
 /**
@@ -174,12 +199,18 @@ function installApplicationMenu() {
     accelerator: "CmdOrCtrl+,",
     click: () => openSettingsFromMenu(),
   };
-  /** @type {import('electron').MenuItemConstructorOptions} */
-  const newWindowItem = {
+  /**
+   * Fresh object each time — do not reuse one MenuItem options object in
+   * multiple menus (Electron can mis-wire accelerators / click handlers).
+   * Accelerator only once so Cmd/Ctrl+N does not fire createWindow thrice.
+   * @param {{ accelerator?: string }} [opts]
+   * @returns {import('electron').MenuItemConstructorOptions}
+   */
+  const newWindowItem = (opts = {}) => ({
     label: "New Window",
-    accelerator: "CmdOrCtrl+N",
+    ...(opts.accelerator ? { accelerator: opts.accelerator } : {}),
     click: () => newWindowFromMenu(),
-  };
+  });
   /** @type {import('electron').MenuItemConstructorOptions[]} */
   // macOS menu bar (left → right): App name | File | Edit | View | Window | Help
   // Packaged builds only pick this up after rebuild — Dock/Applications is NOT live source.
@@ -192,7 +223,7 @@ function installApplicationMenu() {
               { role: "about" },
               { type: "separator" },
               // Most discoverable place on Mac (same row as Settings)
-              newWindowItem,
+              newWindowItem(),
               settingsItem,
               { type: "separator" },
               { role: "services" },
@@ -209,7 +240,7 @@ function installApplicationMenu() {
     {
       label: "File",
       submenu: [
-        newWindowItem,
+        newWindowItem({ accelerator: "CmdOrCtrl+N" }),
         { type: "separator" },
         ...(isMac ? [] : [settingsItem, { type: "separator" }]),
         isMac ? { role: "close" } : { role: "quit" },
@@ -244,19 +275,18 @@ function installApplicationMenu() {
       ],
     },
     {
+      // role: "window" marks this as the macOS Window menu so the OS appends
+      // the open-window list (by title). Nested role:"window" was a leaf item
+      // literally labeled "Window" and is not needed.
       label: "Window",
+      role: "window",
       submenu: [
-        newWindowItem,
+        newWindowItem(),
         { type: "separator" },
         { role: "minimize" },
         { role: "zoom" },
         ...(isMac
-          ? [
-              { type: "separator" },
-              { role: "front" },
-              { type: "separator" },
-              { role: "window" },
-            ]
+          ? [{ type: "separator" }, { role: "front" }]
           : [{ role: "close" }]),
       ],
     },
@@ -292,6 +322,7 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** @returns {import('electron').BrowserWindow} */
 function createWindow() {
   /** @type {import('electron').BrowserWindowConstructorOptions} */
   const winOpts = {
@@ -300,6 +331,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: APP_WINDOW_TITLE,
+    show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f6f6f8",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -316,16 +348,28 @@ function createWindow() {
   }
 
   const win = new BrowserWindow(winOpts);
+  // Session owns page-title guard + empty-shell title.
   createWindowSession(win);
 
+  let revealed = false;
+  const reveal = () => {
+    if (win.isDestroyed() || revealed) return;
+    revealed = true;
+    focusWindow(win);
+  };
+  win.once("ready-to-show", reveal);
+  win.webContents.once("did-finish-load", () => {
+    if (!revealed) reveal();
+  });
+
   if (isDev) {
-    win.loadURL("http://127.0.0.1:5173");
+    void win.loadURL("http://127.0.0.1:5173");
     // Only auto-open DevTools for the first window to avoid spam
     if (windowSessions.size <= 1) {
       win.webContents.openDevTools({ mode: "detach" });
     }
   } else {
-    win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    void win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -403,7 +447,9 @@ function registerIpc() {
     return getAuthStatus();
   });
 
-  ipcMain.handle("auth:logout", async () => {
+  ipcMain.handle("auth:logout", async (e) => {
+    // Drop this window's agent so title/session state follow auth leave.
+    clearProjectOnWindow(sessionFromEvent(e));
     try {
       return await startLogout();
     } catch (err) {
@@ -474,6 +520,13 @@ function registerIpc() {
       listSessions: listSessionsForCwd,
       remember: rememberProjectSession,
     });
+  });
+
+  /** Drop agent + empty-shell title on this window (logout / leave project). */
+  ipcMain.handle("project:close", async (e) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) return false;
+    return clearProjectOnWindow(ws);
   });
 
   ipcMain.handle("sessions:list", async (_e, cwd) => {

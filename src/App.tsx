@@ -30,7 +30,6 @@ import {
 import { type ConnState } from "./lib/conn";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
-import { basen } from "./lib/path-utils";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
 import { finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
@@ -149,12 +148,6 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
-
-  useEffect(() => {
-    document.title = project
-      ? `${basen(project)} · Grok`
-      : "Grok Desktop";
-  }, [project]);
 
   const timelineScrollKey = useMemo(() => {
     const last = items[items.length - 1];
@@ -275,18 +268,28 @@ export default function App() {
     void refreshAuth();
   };
 
+  const leaveProject = useCallback(async () => {
+    try {
+      await window.grokDesktop.closeProject();
+    } catch {
+      /* ignore — still clear local UI */
+    }
+    setProject(null);
+    setSessionId(null);
+    setSessions([]);
+    setItems([]);
+    setConn("idle");
+    setError(null);
+  }, []);
+
   const handleLogout = async () => {
     setAuthBusy(true);
     try {
+      await leaveProject();
       const res = await window.grokDesktop.logout();
       if (res.status) setAuth(res.status);
       setAuthMessage(res.message || "Signed out");
       setBackbone(null);
-      setProject(null);
-      setSessionId(null);
-      setSessions([]);
-      setItems([]);
-      setConn("idle");
     } finally {
       setAuthBusy(false);
     }
@@ -554,8 +557,7 @@ export default function App() {
                   type="button"
                   style={{ marginLeft: 12 }}
                   onClick={() => {
-                    setProject(null);
-                    setError(null);
+                    void leaveProject();
                   }}
                 >
                   Sign in again

@@ -220,6 +220,8 @@ declare global {
         cwd: string,
         opts?: { mode?: "continue" | "new" | "resume"; sessionId?: string },
       ) => Promise<OpenProjectResult>;
+      /** Drop agent on this window; native title returns to empty shell. */
+      closeProject: () => Promise<boolean>;
       listSessions: (cwd: string) => Promise<SessionSummary[]>;
       openSession: (opts: {
         cwd: string;
