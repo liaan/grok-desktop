@@ -8,6 +8,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   DESKTOP_COMMANDS,
@@ -36,6 +37,43 @@ export type ComposerSubmit = {
   images: PendingImage[];
   mode: "auto" | "queue" | "now";
 };
+
+const COMPOSER_HEIGHT_KEY = "grok-desktop-composer-height";
+/** Default textarea height (matches previous CSS min-height). */
+const COMPOSER_HEIGHT_DEFAULT = 72;
+/** Floor so the field stays usable. */
+const COMPOSER_HEIGHT_MIN = 72;
+/**
+ * Leave room for topbar, status bar, chrome, and a sliver of timeline.
+ * Users can still pull nearly full-screen (~90vh of the window).
+ */
+function composerHeightMax(): number {
+  if (typeof window === "undefined") return 720;
+  return Math.max(
+    COMPOSER_HEIGHT_MIN,
+    Math.round(window.innerHeight * 0.9) - 120,
+  );
+}
+
+function readStoredComposerHeight(): number {
+  try {
+    const raw = localStorage.getItem(COMPOSER_HEIGHT_KEY);
+    if (!raw) return COMPOSER_HEIGHT_DEFAULT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return COMPOSER_HEIGHT_DEFAULT;
+    return Math.min(composerHeightMax(), Math.max(COMPOSER_HEIGHT_MIN, Math.round(n)));
+  } catch {
+    return COMPOSER_HEIGHT_DEFAULT;
+  }
+}
+
+function persistComposerHeight(px: number) {
+  try {
+    localStorage.setItem(COMPOSER_HEIGHT_KEY, String(Math.round(px)));
+  } catch {
+    /* private mode / quota */
+  }
+}
 
 /**
  * Draft composer: owns input, attachments, and slash menu so keystrokes do not
@@ -68,10 +106,19 @@ export const Composer = memo(function Composer({
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [cmdIndex, setCmdIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(readStoredComposerHeight);
+  const [resizing, setResizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const promptQueueRef = useRef(promptQueue);
   promptQueueRef.current = promptQueue;
+  const heightRef = useRef(composerHeight);
+  heightRef.current = composerHeight;
+  const resizeDragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
 
   const menuOpen = isSlashMenuOpen(input) && !slashDismissed;
   const filteredCommands = useMemo(
@@ -89,6 +136,76 @@ export const Composer = memo(function Composer({
       setCmdIndex(Math.max(0, filteredCommands.length - 1));
     }
   }, [filteredCommands.length, cmdIndex]);
+
+  // Keep height in range when the window is resized (e.g. maximize / dock).
+  useEffect(() => {
+    const onResize = () => {
+      const max = composerHeightMax();
+      setComposerHeight((h) => {
+        const next = Math.min(max, Math.max(COMPOSER_HEIGHT_MIN, h));
+        if (next !== h) persistComposerHeight(next);
+        return next;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const clampComposerHeight = useCallback((px: number) => {
+    return Math.min(
+      composerHeightMax(),
+      Math.max(COMPOSER_HEIGHT_MIN, Math.round(px)),
+    );
+  }, []);
+
+  const onResizePointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      resizeDragRef.current = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        startHeight: heightRef.current,
+      };
+      setResizing(true);
+    },
+    [],
+  );
+
+  const onResizePointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = resizeDragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      // Drag up grows the input (handle sits on the top edge).
+      const next = clampComposerHeight(
+        drag.startHeight + (drag.startY - e.clientY),
+      );
+      setComposerHeight(next);
+    },
+    [clampComposerHeight],
+  );
+
+  const endResizeDrag = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = resizeDragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      resizeDragRef.current = null;
+      setResizing(false);
+      persistComposerHeight(heightRef.current);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+    },
+    [],
+  );
+
+  const onResizeDoubleClick = useCallback(() => {
+    setComposerHeight(COMPOSER_HEIGHT_DEFAULT);
+    persistComposerHeight(COMPOSER_HEIGHT_DEFAULT);
+  }, []);
 
   const clearDraft = useCallback(() => {
     setInput("");
@@ -256,8 +373,34 @@ export const Composer = memo(function Composer({
     if (files.length) await addImages(files);
   };
 
+  const tall =
+    composerHeight >= Math.min(composerHeightMax() * 0.45, 280);
+
   return (
-    <div className="composer">
+    <div
+      className={
+        "composer" +
+        (resizing ? " composer--resizing" : "") +
+        (tall ? " composer--tall" : "")
+      }
+    >
+      <div
+        className="composer-resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize input"
+        aria-valuemin={COMPOSER_HEIGHT_MIN}
+        aria-valuemax={composerHeightMax()}
+        aria-valuenow={composerHeight}
+        title="Drag to resize input · double-click to reset"
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={endResizeDrag}
+        onPointerCancel={endResizeDrag}
+        onDoubleClick={onResizeDoubleClick}
+      >
+        <span className="composer-resize-grip" aria-hidden />
+      </div>
       <div
         className="composer-box"
         onDragOver={(e) => {
@@ -335,6 +478,7 @@ export const Composer = memo(function Composer({
         <textarea
           ref={textareaRef}
           value={input}
+          style={{ height: composerHeight }}
           placeholder={
             conn === "busy"
               ? "Interject: Enter queues · Ctrl/⌘+Enter sends now (stops turn)…"

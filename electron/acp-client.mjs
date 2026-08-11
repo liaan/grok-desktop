@@ -156,7 +156,9 @@ export class GrokAcpClient extends EventEmitter {
 
   /**
    * Resolve ACP fs path (relative → project cwd) and optionally sandbox.
-   * Always allows the current session directory so plan.md can be written.
+   * Always allows the current session directory so plan.md can be written,
+   * and GROK_HOME (~/.grok) so skills / agents / personas stay readable when
+   * “Allow outside project” is off.
    * @param {string} filePath
    */
   _resolveFsPath(filePath) {
@@ -177,6 +179,8 @@ export class GrokAcpClient extends EventEmitter {
     try {
       return resolveProjectPath(this.cwd, filePath, {
         allowOutside: this.allowOutsideProject,
+        // Skills, agents, personas, sessions, MCP config live under GROK_HOME.
+        allowGrokHome: true,
       });
     } catch (err) {
       throw Object.assign(new Error(err?.message || String(err)), {

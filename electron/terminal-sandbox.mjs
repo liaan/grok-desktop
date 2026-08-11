@@ -2,12 +2,14 @@
  * OS-level filesystem jail for ACP tool terminals.
  *
  * When enabled (default), agent shells only see the open project (+ system
- * tool roots / temp). Network is allowed. Docker sockets are never exposed.
+ * tool roots / temp) and GROK_HOME (~/.grok for skills/agents/personas).
+ * Network is allowed. Docker sockets are never exposed. The rest of $HOME
+ * stays blocked.
  *
  * Backends:
  *   darwin  → /usr/bin/sandbox-exec (Seatbelt)
  *   linux   → bwrap (bubblewrap)
- *   win32   → wsl.exe + bwrap, else docker run (project mount only)
+ *   win32   → wsl.exe + bwrap, else docker run (project + GROK_HOME mounts)
  *
  * Fail closed: if sandbox is on and no backend works, throw — never silently
  * spawn on the bare host.
@@ -16,6 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { grokHomeDir } from "./grok-home.mjs";
 import { shellJoin } from "./shell-argv.mjs";
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
@@ -112,6 +115,25 @@ export const BWRAP_RO_BINDS = [
 
 /** @type {null | SandboxProbe} */
 let probeCache = null;
+
+/**
+ * Absolute GROK_HOME for jail binds (skills, agents, personas, sessions).
+ * @returns {string}
+ */
+export function sandboxGrokHome() {
+  return realpathOrSelf(path.resolve(grokHomeDir()));
+}
+
+/**
+ * True when abs path is under GROK_HOME (lexical + realpath roots).
+ * @param {string} abs
+ * @returns {boolean}
+ */
+function isUnderGrokHomeAbs(abs) {
+  const home = sandboxGrokHome();
+  const rel = path.relative(home, abs);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
 
 /**
  * @param {string} p
@@ -584,14 +606,16 @@ function wslHasBwrap(wslPath, distro) {
 }
 
 /**
- * Shared bwrap jail recipe (no docker.sock, no $HOME).
+ * Shared bwrap jail recipe (no docker.sock, no full $HOME).
+ * Always RW-binds GROK_HOME so skills/agents/personas remain readable.
  * Used by host Linux and WSL backends so bind policy has one owner.
  *
  * @param {object} opts
  * @param {string} opts.projectRoot
  * @param {string} opts.cwd
+ * @param {string} [opts.grokHome] override GROK_HOME path (WSL-mapped)
  * @param {boolean} [opts.assumeLinuxPaths] skip host existsSync (WSL path space)
- * @returns {{ projectRoot: string, cwd: string, roBinds: string[] }}
+ * @returns {{ projectRoot: string, cwd: string, grokHome: string | null, roBinds: string[] }}
  */
 export function bwrapJailSpec(opts) {
   const assume = Boolean(opts.assumeLinuxPaths);
@@ -600,6 +624,26 @@ export function bwrapJailSpec(opts) {
     ? String(opts.projectRoot)
     : realpathOrSelf(opts.projectRoot);
   const cwd = assume ? String(opts.cwd) : realpathOrSelf(opts.cwd);
+  let grokHome = null;
+  if (opts.grokHome != null && String(opts.grokHome).trim()) {
+    grokHome = assume
+      ? String(opts.grokHome)
+      : realpathOrSelf(opts.grokHome);
+  } else if (!assume) {
+    try {
+      const gh = sandboxGrokHome();
+      // --bind requires an existing path; skip missing GROK_HOME
+      if (fs.existsSync(gh)) {
+        // Skip if GROK_HOME is already inside the project bind
+        const rel = path.relative(projectRoot, gh);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+          grokHome = gh;
+        }
+      }
+    } catch {
+      grokHome = null;
+    }
+  }
 
   /** @type {string[]} */
   const roBinds = [];
@@ -615,7 +659,7 @@ export function bwrapJailSpec(opts) {
     }
   }
 
-  return { projectRoot, cwd, roBinds };
+  return { projectRoot, cwd, grokHome, roBinds };
 }
 
 /**
@@ -623,6 +667,7 @@ export function bwrapJailSpec(opts) {
  * @param {{
  *   projectRoot: string,
  *   cwd: string,
+ *   grokHome?: string | null,
  *   bwrapPath?: string,
  *   assumeLinuxPaths?: boolean,
  * }} opts
@@ -647,6 +692,10 @@ export function buildBwrapArgv(opts) {
     args.push("--ro-bind-try", p, p);
   }
   args.push("--bind", spec.projectRoot, spec.projectRoot);
+  // Skills / agents / personas / sessions under GROK_HOME
+  if (spec.grokHome) {
+    args.push("--bind", spec.grokHome, spec.grokHome);
+  }
   args.push("--chdir", spec.cwd);
   args.push("--");
   return args;
@@ -660,10 +709,11 @@ export function buildBwrapPrefix(opts) {
 /**
  * Seatbelt profile for ACP tool shells.
  *
- * `(allow default)` then deny $HOME outside the open project + docker sockets.
+ * `(allow default)` then deny $HOME outside the open project and GROK_HOME
+ * (skills/agents/personas) + docker sockets.
  * Pure `(deny default)` allowlists SIGABRT on modern macOS (dyld paths).
  *
- * @param {{ projectRoot: string, tmpDir?: string, homeDir?: string }} opts
+ * @param {{ projectRoot: string, tmpDir?: string, homeDir?: string, grokHome?: string }} opts
  */
 export function buildSeatbeltProfile(opts) {
   const projectRoot = realpathOrSelf(opts.projectRoot);
@@ -674,19 +724,22 @@ export function buildSeatbeltProfile(opts) {
   } catch {
     home = path.resolve(home);
   }
+  const grokHome = realpathOrSelf(opts.grokHome || sandboxGrokHome());
 
   const projectLit = seatbeltLiteral(projectRoot);
   const tmpLit = seatbeltLiteral(tmpDir);
   const homeLit = seatbeltLiteral(home);
+  const grokLit = seatbeltLiteral(grokHome);
 
   return `(version 1)
 (allow default)
 
-; Block the user home tree except the open project (lexical subpath match).
+; Block the user home tree except the open project and GROK_HOME (skills/agents).
 (deny file-read* file-write* file-ioctl file-write-data
   (require-all
     (subpath "${homeLit}")
     (require-not (subpath "${projectLit}"))
+    (require-not (subpath "${grokLit}"))
   )
 )
 
@@ -965,6 +1018,7 @@ export function planSandboxedSpawn(opts) {
       file: prefix[0],
       fileArgs: [...prefix.slice(1), inner.file, ...inner.fileArgs],
       shell: false,
+      // bwrap --chdir is set inside the jail; host spawn cwd can be project.
       cwd: projectRoot,
       env,
       backend: "bwrap",
@@ -1026,6 +1080,10 @@ function planWslBwrap(p) {
       : p.projectRoot;
   const cwdWsl =
     process.platform === "win32" ? winToWslPath(p.cwd) : p.cwd;
+  const grokWsl =
+    process.platform === "win32"
+      ? winToWslPath(sandboxGrokHome())
+      : sandboxGrokHome();
 
   if (!projectWsl || !cwdWsl) {
     throw Object.assign(
@@ -1040,6 +1098,7 @@ function planWslBwrap(p) {
   const bwrapArgv = buildBwrapArgv({
     projectRoot: projectWsl,
     cwd: cwdWsl,
+    grokHome: grokWsl || null,
     bwrapPath: "bwrap",
     assumeLinuxPaths: true,
   });
@@ -1114,18 +1173,31 @@ function planDocker(p) {
   // Hot path: only a previously verified image. Never pull/build on main.
   // Background warm is kicked from resolve if needed.
   const image = resolveDockerSandboxImageForSpawn(docker, preferred);
+  const grokHome = sandboxGrokHome();
   const rel = relUnderProject(p.projectRoot, p.cwd);
-  if (rel == null) {
+  const underGrok = rel == null && isUnderGrokHomeAbs(p.cwd);
+  if (rel == null && !underGrok) {
     throw Object.assign(
-      new Error("Terminal cwd is outside project; refused by sandbox"),
+      new Error(
+        "Terminal cwd is outside project and GROK_HOME; refused by sandbox",
+      ),
       { code: -32000 },
     );
   }
-  const workdir =
-    rel === "." ? "/work" : `/work/${rel.split(path.sep).join("/")}`;
+  /** @type {string} */
+  let workdir;
+  if (rel != null) {
+    workdir =
+      rel === "." ? "/work" : `/work/${rel.split(path.sep).join("/")}`;
+  } else {
+    // cwd under GROK_HOME → /grok/<relative>
+    const gRel = path.relative(grokHome, p.cwd).split(path.sep).join("/");
+    workdir = gRel === "" ? "/grok" : `/grok/${gRel}`;
+  }
 
   const mapped = mapInnerCommandForDocker(p.inner, p.projectRoot);
   const vol = `${p.projectRoot}:/work`;
+  const grokVol = `${grokHome}:/grok`;
 
   // Non-interactive git inside the container (no TTY, no editor hang).
   const envFlags = [
@@ -1150,6 +1222,9 @@ function planDocker(p) {
     "GCM_INTERACTIVE=never",
     "-e",
     "GPG_TTY=",
+    // Skills/agents resolve via GROK_HOME inside the jail
+    "-e",
+    "GROK_HOME=/grok",
   ];
 
   return {
@@ -1163,6 +1238,8 @@ function planDocker(p) {
       "--init",
       "-v",
       vol,
+      "-v",
+      grokVol,
       "-w",
       workdir,
       ...envFlags,

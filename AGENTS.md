@@ -212,8 +212,9 @@ Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolvePr
 
 | Surface | Gated by “Allow outside project”? | Behavior |
 |---------|-----------------------------------|----------|
-| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(session cwd, path, { allowOutside })` — worktrees of this repo always OK |
-| ACP `terminal/create` cwd | Yes | Same helper against session cwd |
+| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(..., { allowOutside, allowGrokHome: true })` — **project + worktrees + `GROK_HOME` (`~/.grok` skills/agents/personas/sessions) always OK**; other host paths need Allow outside |
+| ACP `terminal/create` cwd | Yes | Same helper (project / worktrees / `GROK_HOME`) |
+| Terminal **sandbox** jail | Independent | Home jail **except** open project + **`GROK_HOME` bind** (skills still readable); rest of `$HOME` blocked |
 | Renderer IPC (`fs:read-file`, `fs:list-dir`, shell open/show) | **No — always project-scoped** | Requires an open project; cannot leave the folder even if the agent may |
 
 Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
@@ -267,7 +268,7 @@ Policy highlights:
 
 - **Fail closed** — if sandbox is on and no backend is available, `terminal/create` errors (does not silently spawn on the bare host).
 - **Network allowed** — `npm install` / `git fetch` still work.
-- **Home jail** — tool shells cannot read/write the rest of `$HOME` (`.ssh`, sibling repos, Docker config). Global user config outside the project may need sandbox off for some workflows.
+- **Home jail** — tool shells cannot read/write the rest of `$HOME` (`.ssh`, sibling repos, Docker config). **`GROK_HOME` (`~/.grok`) is always bound** so skills, agents, personas, and sessions work with sandbox on. Other global host paths still need sandbox off or “Allow outside project”.
 - **Does not sandbox** the `grok agent stdio` process, MCP servers under `~/.grok`, or Electron itself.
 - UI: Settings toggle (confirm when turning **off**); topbar chips for **Host shell** / **Outside project** / **Auto-approve**.
 - **Docker image must include git** — default `buildpack-deps:noble-scm` (not plain `ubuntu:24.04`). If the chosen image has no `git`, Desktop builds a local `grok-desktop-sandbox:2` once. Warm runs **async at app start / sandbox enable** — never pull/build on the `terminal/create` hot path (fail fast with “preparing… retry” until ready). Only **git-verified** images are cached.

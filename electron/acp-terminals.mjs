@@ -217,16 +217,18 @@ export class AcpTerminalManager extends EventEmitter {
       { allowOutside: this.allowOutsideProject },
     );
 
-    // Safety gate: terminal cwd must stay under session/project cwd unless allowed
+    // Safety gate: terminal cwd under project/worktrees, or GROK_HOME (skills),
+    // unless “Allow outside project” opens the full host.
     try {
       cwd = resolveProjectPath(this.defaultCwd, cwd, {
         allowOutside: this.allowOutsideProject,
+        allowGrokHome: true,
       });
     } catch (err) {
       throw Object.assign(
         new Error(
           err?.message ||
-            "terminal/create: cwd is outside the open project (enable “Allow outside project” in the sidebar to override)",
+            "terminal/create: cwd is outside the open project and GROK_HOME (enable “Allow outside project” for other host paths)",
         ),
         { code: err?.code ?? -32000 },
       );

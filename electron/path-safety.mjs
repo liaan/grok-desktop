@@ -7,10 +7,16 @@
  * Linked git worktrees of the open project’s repository are also allowed
  * (sibling checkouts from `git worktree add`) without enabling full
  * “Allow outside project”.
+ *
+ * Agent tools (ACP fs/* + terminal cwd) also always allow GROK_HOME (~/.grok)
+ * so skills, agents, personas, sessions, and MCP config remain readable without
+ * turning on “Allow outside project” or disabling the terminal sandbox.
+ * Renderer IPC stays project-only (does not use allowGrokHome).
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { grokHomeDir } from "./grok-home.mjs";
 import { listLinkedWorktreeRoots } from "./git-worktrees.mjs";
 
 /**
@@ -134,6 +140,60 @@ function isUnderAnyRoot(roots, resolved) {
 }
 
 /**
+ * Absolute GROK_HOME roots (lexical + realpath when present).
+ * @returns {string[]}
+ */
+export function grokHomeRoots() {
+  const home = path.resolve(grokHomeDir());
+  /** @type {string[]} */
+  const roots = [home];
+  try {
+    const real = fs.realpathSync(home);
+    if (real !== home) roots.push(real);
+  } catch {
+    /* may not exist yet */
+  }
+  return roots;
+}
+
+/**
+ * True if `target` is under GROK_HOME (skills, agents, personas, sessions, …).
+ * @param {string} target Absolute or relative path (relative → resolve against GROK_HOME)
+ * @returns {boolean}
+ */
+export function isUnderGrokHome(target) {
+  if (target == null || String(target).trim() === "") return false;
+  try {
+    const home = path.resolve(grokHomeDir());
+    const resolved = path.isAbsolute(target)
+      ? path.resolve(target)
+      : path.resolve(home, target);
+    return isUnderAnyRoot(grokHomeRoots(), resolved);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve `target` and ensure it is under GROK_HOME.
+ * @param {string} target
+ * @returns {string}
+ */
+export function assertPathInGrokHome(target) {
+  if (target == null || String(target).trim() === "") {
+    throw new Error("Path is required");
+  }
+  const home = path.resolve(grokHomeDir());
+  const resolved = path.isAbsolute(target)
+    ? path.resolve(target)
+    : path.resolve(home, target);
+  if (!isUnderAnyRoot(grokHomeRoots(), resolved)) {
+    throw new Error(`Path is outside GROK_HOME (${home}): ${resolved}`);
+  }
+  return resolved;
+}
+
+/**
  * Resolve `target` and ensure it is under `root` (or a linked git worktree).
  * Uses lexical resolve plus realpath so symlinks cannot escape the project
  * (except into registered worktrees of the same repo).
@@ -164,11 +224,43 @@ export function assertPathInProject(root, target) {
 }
 
 /**
+ * Project / worktrees, or GROK_HOME (skills, agents, personas, sessions).
+ * @param {string} root Project cwd
+ * @param {string} target
+ * @returns {string}
+ */
+export function assertPathInProjectOrGrokHome(root, target) {
+  if (!root) throw new Error("No project open");
+  if (target == null || String(target).trim() === "") {
+    throw new Error("Path is required");
+  }
+  const resolvedRoot = path.resolve(root);
+  const expanded = expandUserPath(String(target).trim());
+  const resolved = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(resolvedRoot, expanded);
+
+  if (isUnderAnyRoot(allowedRoots(resolvedRoot), resolved)) {
+    return resolved;
+  }
+  if (isUnderAnyRoot(grokHomeRoots(), resolved)) {
+    return resolved;
+  }
+
+  throw new Error(
+    `Path is outside the open project and GROK_HOME: ${resolved} ` +
+      `(project: ${resolvedRoot}, GROK_HOME: ${path.resolve(grokHomeDir())}). ` +
+      `Skills/agents under ~/.grok are always allowed; enable “Allow outside project” for other host paths.`,
+  );
+}
+
+/**
  * Resolve a path relative to project root. When `allowOutside` is false
  * (default), the path must stay under root or a linked git worktree.
+ * Pass `allowGrokHome: true` for ACP agent tools so ~/.grok skills/agents work.
  * @param {string} root Project / session cwd
  * @param {string} target Absolute or relative path
- * @param {{ allowOutside?: boolean }} [opts]
+ * @param {{ allowOutside?: boolean, allowGrokHome?: boolean }} [opts]
  * @returns {string} Absolute resolved path
  */
 export function resolveProjectPath(root, target, opts = {}) {
@@ -177,13 +269,16 @@ export function resolveProjectPath(root, target, opts = {}) {
     throw new Error("Path is required");
   }
   const allowOutside = Boolean(opts.allowOutside);
-  if (!allowOutside) {
-    return assertPathInProject(root, target);
+  if (allowOutside) {
+    const raw = expandUserPath(String(target).trim());
+    return path.isAbsolute(raw)
+      ? path.resolve(raw)
+      : path.resolve(path.resolve(root), raw);
   }
-  const raw = expandUserPath(String(target).trim());
-  return path.isAbsolute(raw)
-    ? path.resolve(raw)
-    : path.resolve(path.resolve(root), raw);
+  if (opts.allowGrokHome) {
+    return assertPathInProjectOrGrokHome(root, target);
+  }
+  return assertPathInProject(root, target);
 }
 
 /**
