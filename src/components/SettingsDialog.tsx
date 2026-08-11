@@ -13,6 +13,8 @@ export function SettingsDialog({
   onClose,
   theme,
   privacyMode,
+  codingDataOptIn,
+  codingDataNote,
   permissionMode,
   allowOutsideProject,
   sandboxTerminal,
@@ -21,6 +23,7 @@ export function SettingsDialog({
   debugLogPath,
   onSetTheme,
   onSetPrivacyMode,
+  onSetCodingDataOptIn,
   onSetPermissionMode,
   onToggleAllowOutside,
   onSetSandboxTerminal,
@@ -31,6 +34,9 @@ export function SettingsDialog({
   onClose: () => void;
   theme: "dark" | "light";
   privacyMode: boolean;
+  /** SpaceXAI coding-data share (default opt-in). */
+  codingDataOptIn: boolean;
+  codingDataNote?: string;
   permissionMode: PermissionMode;
   allowOutsideProject: boolean;
   sandboxTerminal: boolean;
@@ -39,6 +45,7 @@ export function SettingsDialog({
   debugLogPath: string;
   onSetTheme: (theme: "dark" | "light") => void;
   onSetPrivacyMode: (next: boolean) => void;
+  onSetCodingDataOptIn: (next: boolean) => void;
   onSetPermissionMode: (mode: PermissionMode) => void;
   onToggleAllowOutside: () => void;
   /** Desired checked state from the checkbox (not a toggle). */
@@ -134,6 +141,53 @@ export function SettingsDialog({
                 onChange={(e) => onSetPrivacyMode(e.target.checked)}
               />
             </label>
+          </section>
+
+          <section className="settings-section">
+            <h3>Coding data, retention, and training</h3>
+            <div className="settings-row settings-row-stack">
+              <div className="settings-row-text">
+                <span className="settings-label">Share coding data</span>
+                <span className="settings-desc">
+                  Opt in to provide SpaceXAI the ability to retain and train on
+                  coding data (prompts, traces, metrics) for training and
+                  debugging. Simple product metrics may still be collected.
+                  Same setting as CLI{" "}
+                  <code>/privacy</code>. Default is <strong>Opt in</strong>.
+                  Re-open the project after changing so the agent process picks
+                  it up.
+                </span>
+                {codingDataNote ? (
+                  <span className="settings-desc settings-note">
+                    {codingDataNote}
+                  </span>
+                ) : null}
+              </div>
+              <div
+                className="theme-toggle coding-data-toggle"
+                role="radiogroup"
+                aria-label="Coding data retention"
+              >
+                <button
+                  type="button"
+                  className={`theme-opt ${codingDataOptIn ? "active" : ""}`}
+                  aria-checked={codingDataOptIn}
+                  role="radio"
+                  onClick={() => onSetCodingDataOptIn(true)}
+                >
+                  Opt in
+                </button>
+                <button
+                  type="button"
+                  className={`theme-opt ${!codingDataOptIn ? "active" : ""}`}
+                  aria-checked={!codingDataOptIn}
+                  role="radio"
+                  onClick={() => onSetCodingDataOptIn(false)}
+                >
+                  Opt out
+                </button>
+              </div>
+            </div>
           </section>
 
           <section className="settings-section">

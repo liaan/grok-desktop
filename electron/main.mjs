@@ -34,6 +34,11 @@ import {
   listPendingPermissionRequests,
   settlePermission,
 } from "./pending-permissions.mjs";
+import {
+  ensureCodingDataDefaultOptIn,
+  getCodingDataStatus,
+  setCodingDataOptIn,
+} from "./coding-data.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
 import {
   APP_WINDOW_TITLE,
@@ -472,6 +477,9 @@ function registerIpc() {
   ipcMain.handle("app:get-info", async () => {
     const state = loadState();
     const auth = getAuthStatus();
+    // CLI /privacy default for Desktop: opt in when field missing so coding
+    // data can appear in the SpaceXAI console (same auth.json field as TUI).
+    const codingData = ensureCodingDataDefaultOptIn();
     return {
       version: app.getVersion(),
       platform: process.platform,
@@ -488,6 +496,9 @@ function registerIpc() {
       sandboxBackend: probeSandbox().backend,
       theme: state.theme === "light" ? "light" : "dark",
       privacyMode: Boolean(state.privacyMode),
+      /** SpaceXAI coding-data share (auth.json); default opt-in */
+      codingDataOptIn: codingData.optedIn,
+      codingDataStatus: codingData,
       debugLogging: isDebugLogging() || Boolean(state.debugLogging),
       debugLogPath: getDebugLogPath(),
       recentProjects: state.recentProjects || [],
@@ -759,6 +770,13 @@ function registerIpc() {
     state.privacyMode = Boolean(value);
     saveState(state);
     return state.privacyMode;
+  });
+
+  /** CLI `/privacy` — coding data retention & training (auth.json). */
+  ipcMain.handle("app:get-coding-data", async () => getCodingDataStatus());
+
+  ipcMain.handle("app:set-coding-data-opt-in", async (_e, value) => {
+    return setCodingDataOptIn(Boolean(value));
   });
 
   ipcMain.handle("app:set-debug-logging", async (_e, value) => {

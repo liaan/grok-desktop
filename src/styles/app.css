@@ -2453,6 +2453,17 @@ button {
   color: var(--text-muted);
 }
 
+.settings-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--warn);
+}
+
+.coding-data-toggle {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
 .settings-row input[type="checkbox"] {
   flex: 0 0 auto;
   margin-top: 3px;

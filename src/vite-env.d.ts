@@ -202,6 +202,17 @@ export type AppInfo = {
    * Does not change agent paths or on-disk data.
    */
   privacyMode: boolean;
+  /**
+   * SpaceXAI coding-data share (CLI `/privacy`). Default true (opt in).
+   * Stored as coding_data_retention_opt_out on ~/.grok/auth.json.
+   */
+  codingDataOptIn: boolean;
+  codingDataStatus?: {
+    optedIn: boolean;
+    source: "auth" | "default" | "none";
+    managed: boolean;
+    note?: string;
+  };
   /** Diagnostic JSONL log for tools/hooks/terminals */
   debugLogging: boolean;
   debugLogPath: string;
@@ -271,6 +282,18 @@ declare global {
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
       setPrivacyMode: (value: boolean) => Promise<boolean>;
+      getCodingDataStatus: () => Promise<{
+        optedIn: boolean;
+        source: "auth" | "default" | "none";
+        managed: boolean;
+        note?: string;
+      }>;
+      setCodingDataOptIn: (value: boolean) => Promise<{
+        optedIn: boolean;
+        source: "auth" | "default" | "none";
+        managed: boolean;
+        note?: string;
+      }>;
       setDebugLogging: (
         value: boolean,
       ) => Promise<{ debugLogging: boolean; debugLogPath: string }>;

@@ -60,6 +60,9 @@ export default function App() {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [theme, setTheme] = useState<"dark" | "light">(readStoredTheme);
   const [privacyMode, setPrivacyMode] = useState(false);
+  /** SpaceXAI coding-data share; default opt-in (matches CLI /privacy). */
+  const [codingDataOptIn, setCodingDataOptIn] = useState(true);
+  const [codingDataNote, setCodingDataNote] = useState<string | undefined>();
   const [debugLogging, setDebugLogging] = useState(false);
   const [debugLogPath, setDebugLogPath] = useState("");
   const [gitBranch, setGitBranch] = useState<string | null>(null);
@@ -134,6 +137,8 @@ export default function App() {
     setInfo(i);
     hydrateFromInfo(i);
     setPrivacyMode(Boolean(i.privacyMode));
+    setCodingDataOptIn(i.codingDataOptIn !== false);
+    setCodingDataNote(i.codingDataStatus?.note);
     setDebugLogging(Boolean(i.debugLogging));
     setDebugLogPath(i.debugLogPath || "");
     const nextTheme = i.theme === "light" ? "light" : "dark";
@@ -352,6 +357,29 @@ export default function App() {
     }
   };
 
+  const applyCodingDataOptIn = async (next: boolean) => {
+    if (next === codingDataOptIn) return;
+    setCodingDataOptIn(next);
+    try {
+      const status = await window.grokDesktop.setCodingDataOptIn(next);
+      setCodingDataOptIn(status.optedIn !== false);
+      setCodingDataNote(status.note);
+      if (status.note) {
+        appendSystem(status.note);
+      } else {
+        appendSystem(
+          next
+            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Re-open the project if an agent is already running."
+            : "Coding data: Opt out. Re-open the project if an agent is already running.",
+        );
+      }
+    } catch (e: unknown) {
+      setCodingDataOptIn(!next);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Failed to set coding data preference");
+    }
+  };
+
   const applyDebugLogging = async (next: boolean) => {
     if (next === debugLogging) return;
     setDebugLogging(next);
@@ -498,6 +526,8 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           theme={theme}
           privacyMode={privacyMode}
+          codingDataOptIn={codingDataOptIn}
+          codingDataNote={codingDataNote}
           permissionMode={permissionMode}
           allowOutsideProject={allowOutsideProject}
           sandboxTerminal={sandboxTerminal}
@@ -506,6 +536,7 @@ export default function App() {
           debugLogPath={debugLogPath}
           onSetTheme={(t) => void setAppTheme(t)}
           onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
+          onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
           onSetPermissionMode={(m) => void applyPermissionMode(m)}
           onToggleAllowOutside={() => void toggleAllowOutside()}
           onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
