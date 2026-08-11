@@ -13,9 +13,11 @@ on:
 permissions:
   contents: write
 
+# One group per tag/ref. Never cancel-in-progress: killing a matrix mid-upload
+# leaves incomplete artifacts and "other side closed" on download-artifact.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -40,7 +42,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          # Project build toolchain (Electron 35). Action runtimes are Node 24.
+          # App build uses Node 20 (Electron 35). JS *actions* run on the
+          # runner's action runtime (Node 24) — that is unrelated to this field.
           node-version: "20"
           cache: npm
 
@@ -147,18 +150,23 @@ jobs:
           echo "=== Release files ==="
           ls -la
 
+      # Retry: Windows runners often drop the connection mid-upload ("other side closed").
       - name: Upload installers
-        uses: actions/upload-artifact@v6
+        uses: Wandalen/wretry.action@v3.8.0
         with:
-          name: grok-desktop-${{ matrix.label }}
-          path: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/latest*.yml
-            release/*.blockmap
-          if-no-files-found: error
-          retention-days: 14
+          action: actions/upload-artifact@v6
+          attempt_limit: 5
+          attempt_delay: 20000
+          with: |
+            name: grok-desktop-${{ matrix.label }}
+            path: |
+              release/*.exe
+              release/*.dmg
+              release/*.zip
+              release/latest*.yml
+              release/*.blockmap
+            if-no-files-found: error
+            retention-days: 14
 
   publish-release:
     name: Publish GitHub Release
@@ -167,14 +175,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Retry: flaky GitHub artifact CDN ("other side closed") is common and is
+      # *not* fixed by downgrading to download-artifact@v4 (that reintroduces
+      # Node 20 deprecation). Keep @v6 + retries.
       - name: Download installers
-        uses: actions/download-artifact@v6
+        uses: Wandalen/wretry.action@v3.8.0
         with:
-          path: dist-installers
-          merge-multiple: true
+          action: actions/download-artifact@v6
+          attempt_limit: 5
+          attempt_delay: 20000
+          with: |
+            path: dist-installers
+            merge-multiple: true
 
       - name: List files
         run: find dist-installers -type f | sort
+
+      - name: Verify installers present
+        run: |
+          set -euo pipefail
+          count=$(find dist-installers -type f \( -name '*.exe' -o -name '*.dmg' \) | wc -l)
+          echo "Found ${count} installer file(s)"
+          find dist-installers -type f | sort
+          if [ "$count" -lt 1 ]; then
+            echo "No .exe/.dmg after download-artifact — build artifacts missing or empty."
+            exit 1
+          fi
 
       # Tag is vX.Y.Z; installer names use X.Y.Z (no "v")
       - name: Version for asset URLs
