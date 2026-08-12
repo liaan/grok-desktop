@@ -158,6 +158,17 @@ export type SlashCommand = {
   local?: boolean;
 };
 
+export type GitStatusEntry = {
+  path: string;
+  origPath: string | null;
+  index: string;
+  worktree: string;
+  status: string;
+  untracked: boolean;
+  staged: boolean;
+  unstaged: boolean;
+};
+
 export type SessionSummary = {
   id: string;
   cwd: string;
@@ -346,6 +357,11 @@ declare global {
       getGitBranch: (
         cwd?: string,
       ) => Promise<{ branch: string | null; detached: boolean }>;
+      getGitStatus: (cwd?: string) => Promise<{ files: GitStatusEntry[] }>;
+      getGitDiff: (
+        path: string,
+        opts?: { staged?: boolean },
+      ) => Promise<{ path: string; staged: boolean; diff: string | null }>;
       readFile: (path: string) => Promise<string>;
       listDir: (
         path: string,

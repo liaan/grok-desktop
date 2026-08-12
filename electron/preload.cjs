@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setDebugLogging: (value) => ipcRenderer.invoke("app:set-debug-logging", value),
   openDebugLog: () => ipcRenderer.invoke("app:open-debug-log"),
   getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),
+  getGitStatus: (cwd) => ipcRenderer.invoke("git:status", cwd),
+  getGitDiff: (path, opts) => ipcRenderer.invoke("git:diff", path, opts || {}),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),

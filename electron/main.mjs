@@ -72,7 +72,7 @@ import {
   DEFAULT_REASONING_EFFORT,
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
-import { getGitBranch } from "./git-info.mjs";
+import { getGitBranch, getGitDiff, getGitStatus } from "./git-info.mjs";
 import {
   debugLog,
   getDebugLogPath,
@@ -874,6 +874,35 @@ function registerIpc() {
         : sessionFromEvent(e)?.agent?.cwd;
     if (!root) return { branch: null, detached: false };
     return getGitBranch(root);
+  });
+
+  ipcMain.handle("git:status", async (e, cwd) => {
+    const sessionCwd = sessionFromEvent(e)?.agent?.cwd;
+    if (!sessionCwd) return { files: [] };
+    try {
+      const root =
+        typeof cwd === "string" && cwd
+          ? assertPathInProject(sessionCwd, cwd)
+          : sessionCwd;
+      return getGitStatus(root);
+    } catch {
+      return { files: [] };
+    }
+  });
+
+  ipcMain.handle("git:diff", async (e, filePath, opts) => {
+    const staged = Boolean(opts && opts.staged);
+    const rel = filePath == null ? "" : String(filePath);
+    const sessionCwd = sessionFromEvent(e)?.agent?.cwd;
+    if (!sessionCwd || !rel) {
+      return { path: rel, staged, diff: null };
+    }
+    try {
+      const safe = assertPathInProject(sessionCwd, rel);
+      return getGitDiff(sessionCwd, safe, { staged });
+    } catch {
+      return { path: rel, staged, diff: null };
+    }
   });
 
   ipcMain.handle("fs:read-file", async (e, filePath) => {
