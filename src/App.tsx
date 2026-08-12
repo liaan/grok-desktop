@@ -71,6 +71,7 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [offerAgentRestart, setOfferAgentRestart] = useState(false);
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -201,34 +202,35 @@ export default function App() {
 
   const signedIn = Boolean(auth?.authenticated && !auth?.expired);
 
-  const { openProject, openSession, isAuthError } = useProjectSession({
-    auth,
-    project,
-    busyRef,
-    openingRef,
-    promptQueueRef,
-    sendNowRef,
-    clearSessionScoped,
-    hydrateBackgroundTasks,
-    hydrateSessionUsage,
-    syncPermissionsFromMain,
-    hydrateFromInfo,
-    refreshAuth,
-    refreshBackbone,
-    setAuth,
-    setInfo,
-    setProject,
-    setSessionId,
-    setSessions,
-    setModelId,
-    setModelName,
-    setConn,
-    setOpeningLabel,
-    setError,
-    setItems,
-    setAgentCommands,
-    clearPromptQueue,
-  });
+  const { openProject, openSession, restartAgent, isAuthError } =
+    useProjectSession({
+      auth,
+      project,
+      busyRef,
+      openingRef,
+      promptQueueRef,
+      sendNowRef,
+      clearSessionScoped,
+      hydrateBackgroundTasks,
+      hydrateSessionUsage,
+      syncPermissionsFromMain,
+      hydrateFromInfo,
+      refreshAuth,
+      refreshBackbone,
+      setAuth,
+      setInfo,
+      setProject,
+      setSessionId,
+      setSessions,
+      setModelId,
+      setModelName,
+      setConn,
+      setOpeningLabel,
+      setError,
+      setItems,
+      setAgentCommands,
+      clearPromptQueue,
+    });
 
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
@@ -384,10 +386,11 @@ export default function App() {
       } else {
         appendSystem(
           next
-            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Re-open the project if an agent is already running."
-            : "Coding data: Opt out. Re-open the project if an agent is already running.",
+            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Restart the agent so the running process picks it up."
+            : "Coding data: Opt out. Restart the agent so the running process picks it up.",
         );
       }
+      setOfferAgentRestart(true);
     } catch (e: unknown) {
       setCodingDataOptIn(!next);
       const msg = e instanceof Error ? e.message : String(e);
@@ -451,8 +454,11 @@ export default function App() {
     [homeDir, privacyMode],
   );
 
+  const restarting = openingLabel === "Restarting agent…";
   const statusLabel = useMemo(() => {
-    if (conn === "connecting") return "Starting agent…";
+    if (conn === "connecting") {
+      return restarting ? "Restarting agent…" : "Starting agent…";
+    }
     if (conn === "error") return "Error";
     if (permissions.length > 0) {
       return permissions.length === 1
@@ -462,7 +468,7 @@ export default function App() {
     if (conn === "busy") return "Working…";
     if (conn === "online") return "Connected";
     return "Idle";
-  }, [conn, permissions.length]);
+  }, [conn, permissions.length, restarting]);
 
   const platform =
     info?.platform ||
@@ -557,6 +563,13 @@ export default function App() {
           onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
           onSetDebugLogging={(next) => void applyDebugLogging(next)}
           onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
+          onRestartAgent={() => {
+            setSettingsOpen(false);
+            setOfferAgentRestart(false);
+            void restartAgent();
+          }}
+          restarting={isOpening}
+          offerRestart={offerAgentRestart}
         />
 
         <main className="main">
@@ -586,11 +599,15 @@ export default function App() {
             <div className="loading-banner loading-banner-inline" role="status">
               <Spinner size={16} />
               <div>
-                <strong>Starting agent…</strong>
+                <strong>
+                  {restarting ? "Restarting agent…" : "Starting agent…"}
+                </strong>
                 <span>
-                  {openingLabel
-                    ? `Opening ${openingLabel}`
-                    : "Connecting to Grok backbone"}
+                  {restarting
+                    ? "Reconnecting to Grok backbone"
+                    : openingLabel
+                      ? `Opening ${openingLabel}`
+                      : "Connecting to Grok backbone"}
                 </span>
               </div>
             </div>

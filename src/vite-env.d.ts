@@ -237,6 +237,14 @@ declare global {
       ) => Promise<OpenProjectResult>;
       /** Drop agent on this window; native title returns to empty shell. */
       closeProject: () => Promise<boolean>;
+      /** Respawn grok agent and resume the same chat. */
+      restartAgent: () => Promise<
+        OpenProjectResult & {
+          ok: boolean;
+          warning?: string | null;
+          backbone?: BackboneSummary;
+        }
+      >;
       listSessions: (cwd: string) => Promise<SessionSummary[]>;
       openSession: (opts: {
         cwd: string;

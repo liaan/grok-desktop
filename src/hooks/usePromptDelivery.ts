@@ -121,27 +121,32 @@ export function usePromptDelivery(opts: {
         setItems((prev) => finalizeOpenTools(prev, "completed"));
         setConn("online");
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const cancelled = /cancel/i.test(msg);
-        if (cancelled) {
-          setItems((prev) => finalizeOpenTools(prev, "cancelled"));
-          setConn("online");
+        if (openingRef.current) {
+          // Restart / reopen owns conn; this prompt's agent is gone.
         } else {
-          setConn("error");
-          setError(msg);
-          setItems((prev) => [
-            ...finalizeOpenTools(prev, "failed"),
-            {
-              id: uid("sys"),
-              kind: "system",
-              text: `Error: ${msg}`,
-              at: Date.now(),
-            },
-          ]);
-          if (isAuthError(msg)) refreshAuth();
+          const msg = e instanceof Error ? e.message : String(e);
+          const cancelled = /cancel/i.test(msg);
+          if (cancelled) {
+            setItems((prev) => finalizeOpenTools(prev, "cancelled"));
+            setConn("online");
+          } else {
+            setConn("error");
+            setError(msg);
+            setItems((prev) => [
+              ...finalizeOpenTools(prev, "failed"),
+              {
+                id: uid("sys"),
+                kind: "system",
+                text: `Error: ${msg}`,
+                at: Date.now(),
+              },
+            ]);
+            if (isAuthError(msg)) refreshAuth();
+          }
         }
       } finally {
         busyRef.current = false;
+        if (openingRef.current) return;
         const nextNow = sendNowRef.current;
         if (nextNow) {
           sendNowRef.current = null;
@@ -173,6 +178,7 @@ export function usePromptDelivery(opts: {
     [
       project,
       busyRef,
+      openingRef,
       pinToBottom,
       setConn,
       setError,

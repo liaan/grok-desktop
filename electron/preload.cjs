@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),
   /** Drop agent on this window; title returns to empty shell. */
   closeProject: () => ipcRenderer.invoke("project:close"),
+  /** Respawn grok agent on this window and resume the same chat. */
+  restartAgent: () => ipcRenderer.invoke("agent:restart"),
   listSessions: (cwd) => ipcRenderer.invoke("sessions:list", cwd),
   openSession: (opts) => ipcRenderer.invoke("sessions:open", opts || {}),
   prompt: (text, opts) =>

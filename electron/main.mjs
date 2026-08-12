@@ -18,6 +18,7 @@ import {
   startLogin,
   startLogout,
 } from "./auth.mjs";
+import { mergeRestartResult } from "./agent-restart.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 import {
@@ -50,6 +51,7 @@ import {
   focusedSession,
   openSessionOnWindow,
   ownerIdFor,
+  restartAgentOnWindow,
   send,
   sessionFromEvent,
   setDesktopStateLoader,
@@ -610,6 +612,22 @@ function registerIpc() {
     const ws = sessionFromEvent(e);
     if (!ws) return false;
     return clearProjectOnWindow(ws);
+  });
+
+  /**
+   * Respawn this window's grok agent (same session). Dedicated channel —
+   * do not expose a generic "run any grok args" method.
+   */
+  ipcMain.handle("agent:restart", async (e) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) throw new Error("No window for agent:restart");
+    const result = await restartAgentOnWindow(ws, {
+      loadState: loadSessionOpenState,
+      listSessions: listSessionsForCwd,
+      remember: rememberProjectSession,
+    });
+    const backbone = await inspectBackbone(result.cwd);
+    return mergeRestartResult(result, backbone);
   });
 
   ipcMain.handle("sessions:list", async (_e, cwd) => {

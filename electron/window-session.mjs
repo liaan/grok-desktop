@@ -19,6 +19,7 @@ import {
   isDebugLogging,
   summarizeSessionUpdate,
 } from "./debug-log.mjs";
+import { restartTargetFromAgent } from "./agent-restart.mjs";
 
 /**
  * Desktop state loader — set once from main at startup.
@@ -691,6 +692,61 @@ export async function openSessionOnWindow(ws, opts) {
     usage,
     sessions: opts.listSessions?.(cwd) || [],
     warning: resumeWarning,
+  };
+}
+
+/**
+ * Force-respawn this window's agent and resume the current chat.
+ * ~/.grok / CLI flags bind at spawn — must dispose even when cwd matches.
+ *
+ * @param {WindowSession} ws
+ * @param {{
+ *   loadState?: (cwd: string, sessionId: string) => { items?: any[], tasks?: any[], usage?: any },
+ *   listSessions?: (cwd: string) => any[],
+ *   remember?: (cwd: string, sessionId: string) => void,
+ * }} [opts]
+ */
+export async function restartAgentOnWindow(ws, opts = {}) {
+  if (!ws || ws.disposed || !ws.win || ws.win.isDestroyed()) {
+    throw new Error("No window for agent:restart");
+  }
+  const target = restartTargetFromAgent(ws.agent);
+  if (!target) {
+    throw new Error("No project open");
+  }
+
+  const client = await ensureAgent(ws, target.cwd, {
+    resumeSessionId: target.resumeSessionId,
+    forceRestart: true,
+  });
+
+  opts.remember?.(target.cwd, client.sessionId);
+  setWindowTitle(ws, client.cwd);
+  restartBackgroundTaskTail(ws, target.cwd, client.sessionId);
+
+  let history = [];
+  /** @type {any[]} */
+  let backgroundTasks = [];
+  /** @type {any} */
+  let usage = null;
+  if (client.sessionId && opts.loadState) {
+    const loaded = opts.loadState(target.cwd, client.sessionId);
+    history = loaded.items || [];
+    backgroundTasks = loaded.tasks || [];
+    usage = loaded.usage || null;
+  }
+
+  return {
+    cwd: client.cwd,
+    sessionId: client.sessionId,
+    grokBinary: client.grokPath,
+    resumed: Boolean(target.resumeSessionId),
+    modelId: client.currentModelId || null,
+    modelName: client.currentModelName || null,
+    history,
+    backgroundTasks,
+    usage,
+    sessions: opts.listSessions?.(target.cwd) || [],
   };
 }
 

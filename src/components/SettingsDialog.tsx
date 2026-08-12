@@ -29,6 +29,9 @@ export function SettingsDialog({
   onSetSandboxTerminal,
   onSetDebugLogging,
   onOpenDebugLog,
+  onRestartAgent,
+  restarting,
+  offerRestart,
 }: {
   open: boolean;
   onClose: () => void;
@@ -52,6 +55,10 @@ export function SettingsDialog({
   onSetSandboxTerminal: (next: boolean) => void;
   onSetDebugLogging: (next: boolean) => void;
   onOpenDebugLog: () => void;
+  onRestartAgent: () => void;
+  restarting?: boolean;
+  /** Highlight restart after coding-data (or other spawn-bound) changes. */
+  offerRestart?: boolean;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -154,12 +161,17 @@ export function SettingsDialog({
                   debugging. Simple product metrics may still be collected.
                   Same setting as CLI{" "}
                   <code>/privacy</code>. Default is <strong>Opt in</strong>.
-                  Re-open the project after changing so the agent process picks
+                  Restart the agent after changing so the running process picks
                   it up.
                 </span>
                 {codingDataNote ? (
                   <span className="settings-desc settings-note">
                     {codingDataNote}
+                  </span>
+                ) : null}
+                {offerRestart ? (
+                  <span className="settings-desc settings-note">
+                    Restart the agent to apply this change.
                   </span>
                 ) : null}
               </div>
@@ -187,6 +199,23 @@ export function SettingsDialog({
                   Opt out
                 </button>
               </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <span className="settings-label">Restart agent</span>
+                <span className="settings-desc">
+                  Respawn the Grok process for this window and resume the same
+                  chat. Use after coding-data or ~/.grok changes.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={restarting}
+                onClick={() => onRestartAgent()}
+              >
+                {restarting ? "Restarting…" : "Restart agent"}
+              </button>
             </div>
           </section>
 

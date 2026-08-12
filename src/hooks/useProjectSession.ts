@@ -80,7 +80,10 @@ export function useProjectSession(opts: {
 
   const applyOpenResult = useCallback(
     async (
-      res: Awaited<ReturnType<typeof window.grokDesktop.openProject>> & {
+      res: Awaited<
+        | ReturnType<typeof window.grokDesktop.openProject>
+        | ReturnType<typeof window.grokDesktop.restartAgent>
+      > & {
         warning?: string | null;
         backgroundTasks?: import("../lib/background-tasks").BackgroundTask[];
         usage?: import("../lib/usage").SessionUsage | null;
@@ -288,7 +291,52 @@ export function useProjectSession(opts: {
     ],
   );
 
-  return { openProject, openSession, isAuthError };
+  const restartAgent = useCallback(async () => {
+    if (!project) {
+      setError("Open a project before restarting the agent.");
+      return;
+    }
+    const status = auth || (await refreshAuth());
+    if (!status.authenticated || status.expired) {
+      setError("Sign in to Grok first.");
+      return;
+    }
+    if (openingRef.current) return;
+
+    openingRef.current = true;
+    busyRef.current = false;
+    setConn("connecting");
+    setOpeningLabel("Restarting agent…");
+    setError(null);
+    try {
+      const res = await window.grokDesktop.restartAgent();
+      await applyOpenResult(res, {
+        note: "Restarted Grok agent (same session)",
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setConn("error");
+      setOpeningLabel(null);
+      setError(msg);
+      if (isAuthError(msg)) {
+        void refreshAuth();
+      }
+    } finally {
+      openingRef.current = false;
+    }
+  }, [
+    auth,
+    applyOpenResult,
+    busyRef,
+    openingRef,
+    project,
+    refreshAuth,
+    setConn,
+    setError,
+    setOpeningLabel,
+  ]);
+
+  return { openProject, openSession, restartAgent, isAuthError };
 }
 
 export { isAuthError };

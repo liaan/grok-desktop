@@ -159,7 +159,7 @@ Desktop is a shell. Config ownership:
 - No settings UI for MCP, models, or skill install (README: Planned)
 - No in-app editor for project `AGENTS.md` (edit in the repo)
 - Plugins inherited but barely surfaced in UI
-- Config changes under `~/.grok` need a **new agent process** (re-open project) to bind into the live session
+- Config changes under `~/.grok` need a **new agent process** (Settings → Restart agent) to bind into the live session
 - Linux team installers not in CI yet (Win + mac only)
 
 ### Client capabilities
