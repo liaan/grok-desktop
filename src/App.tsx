@@ -87,6 +87,7 @@ export default function App() {
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   const modelApplyLock = useRef(false);
+  const modelApplyGen = useRef(0);
 
   const appendSystem = useCallback((text: string) => {
     setItems((prev) => [
@@ -303,6 +304,8 @@ export default function App() {
       setModelName(null);
       setAvailableModels([]);
     }
+    modelApplyGen.current += 1;
+    modelApplyLock.current = false;
     setPendingModelId(null);
   }, [sessionId]);
 
@@ -310,11 +313,17 @@ export default function App() {
     async (nextId: string) => {
       if (!nextId || nextId === modelId || modelApplyLock.current) return;
       const sessionAtStart = sessionIdRef.current;
+      const gen = modelApplyGen.current;
       modelApplyLock.current = true;
       setPendingModelId(nextId);
       try {
         const result = await window.grokDesktop.setModel(nextId);
-        if (sessionAtStart !== sessionIdRef.current) return;
+        if (
+          gen !== modelApplyGen.current ||
+          sessionAtStart !== sessionIdRef.current
+        ) {
+          return;
+        }
         if (result.agentSynced === false) {
           setPendingModelId(null);
           setModelSelectEpoch((n) => n + 1);
@@ -339,13 +348,20 @@ export default function App() {
           : result.modelId || nextId;
         appendSystem(`Model: ${label}`);
       } catch (e: unknown) {
-        if (sessionAtStart !== sessionIdRef.current) return;
+        if (
+          gen !== modelApplyGen.current ||
+          sessionAtStart !== sessionIdRef.current
+        ) {
+          return;
+        }
         setPendingModelId(null);
         setModelSelectEpoch((n) => n + 1);
         const msg = e instanceof Error ? e.message : String(e);
         setError(`Failed to set model: ${msg}`);
       } finally {
-        modelApplyLock.current = false;
+        if (gen === modelApplyGen.current) {
+          modelApplyLock.current = false;
+        }
       }
     },
     [modelId, appendSystem],

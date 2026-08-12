@@ -748,7 +748,8 @@ function registerIpc() {
   });
 
   ipcMain.handle("agent:set-model", async (e, modelId) => {
-    const agent = sessionFromEvent(e)?.agent;
+    const ws = sessionFromEvent(e);
+    const agent = ws?.agent;
     if (!agent?.setModel) {
       return {
         modelId: null,
@@ -758,7 +759,19 @@ function registerIpc() {
         error: "No live agent",
       };
     }
-    return agent.setModel(modelId);
+    const sessionId = agent.sessionId;
+    const result = await agent.setModel(modelId);
+    const live = sessionFromEvent(e)?.agent;
+    if (live !== agent || live?.sessionId !== sessionId) {
+      return {
+        ...(typeof live?._modelsPublic === "function"
+          ? live._modelsPublic()
+          : result),
+        agentSynced: false,
+        error: "Session changed",
+      };
+    }
+    return result;
   });
 
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {

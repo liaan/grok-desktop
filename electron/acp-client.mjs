@@ -980,7 +980,8 @@ export class GrokAcpClient extends EventEmitter {
     if (nextId === this.currentModelId) {
       return { ...this._modelsPublic(), agentSynced: true };
     }
-    if (!this.sessionId || !this.ready || !this.proc) {
+    const sessionAtStart = this.sessionId;
+    if (!sessionAtStart || !this.ready || !this.proc) {
       return {
         ...this._modelsPublic(),
         agentSynced: false,
@@ -992,12 +993,20 @@ export class GrokAcpClient extends EventEmitter {
       await this.request(
         "session/set_model",
         {
-          sessionId: this.sessionId,
+          sessionId: sessionAtStart,
           modelId: nextId,
           _meta: { reasoningEffort: this.reasoningEffort },
         },
         { timeoutMs: 15_000 },
       );
+      // /new or load replaced the live session while this RPC was in flight.
+      if (this.sessionId !== sessionAtStart) {
+        return {
+          ...this._modelsPublic(),
+          agentSynced: false,
+          error: "Session changed",
+        };
+      }
       this.currentModelId = nextId;
       const entry = this.availableModels.find((m) => m.modelId === nextId);
       this.currentModelName = entry?.name || nextId;
