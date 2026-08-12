@@ -37,11 +37,6 @@ jobs:
             args: --linux
 
     runs-on: ${{ matrix.os }}
-    env:
-      # Must be set for npm ci (electron's install.js) AND electron-builder.
-      # Cache restore happens before npm ci so Linux does not re-download Electron.
-      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
     steps:
       - name: Checkout
@@ -84,6 +79,10 @@ jobs:
 
       - name: Install dependencies
         shell: bash
+        env:
+          # runner.* is valid on steps, not job-level env.
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: |
           set -uo pipefail
           mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
@@ -115,6 +114,8 @@ jobs:
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: |
           set -uo pipefail
           mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
