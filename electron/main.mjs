@@ -22,9 +22,15 @@ import { mergeRestartResult } from "./agent-restart.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 import {
+  addMcpServer,
   checkGrokUpdate,
+  disableMcpServer,
+  doctorMcp,
+  enableMcpServer,
   getGrokEngine,
   installGrokUpdate,
+  listMcpServers,
+  removeMcpServer,
 } from "./grok-cli.mjs";
 import {
   setupAutoUpdater,
@@ -169,6 +175,30 @@ function openSettingsFromMenu() {
     ws.win.focus();
     send(ws, "app:open-settings");
   }
+}
+
+/** Project cwd for grok mcp --scope project (user scope still works without). */
+function mcpCwdFromEvent(e) {
+  const ws = sessionFromEvent(e);
+  if (!ws) return undefined;
+  const cwd = ws.agent?.cwd || ws.lastCwd;
+  return cwd || undefined;
+}
+
+/** @param {unknown} err */
+function mcpIpcError(err) {
+  const message =
+    err && typeof err === "object" && "message" in err
+      ? String(/** @type {{ message?: unknown }} */ (err).message || err)
+      : String(err || "MCP command failed");
+  return {
+    ok: false,
+    data: null,
+    stdout: "",
+    stderr: message,
+    code: null,
+    error: message,
+  };
 }
 
 /**
@@ -571,6 +601,56 @@ function registerIpc() {
   ipcMain.handle("grok:update-check", async () => checkGrokUpdate());
 
   ipcMain.handle("grok:update-install", async () => installGrokUpdate());
+
+  ipcMain.handle("mcp:list", async (e) => {
+    return listMcpServers({ cwd: mcpCwdFromEvent(e) });
+  });
+
+  ipcMain.handle("mcp:add", async (e, spec = {}) => {
+    const cwd = mcpCwdFromEvent(e);
+    if (spec?.scope === "project" && !cwd) {
+      return mcpIpcError("Open a project to add a project-scoped MCP server.");
+    }
+    try {
+      return await addMcpServer(spec || {}, { cwd });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:enable", async (e, name) => {
+    try {
+      return await enableMcpServer(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:disable", async (e, name) => {
+    try {
+      return await disableMcpServer(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:remove", async (e, payload) => {
+    const name = typeof payload === "string" ? payload : payload?.name;
+    const scope = typeof payload === "object" && payload ? payload.scope : undefined;
+    try {
+      return await removeMcpServer(name, { cwd: mcpCwdFromEvent(e), scope });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:doctor", async (e, name) => {
+    try {
+      return await doctorMcp(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
 
   ipcMain.handle("project:pick", async (e) => {
     const ws = sessionFromEvent(e);

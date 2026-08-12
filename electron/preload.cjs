@@ -61,6 +61,13 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getGrokEngine: () => ipcRenderer.invoke("grok:engine"),
   checkGrokUpdate: () => ipcRenderer.invoke("grok:update-check"),
   installGrokUpdate: () => ipcRenderer.invoke("grok:update-install"),
+  listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  addMcpServer: (spec) => ipcRenderer.invoke("mcp:add", spec || {}),
+  enableMcpServer: (name) => ipcRenderer.invoke("mcp:enable", name),
+  disableMcpServer: (name) => ipcRenderer.invoke("mcp:disable", name),
+  removeMcpServer: (name, opts) =>
+    ipcRenderer.invoke("mcp:remove", { name, scope: opts?.scope }),
+  doctorMcp: (name) => ipcRenderer.invoke("mcp:doctor", name),
 
   on: (channel, handler) => {
     const valid = [

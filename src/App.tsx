@@ -77,6 +77,7 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"mcp" | null>(null);
   const [offerAgentRestart, setOfferAgentRestart] = useState(false);
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
 
@@ -594,10 +595,52 @@ export default function App() {
         ? "platform-win"
         : "platform-linux";
 
-  const onOpenSettings = useCallback(() => setSettingsOpen(true), []);
+  const onOpenSettings = useCallback((section?: "mcp") => {
+    setSettingsSection(section || null);
+    setSettingsOpen(true);
+  }, []);
   const onComposerError = useCallback((message: string) => {
     setError(message);
   }, []);
+
+  const settingsDialog = (
+    <SettingsDialog
+      open={settingsOpen}
+      onClose={() => {
+        setSettingsOpen(false);
+        setSettingsSection(null);
+      }}
+      theme={theme}
+      privacyMode={privacyMode}
+      codingDataOptIn={codingDataOptIn}
+      codingDataNote={codingDataNote}
+      permissionMode={permissionMode}
+      allowOutsideProject={allowOutsideProject}
+      sandboxTerminal={sandboxTerminal}
+      sandboxStatus={sandboxStatus}
+      debugLogging={debugLogging}
+      debugLogPath={debugLogPath}
+      onSetTheme={(t) => void setAppTheme(t)}
+      onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
+      onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
+      onSetPermissionMode={(m) => void applyPermissionMode(m)}
+      onToggleAllowOutside={() => void toggleAllowOutside()}
+      onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
+      onSetDebugLogging={(next) => void applyDebugLogging(next)}
+      onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
+      onRestartAgent={() => {
+        setSettingsOpen(false);
+        setSettingsSection(null);
+        void restartAgent();
+      }}
+      onRestartAfterMcpWrite={() => restartAgent()}
+      restarting={isOpening}
+      offerRestart={offerAgentRestart}
+      grokBinary={info?.grokBinary || auth?.binary || ""}
+      hasProject={Boolean(project)}
+      focusSection={settingsSection}
+    />
+  );
 
   if (!project) {
     return (
@@ -626,8 +669,10 @@ export default function App() {
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
           onOpenProject={(cwd) => void openProject(cwd)}
+          onOpenMcpSettings={() => onOpenSettings("mcp")}
           platform={platform}
         />
+        {settingsDialog}
       </PrivacyProvider>
     );
   }
@@ -651,37 +696,10 @@ export default function App() {
           onOpenProject={(cwd) => void openProject(cwd, { mode: "continue" })}
           onOpenSession={(opts) => void openSession(opts)}
           onLogout={() => void handleLogout()}
+          onOpenMcpSettings={() => onOpenSettings("mcp")}
         />
 
-        <SettingsDialog
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          theme={theme}
-          privacyMode={privacyMode}
-          codingDataOptIn={codingDataOptIn}
-          codingDataNote={codingDataNote}
-          permissionMode={permissionMode}
-          allowOutsideProject={allowOutsideProject}
-          sandboxTerminal={sandboxTerminal}
-          sandboxStatus={sandboxStatus}
-          debugLogging={debugLogging}
-          debugLogPath={debugLogPath}
-          onSetTheme={(t) => void setAppTheme(t)}
-          onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
-          onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
-          onSetPermissionMode={(m) => void applyPermissionMode(m)}
-          onToggleAllowOutside={() => void toggleAllowOutside()}
-          onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
-          onSetDebugLogging={(next) => void applyDebugLogging(next)}
-          onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
-          onRestartAgent={() => {
-            setSettingsOpen(false);
-            void restartAgent();
-          }}
-          restarting={isOpening}
-          offerRestart={offerAgentRestart}
-          grokBinary={info?.grokBinary || auth?.binary || ""}
-        />
+        {settingsDialog}
 
         <main className="main">
           <ChatTopbar

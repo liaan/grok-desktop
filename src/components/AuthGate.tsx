@@ -34,6 +34,7 @@ type Props = {
   onLogout: () => void;
   onSetApiKey: (key: string) => void;
   onOpenInstallDocs: () => void;
+  onOpenMcpSettings?: () => void;
 };
 
 export function AuthGate({
@@ -48,6 +49,7 @@ export function AuthGate({
   onLogout,
   onSetApiKey,
   onOpenInstallDocs,
+  onOpenMcpSettings,
 }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -200,8 +202,21 @@ export function AuthGate({
               <span className="auth-muted"> · same as CLI</span>
             </div>
             <div>
-              <strong>{backbone.mcpServers.length}</strong> MCP
-              {backbone.mcpServers.length === 1 ? "" : "s"}
+              {onOpenMcpSettings ? (
+                <button
+                  type="button"
+                  className="auth-link"
+                  onClick={onOpenMcpSettings}
+                >
+                  <strong>{backbone.mcpServers.length}</strong> MCP
+                  {backbone.mcpServers.length === 1 ? "" : "s"}
+                </button>
+              ) : (
+                <>
+                  <strong>{backbone.mcpServers.length}</strong> MCP
+                  {backbone.mcpServers.length === 1 ? "" : "s"}
+                </>
+              )}
               {backbone.mcpServers.length > 0 ? (
                 <span className="auth-muted">
                   {" "}
@@ -210,7 +225,7 @@ export function AuthGate({
               ) : (
                 <span className="auth-muted">
                   {" "}
-                  · configure in CLI ~/.grok/config.toml
+                  · add in Settings — no terminal
                 </span>
               )}
             </div>

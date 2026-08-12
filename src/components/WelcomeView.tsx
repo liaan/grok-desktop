@@ -26,6 +26,7 @@ export function WelcomeView({
   onSetApiKey,
   onPickProject,
   onOpenProject,
+  onOpenMcpSettings,
   platform,
 }: {
   platformClass: string;
@@ -47,6 +48,7 @@ export function WelcomeView({
   onSetApiKey: (key: string) => void;
   onPickProject: () => void;
   onOpenProject: (cwd: string) => void;
+  onOpenMcpSettings?: () => void;
   platform?: string;
 }) {
   return (
@@ -64,7 +66,7 @@ export function WelcomeView({
           <p className="welcome-lead">
             Graphical shell over the same agent as the CLI. Sign in once in the
             app, then open a project — skills and MCP from <code>~/.grok</code>{" "}
-            load automatically (configure them in the CLI for now).
+            load automatically. Add MCP servers in Settings — no terminal.
           </p>
 
           <AuthGate
@@ -78,6 +80,7 @@ export function WelcomeView({
             onLogout={onLogout}
             onSetApiKey={onSetApiKey}
             onOpenInstallDocs={() => void window.grokDesktop.openInstallDocs()}
+            onOpenMcpSettings={onOpenMcpSettings}
             platform={platform}
           />
 

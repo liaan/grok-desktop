@@ -2577,8 +2577,8 @@ button {
 }
 
 .modal-dialog {
-  width: min(440px, 100%);
-  max-height: min(90vh, 640px);
+  width: min(520px, 100%);
+  max-height: min(90vh, 720px);
   overflow: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -2672,6 +2672,97 @@ button {
   display: block;
   margin-top: 6px;
   color: var(--warn);
+}
+
+.settings-lead {
+  margin: 0 0 12px;
+}
+
+.settings-input {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--code-bg, rgba(20, 20, 26, 0.85));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+[data-theme="light"] .settings-input {
+  background: #fff;
+}
+
+.mcp-row {
+  cursor: default;
+  align-items: flex-start;
+}
+
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.mcp-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.mcp-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mcp-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.settings-doctor {
+  margin: 10px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 10px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
+.auth-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-link:hover {
+  color: var(--accent);
 }
 
 .coding-data-toggle {

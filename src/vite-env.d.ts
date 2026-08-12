@@ -137,6 +137,45 @@ export type GrokUpdateInstall = {
   error?: string | null;
 };
 
+/** Sanitized MCP row — env/header *values* never cross IPC. */
+export type McpServerInfo = {
+  name: string;
+  transport?: string | null;
+  enabled?: boolean | null;
+  scope?: string | null;
+  command?: string | null;
+  args?: string[];
+  url?: string | null;
+  envKeys?: string[];
+  headerKeys?: string[];
+  source?: string | null;
+};
+
+export type McpAddSpec = {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Array<{ key: string; value: string }>;
+  headers?: Array<{ name: string; value: string }>;
+  scope?: "user" | "project";
+};
+
+export type McpListResult = {
+  ok: boolean;
+  servers: McpServerInfo[];
+  source?: "list" | "inspect";
+  error?: string | null;
+};
+
+export type McpWriteResult = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
 export type BackboneSummary = {
   ok: boolean;
   skills: Array<{ name: string; description?: string; source?: string }>;
@@ -392,6 +431,15 @@ declare global {
       getGrokEngine: () => Promise<GrokEngineInfo>;
       checkGrokUpdate: () => Promise<GrokUpdateCheck>;
       installGrokUpdate: () => Promise<GrokUpdateInstall>;
+      listMcpServers: () => Promise<McpListResult>;
+      addMcpServer: (spec: McpAddSpec) => Promise<McpWriteResult>;
+      enableMcpServer: (name: string) => Promise<McpWriteResult>;
+      disableMcpServer: (name: string) => Promise<McpWriteResult>;
+      removeMcpServer: (
+        name: string,
+        opts?: { scope?: "user" | "project" },
+      ) => Promise<McpWriteResult>;
+      doctorMcp: (name?: string) => Promise<McpWriteResult>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
   }
