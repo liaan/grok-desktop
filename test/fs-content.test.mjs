@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  decodeUtf8Text,
   isLikelyBinary,
   mimeFromExtension,
   readFileForAcp,
@@ -150,6 +151,68 @@ test("readFileForEdit flags binary without throwing", async () => {
   }
 });
 
+test("decodeUtf8Text rejects invalid sequences", () => {
+  assert.equal(decodeUtf8Text(Buffer.from("ok")), "ok");
+  assert.equal(decodeUtf8Text(Buffer.from([])), "");
+  assert.equal(decodeUtf8Text(Buffer.from([0xe9])), null);
+  assert.equal(decodeUtf8Text(Buffer.from([0xef, 0xbf, 0xbd])), "\uFFFD");
+});
+
+test("readFileForEdit keeps a file that contains U+FFFD as text", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "fffd.txt");
+  fs.writeFileSync(file, "before \uFFFD after", "utf8");
+  try {
+    const r = await readFileForEdit(file);
+    assert.equal(r.binary, false);
+    assert.equal(r.text, "before \uFFFD after");
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("readFileForEdit cap mid-sequence is truncated text not binary", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "cafe.txt");
+  fs.writeFileSync(file, Buffer.from([0x63, 0x61, 0x66, 0xc3, 0xa9, 0x21]));
+  try {
+    const r = await readFileForEdit(file, { cap: 4 });
+    assert.equal(r.binary, false);
+    assert.equal(r.truncated, true);
+    assert.equal(r.text, "caf");
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("readFileForEdit treats invalid UTF-8 as binary", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "latin1.txt");
+  fs.writeFileSync(file, Buffer.from([0x48, 0xe9, 0x6c]));
+  try {
+    const r = await readFileForEdit(file);
+    assert.equal(r.binary, true);
+    assert.equal(r.text, "");
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
 test("writeFileForEdit overwrites text and refuses binary", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
   const file = path.join(dir, "a.ts");
@@ -161,7 +224,68 @@ test("writeFileForEdit overwrites text and refuses binary", async () => {
       () => writeFileForEdit(file, "a\u0000b"),
       /binary/i,
     );
+    await assert.rejects(() => writeFileForEdit(file, undefined), /must be text/i);
+    await assert.rejects(() => writeFileForEdit(file, null), /must be text/i);
     assert.equal(fs.readFileSync(file, "utf8"), "export const n = 1;\n");
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("writeFileForEdit refuses to overwrite invalid UTF-8", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "latin1.txt");
+  const original = Buffer.from([0x48, 0xe9, 0x6c]);
+  fs.writeFileSync(file, original);
+  try {
+    await assert.rejects(
+      () => writeFileForEdit(file, "hello"),
+      /overwrite a binary file/i,
+    );
+    assert.deepEqual(fs.readFileSync(file), original);
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("writeFileForEdit refuses to overwrite an existing binary file", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "x.bin");
+  const original = Buffer.from([0x00, 0x01, 0x02]);
+  fs.writeFileSync(file, original);
+  try {
+    await assert.rejects(
+      () => writeFileForEdit(file, "not-binary"),
+      /overwrite a binary file/i,
+    );
+    assert.deepEqual(fs.readFileSync(file), original);
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("writeFileForEdit allows saving an empty string", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "a.ts");
+  fs.writeFileSync(file, "old");
+  try {
+    await writeFileForEdit(file, "");
+    assert.equal(fs.readFileSync(file, "utf8"), "");
   } finally {
     try {
       fs.unlinkSync(file);

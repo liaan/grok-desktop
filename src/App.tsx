@@ -77,6 +77,7 @@ export default function App() {
   const [allowPrerelease, setAllowPrerelease] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
+  const [filesDirty, setFilesDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     "mcp" | "plugins" | "skills" | null
@@ -278,11 +279,33 @@ export default function App() {
       onMissingBinary,
     });
 
+  const confirmDiscardFiles = useCallback(() => {
+    if (!filesDirty) return true;
+    return window.confirm("Discard unsaved edits?");
+  }, [filesDirty]);
+
+  const openProjectGuarded = useCallback(
+    async (
+      cwd: string,
+      opts?: { mode?: "continue" | "new" | "resume"; sessionId?: string },
+    ) => {
+      if (!confirmDiscardFiles()) return;
+      await openProject(cwd, opts);
+    },
+    [confirmDiscardFiles, openProject],
+  );
+
+  const leaveProjectGuarded = useCallback(async () => {
+    if (!confirmDiscardFiles()) return;
+    await leaveProject();
+  }, [confirmDiscardFiles, leaveProject]);
+
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
       if (!signedIn) setError("Sign in to Grok first.");
       return;
     }
+    if (!confirmDiscardFiles()) return;
     const cwd = await window.grokDesktop.pickProject();
     if (cwd) await openProject(cwd);
   };
@@ -405,6 +428,7 @@ export default function App() {
   const handleLogout = async () => {
     setAuthBusy(true);
     try {
+      if (!confirmDiscardFiles()) return;
       await leaveProject();
       const res = await window.grokDesktop.logout();
       if (res.status) setAuth(res.status);
@@ -687,7 +711,7 @@ export default function App() {
           onLogout={() => void handleLogout()}
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
-          onOpenProject={(cwd) => void openProject(cwd)}
+          onOpenProject={(cwd) => void openProjectGuarded(cwd)}
           onOpenSettingsSection={onOpenSettings}
           platform={platform}
         />
@@ -712,7 +736,7 @@ export default function App() {
           isOpening={isOpening}
           authBusy={authBusy}
           onPickProject={() => void pickProject()}
-          onOpenProject={(cwd) => void openProject(cwd, { mode: "continue" })}
+          onOpenProject={(cwd) => void openProjectGuarded(cwd, { mode: "continue" })}
           onOpenSession={(opts) => void openSession(opts)}
           onLogout={() => void handleLogout()}
           onOpenSettingsSection={onOpenSettings}
@@ -774,7 +798,7 @@ export default function App() {
                   type="button"
                   style={{ marginLeft: 12 }}
                   onClick={() => {
-                    void leaveProject();
+                    void leaveProjectGuarded();
                   }}
                 >
                   Sign in again
@@ -828,6 +852,7 @@ export default function App() {
           project={project}
           backgroundTasks={backgroundTasks}
           sessionMode={sessionMode}
+          onDirtyChange={setFilesDirty}
         />
 
         <PlanApprovalDialog

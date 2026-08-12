@@ -160,6 +160,9 @@ export function SettingsDialog({
   focusSection?: "mcp" | "plugins" | "skills" | null;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pageRootRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [page, setPage] = useState<SettingsPageId>("general");
   const [engine, setEngine] = useState<GrokEngineInfo | null>(null);
   const [engineBusy, setEngineBusy] = useState(false);
@@ -192,12 +195,48 @@ export function SettingsDialog({
   useEffect(() => {
     if (!open) return;
     closeRef.current?.focus();
+    const root = pageRootRef.current;
+    const inOtherModal = (el: EventTarget | null) =>
+      el instanceof Element && Boolean(el.closest(".modal-backdrop"));
+    const otherModalOpen = () =>
+      Boolean(document.querySelector(".modal-backdrop"));
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (inOtherModal(e.target) || otherModalOpen()) return;
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !root) return;
+      const nodes = root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      const list = Array.from(nodes).filter(
+        (el) => el.tabIndex !== -1 && !el.closest("[disabled]"),
+      );
+      if (list.length === 0) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (!root) return;
+      if (inOtherModal(e.target)) return;
+      if (e.target instanceof Node && root.contains(e.target)) return;
+      closeRef.current?.focus();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -207,6 +246,7 @@ export function SettingsDialog({
 
   return (
     <div
+      ref={pageRootRef}
       className="settings-page"
       role="dialog"
       aria-modal="true"

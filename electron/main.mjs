@@ -56,7 +56,7 @@ import {
   getCodingDataStatus,
   setCodingDataOptIn,
 } from "./coding-data.mjs";
-import { assertPathInProject } from "./path-safety.mjs";
+import { assertPathInProject, isPathInProject } from "./path-safety.mjs";
 import { readFileForEdit, writeFileForEdit } from "./fs-content.mjs";
 import {
   listEditors,
@@ -1073,12 +1073,13 @@ function registerIpc() {
       .filter((ent) => !ent.name.startsWith("."))
       .slice(0, 200)
       .map((ent) => {
-        // Treat symlinks-to-dirs as directories so the browser can enter them
-        // (still gated by assertPathInProject on the next listDir).
+        // Symlink-to-dir is enterable only when the realpath stays in-project.
         let isDirectory = ent.isDirectory();
         if (!isDirectory && ent.isSymbolicLink()) {
+          const child = path.join(safe, ent.name);
           try {
-            isDirectory = fs.statSync(path.join(safe, ent.name)).isDirectory();
+            isDirectory =
+              fs.statSync(child).isDirectory() && isPathInProject(root, child);
           } catch {
             isDirectory = false;
           }

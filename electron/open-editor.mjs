@@ -61,8 +61,8 @@ const PRESETS = [
       "Contents/Resources/app/bin/code",
     ],
     winRel: [
-      path.join("Programs", "cursor", "resources", "app", "bin", "cursor.cmd"),
       path.join("Programs", "cursor", "Cursor.exe"),
+      path.join("Programs", "cursor", "resources", "app", "bin", "cursor.cmd"),
     ],
   },
   {
@@ -72,13 +72,13 @@ const PRESETS = [
     darwinApps: ["Visual Studio Code"],
     darwinCli: ["Contents/Resources/app/bin/code"],
     winRel: [
+      path.join("Programs", "Microsoft VS Code", "Code.exe"),
       path.join(
         "Programs",
         "Microsoft VS Code",
         "bin",
         "code.cmd",
       ),
-      path.join("Programs", "Microsoft VS Code", "Code.exe"),
     ],
   },
   {
@@ -88,6 +88,11 @@ const PRESETS = [
     darwinApps: ["Visual Studio Code - Insiders"],
     darwinCli: ["Contents/Resources/app/bin/code-insiders"],
     winRel: [
+      path.join(
+        "Programs",
+        "Microsoft VS Code Insiders",
+        "Code - Insiders.exe",
+      ),
       path.join(
         "Programs",
         "Microsoft VS Code Insiders",
@@ -111,6 +116,7 @@ const PRESETS = [
     darwinApps: ["Windsurf"],
     darwinCli: ["Contents/Resources/app/bin/windsurf"],
     winRel: [
+      path.join("Programs", "Windsurf", "Windsurf.exe"),
       path.join(
         "Programs",
         "Windsurf",
@@ -136,6 +142,7 @@ const PRESETS = [
     darwinApps: ["VSCodium"],
     darwinCli: ["Contents/Resources/app/bin/codium"],
     winRel: [
+      path.join("Programs", "VSCodium", "VSCodium.exe"),
       path.join("Programs", "VSCodium", "bin", "codium.cmd"),
     ],
   },
@@ -193,8 +200,19 @@ function pathDirs(env, platform) {
  * }} [opts]
  * @returns {string | null}
  */
-export function whichBin(name, opts = {}) {
-  if (!name) return null;
+/**
+ * Every PATH hit for `name` (one per directory). Callers must keep scanning
+ * after rejecting a foreign editor's shim.
+ * @param {string} name
+ * @param {{
+ *   platform?: string,
+ *   env?: Record<string, string | undefined>,
+ *   exists?: (p: string) => boolean,
+ * }} [opts]
+ * @returns {string[]}
+ */
+export function whichBinAll(name, opts = {}) {
+  if (!name) return [];
   const platform = opts.platform || process.platform;
   const env = opts.env || process.env;
   const exists = opts.exists || defaultExists;
@@ -206,13 +224,22 @@ export function whichBin(name, opts = {}) {
     platform === "win32" && !path.extname(name)
       ? [name, ...exts.map((e) => name + e)]
       : [name];
+  /** @type {string[]} */
+  const out = [];
   for (const dir of pathDirs(env, platform)) {
     for (const n of names) {
       const candidate = path.join(dir, n);
-      if (exists(candidate)) return candidate;
+      if (exists(candidate)) {
+        out.push(candidate);
+        break;
+      }
     }
   }
-  return null;
+  return out;
+}
+
+export function whichBin(name, opts = {}) {
+  return whichBinAll(name, opts)[0] || null;
 }
 
 /**
@@ -307,6 +334,103 @@ function resolveCtx(opts = {}) {
 }
 
 /**
+ * Install-folder name from a `winRel` path (`Programs/Microsoft VS Code/…`
+ * → `microsoft vs code`). Matched with `/folder/` boundaries so Insiders
+ * does not count as stable VS Code.
+ * @param {string} rel
+ */
+function winInstallFolder(rel) {
+  const parts = String(rel).replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts[0].toLowerCase() === "programs" && parts[1]) {
+    return parts[1].toLowerCase();
+  }
+  return parts[0].toLowerCase();
+}
+
+function pathHasFolder(posixLower, folder) {
+  if (!folder) return false;
+  return (
+    posixLower.includes(`/${folder}/`) || posixLower.endsWith(`/${folder}`)
+  );
+}
+
+/**
+ * Cursor / Windsurf / VSCodium ship a `code` shim. A PATH hit inside another
+ * editor's install must not count as VS Code (or vice versa).
+ * @param {string} found
+ * @param {EditorPreset} preset
+ */
+function binBelongsToOtherEditor(found, preset) {
+  const lower = String(found).replace(/\\/g, "/").toLowerCase();
+  for (const other of PRESETS) {
+    if (other.id === preset.id) continue;
+    for (const app of other.darwinApps) {
+      if (lower.includes(`/${app.toLowerCase()}.app/`)) return true;
+    }
+    /** @type {Set<string>} */
+    const folders = new Set();
+    for (const rel of other.winRel) {
+      const folder = winInstallFolder(rel);
+      if (folder) folders.add(folder);
+    }
+    for (const folder of folders) {
+      if (pathHasFolder(lower, folder)) return true;
+    }
+  }
+  return false;
+}
+
+const SYSTEM_BIN_DIRS = new Set([
+  "/usr/bin",
+  "/usr/local/bin",
+  "/bin",
+  "/opt/homebrew/bin",
+  "/opt/local/bin",
+]);
+
+/**
+ * User-local `code` next to `cursor` is usually a shim. Official packages
+ * share `/usr/bin` — do not hide real VS Code there.
+ * @param {string} found
+ * @param {EditorPreset} preset
+ * @param {ReturnType<typeof resolveCtx>} ctx
+ */
+function binHasForeignSibling(found, preset, ctx) {
+  if (preset.id !== "code") return false;
+  const dir = path.dirname(found).replace(/\\/g, "/").replace(/\/+$/, "");
+  if (SYSTEM_BIN_DIRS.has(dir)) return false;
+  const names = ["cursor", "windsurf", "codium", "code-insiders"];
+  const extras =
+    ctx.platform === "win32"
+      ? names.flatMap((n) => [n, `${n}.exe`, `${n}.cmd`, `${n}.EXE`, `${n}.CMD`])
+      : names;
+  return extras.some((n) => ctx.exists(path.join(path.dirname(found), n)));
+}
+
+function binOwnedByPreset(found, preset, ctx) {
+  if (binBelongsToOtherEditor(found, preset)) return false;
+  if (binHasForeignSibling(found, preset, ctx)) return false;
+  return true;
+}
+
+/**
+ * @param {Record<string, string | undefined>} env
+ * @param {string} home
+ * @returns {string[]}
+ */
+function winProbeBases(env, home) {
+  const local = env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+  const pfs = [
+    env.PROGRAMFILES,
+    env["PROGRAMFILES(X86)"],
+    env.ProgramFiles,
+    env["ProgramFiles(x86)"],
+  ].filter(Boolean);
+  return [local, ...pfs];
+}
+
+/**
  * @param {EditorPreset} preset
  * @param {ReturnType<typeof resolveCtx>} ctx
  * @returns {{ kind: 'cli' | 'app' | 'system', path?: string, app?: string } | null}
@@ -322,11 +446,7 @@ function locatePreset(preset, ctx) {
     return { kind: "system", app: "TextEdit" };
   }
 
-  for (const bin of preset.bins) {
-    const found = whichBin(bin, { platform, env, exists });
-    if (found) return { kind: "cli", path: found };
-  }
-
+  // App-specific installs first — PATH `code` is ambiguous (Cursor ships one).
   if (platform === "darwin") {
     for (const appName of preset.darwinApps) {
       const appPath = darwinAppPath(appName, home, exists);
@@ -341,9 +461,25 @@ function locatePreset(preset, ctx) {
 
   if (platform === "win32") {
     const local = env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-    for (const rel of preset.winRel) {
-      const p = path.join(local, rel);
-      if (exists(p)) return { kind: "cli", path: p };
+    for (const base of winProbeBases(env, home)) {
+      const isPf = base !== local;
+      for (const rel of preset.winRel) {
+        const parts = String(rel).split(/[/\\]/).filter(Boolean);
+        const rest =
+          isPf && parts[0] && parts[0].toLowerCase() === "programs"
+            ? parts.slice(1)
+            : parts;
+        const p = path.join(base, ...rest);
+        if (exists(p)) return { kind: "cli", path: p };
+      }
+    }
+  }
+
+  for (const bin of preset.bins) {
+    for (const found of whichBinAll(bin, { platform, env, exists })) {
+      if (binOwnedByPreset(found, preset, ctx)) {
+        return { kind: "cli", path: found };
+      }
     }
   }
 
@@ -391,6 +527,8 @@ export function resolvePreferredEditor(preference, opts = {}) {
     if (preset) {
       const loc = locatePreset(preset, ctx);
       if (loc) return { id: preset.id, label: preset.label, loc };
+      // Fail closed — do not silently open Cursor/TextEdit as "VS Code".
+      return null;
     }
   }
 
@@ -507,6 +645,49 @@ export function planOpenInEditor(filePath, opts = {}) {
 }
 
 /**
+ * Quote one cmd.exe word (`""` escapes a quote). `%` / `!` are escaped so
+ * `notes%PATH%.md` is not expanded when launched via `cmd /c`.
+ * @param {string} s
+ */
+export function quoteWinCmdArg(s) {
+  let str = String(s).replace(/%/g, "%%").replace(/!/g, "^!");
+  if (str === "") return '""';
+  if (!/[\s"&<>|^()]/.test(str)) return str;
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+/**
+ * `.cmd` plans use `cmd.exe /d /s /c call …` with `shell: false` so Node
+ * does not re-join argv and `%`/`!` are not expanded by a second shell.
+ * @param {{ ok: true, cmd: string, args: string[], shell?: boolean }} plan
+ * @param {{ comspec?: string }} [opts]
+ * @returns {{
+ *   cmd: string,
+ *   args: string[],
+ *   shell: boolean,
+ *   windowsVerbatimArguments?: boolean,
+ * }}
+ */
+export function spawnArgsForPlan(plan, opts = {}) {
+  if (!plan.shell) {
+    return { cmd: plan.cmd, args: plan.args, shell: false };
+  }
+  const comspec = opts.comspec || "cmd.exe";
+  const line = [
+    "call",
+    quoteWinCmdArg(plan.cmd),
+    ...plan.args.map(quoteWinCmdArg),
+  ].join(" ");
+  // cmd /s /c "<line>" — verbatim so Node does not re-escape the quotes.
+  return {
+    cmd: comspec,
+    args: ["/d", "/s", "/c", `"${line}"`],
+    shell: false,
+    windowsVerbatimArguments: true,
+  };
+}
+
+/**
  * @param {string} filePath
  * @param {{
  *   preference?: string,
@@ -520,14 +701,16 @@ export async function openInEditor(filePath, opts = {}) {
   const plan = planOpenInEditor(filePath, opts);
   if (!plan.ok) throw new Error(plan.error);
   const run = opts.spawn || spawn;
+  const spawnSpec = spawnArgsForPlan(plan);
   await new Promise((resolve, reject) => {
     let settled = false;
-    const child = run(plan.cmd, plan.args, {
+    const child = run(spawnSpec.cmd, spawnSpec.args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
       env: opts.env || buildGrokEnv(),
-      shell: Boolean(plan.shell),
+      shell: spawnSpec.shell,
+      windowsVerbatimArguments: Boolean(spawnSpec.windowsVerbatimArguments),
     });
     child.once("error", (err) => {
       if (settled) return;

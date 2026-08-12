@@ -32,6 +32,47 @@ test("assertPathInProject rejects sibling paths", () => {
   );
 });
 
+test("assertPathInProject rejects symlink to an outside file", () => {
+  const outside = path.join(tmpRoot, "secret.txt");
+  const link = path.join(project, "escape");
+  fs.writeFileSync(outside, "nope");
+  try {
+    fs.symlinkSync(outside, link);
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === "EPERM") return;
+    throw err;
+  }
+  try {
+    assert.throws(() => assertPathInProject(project, "escape"), /outside/);
+  } finally {
+    try {
+      fs.unlinkSync(link);
+      fs.unlinkSync(outside);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("assertPathInProject allows an in-project symlink", () => {
+  const link = path.join(project, "alias.txt");
+  try {
+    fs.symlinkSync(path.join(project, "ok.txt"), link);
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === "EPERM") return;
+    throw err;
+  }
+  try {
+    assert.equal(assertPathInProject(project, "alias.txt"), link);
+  } finally {
+    try {
+      fs.unlinkSync(link);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
 test("resolveProjectPath allowGrokHome allows GROK_HOME paths", () => {
   const home = path.resolve(grokHomeDir());
   const skill = path.join(home, "skills", "example", "SKILL.md");

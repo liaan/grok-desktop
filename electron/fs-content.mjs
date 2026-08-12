@@ -82,6 +82,44 @@ export function isLikelyBinary(buf) {
   return false;
 }
 
+/**
+ * Decode as UTF-8 only when re-encoding is byte-identical.
+ * Latin-1 / invalid sequences become U+FFFD and must not be saved back.
+ * @param {Buffer} buf
+ * @returns {string | null}
+ */
+export function decodeUtf8Text(buf) {
+  if (!buf || buf.length === 0) return "";
+  const text = buf.toString("utf8");
+  if (Buffer.byteLength(text, "utf8") !== buf.length) return null;
+  return text;
+}
+
+/**
+ * Drop a trailing incomplete UTF-8 sequence so a byte cap does not look binary.
+ * @param {Buffer} buf
+ * @returns {Buffer}
+ */
+export function sliceUtf8Prefix(buf) {
+  if (!buf || buf.length === 0) return buf || Buffer.alloc(0);
+  const end = buf.length;
+  let i = end - 1;
+  while (i >= 0 && i >= end - 3 && (buf[i] & 0xc0) === 0x80) i--;
+  if (i < 0) return buf.subarray(0, 0);
+  const lead = buf[i];
+  if ((lead & 0x80) === 0) return buf.subarray(0, i + 1);
+  const need =
+    (lead & 0xe0) === 0xc0
+      ? 2
+      : (lead & 0xf0) === 0xe0
+        ? 3
+        : (lead & 0xf8) === 0xf0
+          ? 4
+          : 0;
+  if (need > 0 && i + need <= end) return buf.subarray(0, end);
+  return buf.subarray(0, i);
+}
+
 /** Renderer file peek: never slurp more than this. */
 export const PEEK_READ_CAP = 256 * 1024;
 
@@ -113,13 +151,19 @@ export async function readFileForEdit(filePath, opts = {}) {
     const buf = Buffer.alloc(toRead);
     const { bytesRead } = await fh.read(buf, 0, toRead, 0);
     const slice = buf.subarray(0, bytesRead);
+    const truncated = st.size > cap;
     if (isLikelyBinary(slice)) {
-      return { text: "", binary: true, truncated: false, size: st.size };
+      return { text: "", binary: true, truncated, size: st.size };
+    }
+    const aligned = truncated ? sliceUtf8Prefix(slice) : slice;
+    const text = decodeUtf8Text(aligned);
+    if (text == null) {
+      return { text: "", binary: true, truncated, size: st.size };
     }
     return {
-      text: slice.toString("utf8"),
+      text,
       binary: false,
-      truncated: st.size > cap,
+      truncated,
       size: st.size,
     };
   } finally {
@@ -134,11 +178,13 @@ export async function readFileForEdit(filePath, opts = {}) {
  * @param {string} content
  */
 export async function writeFileForEdit(filePath, content) {
-  const text = content == null ? "" : String(content);
-  if (text.includes("\u0000")) {
+  if (typeof content !== "string") {
+    throw new Error("Content must be text");
+  }
+  if (content.includes("\u0000")) {
     throw new Error("Refusing to write binary content");
   }
-  const bytes = Buffer.byteLength(text, "utf8");
+  const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > EDIT_WRITE_CAP) {
     throw new Error("File too large to save here — open it in an editor");
   }
@@ -146,7 +192,23 @@ export async function writeFileForEdit(filePath, content) {
   if (!st.isFile()) {
     throw new Error("Not a file");
   }
-  await fs.promises.writeFile(filePath, text, "utf8");
+  const toSniff = Math.min(st.size, 8192);
+  if (toSniff > 0) {
+    const fh = await fs.promises.open(filePath, "r");
+    try {
+      const buf = Buffer.alloc(toSniff);
+      const { bytesRead } = await fh.read(buf, 0, toSniff, 0);
+      const prefix = buf.subarray(0, bytesRead);
+      const aligned =
+        st.size > toSniff ? sliceUtf8Prefix(prefix) : prefix;
+      if (isLikelyBinary(prefix) || decodeUtf8Text(aligned) == null) {
+        throw new Error("Refusing to overwrite a binary file");
+      }
+    } finally {
+      await fh.close();
+    }
+  }
+  await fs.promises.writeFile(filePath, content, "utf8");
 }
 
 /**

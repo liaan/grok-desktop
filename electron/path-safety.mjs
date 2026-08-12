@@ -125,18 +125,19 @@ function allowedRoots(root) {
  */
 function isUnderAnyRoot(roots, resolved) {
   const realTarget = resolveRealish(resolved);
+  let lexOk = false;
+  let physOk = false;
   for (const root of roots) {
+    if (isUnder(root, resolved)) lexOk = true;
     let realRoot = root;
     try {
       realRoot = fs.realpathSync(root);
     } catch {
       /* keep */
     }
-    if (isUnder(root, resolved) || isUnder(realRoot, realTarget)) {
-      return true;
-    }
+    if (isUnder(realRoot, realTarget)) physOk = true;
   }
-  return false;
+  return lexOk && physOk;
 }
 
 /**

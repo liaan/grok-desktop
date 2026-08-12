@@ -60,6 +60,7 @@ function FileRowActions({
   name,
   editorLabel,
   copied,
+  isDir,
   onEdit,
   onCopy,
 }: {
@@ -67,11 +68,13 @@ function FileRowActions({
   name: string;
   editorLabel: string;
   copied: boolean;
+  isDir: boolean;
   onEdit: () => void;
   onCopy: () => void;
 }) {
   return (
     <div className="file-actions">
+      {!isDir ? (
       <button
         type="button"
         className="btn ghost btn-sm file-action"
@@ -84,6 +87,7 @@ function FileRowActions({
       >
         Edit
       </button>
+      ) : null}
       <button
         type="button"
         className="btn ghost btn-sm file-action"
@@ -120,11 +124,13 @@ export const SidePanel = memo(function SidePanel({
   project,
   backgroundTasks,
   sessionMode,
+  onDirtyChange,
 }: {
   project: string | null;
   backgroundTasks: BackgroundTask[];
   /** e.g. "plan" when plan mode is active */
   sessionMode: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { redact } = usePrivacy();
   const running = runningTaskCount(backgroundTasks);
@@ -159,6 +165,11 @@ export const SidePanel = memo(function SidePanel({
   const peekSeq = useRef(0);
   const prevRunning = useRef(0);
   const copiedTimer = useRef<number | null>(null);
+  /** Ignore click/dblclick after a folder navigate — listDir replaces rows
+   *  inside the double-click window so the second event hits a new file. */
+  const navQuietUntil = useRef(0);
+
+  const isNavQuiet = () => Date.now() < navQuietUntil.current;
 
   const loadDir = useCallback(async (dir: string) => {
     const seq = ++loadSeq.current;
@@ -170,6 +181,7 @@ export const SidePanel = memo(function SidePanel({
       setBrowseCwd(dir);
       setFiles(list);
       setFilesError(null);
+      navQuietUntil.current = Date.now() + 350;
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setFilesError(err instanceof Error ? err.message : String(err));
@@ -245,14 +257,40 @@ export const SidePanel = memo(function SidePanel({
     }
   }, []);
 
-  const openEditor = useCallback(async (absPath: string) => {
-    setOpenError(null);
-    try {
-      await window.grokDesktop.openInEditor(absPath);
-    } catch (err) {
-      setOpenError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
+  const openEditor = useCallback(
+    async (absPath: string) => {
+      if (
+        dirty &&
+        peek?.kind === "file" &&
+        normalizePathKey(peek.absPath) === normalizePathKey(absPath)
+      ) {
+        if (
+          !window.confirm(
+            "This file has unsaved edits. Open the on-disk version anyway?",
+          )
+        ) {
+          return;
+        }
+        try {
+          const res = await window.grokDesktop.readFile(absPath);
+          setDraft(res.text);
+          setSavedText(res.text);
+          setPeekText(res.text);
+          setPeekBinary(res.binary);
+          setPeekTruncated(res.truncated);
+        } catch {
+          /* still open the editor; next save will error if unreadable */
+        }
+      }
+      setOpenError(null);
+      try {
+        await window.grokDesktop.openInEditor(absPath);
+      } catch (err) {
+        setOpenError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [dirty, peek],
+  );
 
   const savePeek = useCallback(async () => {
     if (!peek || peek.kind !== "file" || !canEditFile) return;
@@ -269,6 +307,31 @@ export const SidePanel = memo(function SidePanel({
       setSaving(false);
     }
   }, [peek, canEditFile, draft, project, loadChanges]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!canEditFile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
+      const t = e.target;
+      if (!(t instanceof HTMLElement) || !t.closest(".file-peek")) return;
+      if (
+        t.closest(".settings-page, .modal-backdrop, [role='dialog']") &&
+        !t.closest(".file-peek")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      void savePeek();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEditFile, savePeek]);
 
   useEffect(() => {
     // Invalidate in-flight loads when project changes
@@ -609,9 +672,13 @@ export const SidePanel = memo(function SidePanel({
                           ? `Open folder: ${redact(f.path)}`
                           : `Edit: ${redact(f.path)}`
                       }
-                      onClick={() => selectFile(f)}
+                      onClick={(e) => {
+                        if (isNavQuiet() || e.detail > 1) return;
+                        selectFile(f);
+                      }}
                       onDoubleClick={(e) => {
                         e.preventDefault();
+                        if (isNavQuiet() || f.isDirectory) return;
                         void openEditor(f.path);
                       }}
                     >
@@ -625,6 +692,7 @@ export const SidePanel = memo(function SidePanel({
                       name={f.name}
                       editorLabel={editorLabel}
                       copied={copiedKey === f.path}
+                      isDir={f.isDirectory}
                       onEdit={() => void openEditor(f.path)}
                       onCopy={() => void copyPath(f.path)}
                     />
@@ -677,7 +745,10 @@ export const SidePanel = memo(function SidePanel({
                       type="button"
                       className="file-item file-item-file"
                       title={redact(entry.path)}
-                      onClick={() => selectChange(entry)}
+                      onClick={(e) => {
+                        if (e.detail > 1) return;
+                        selectChange(entry);
+                      }}
                       onDoubleClick={(e) => {
                         e.preventDefault();
                         void openEditor(abs);
@@ -706,6 +777,7 @@ export const SidePanel = memo(function SidePanel({
                       name={entry.path}
                       editorLabel={editorLabel}
                       copied={copiedKey === abs}
+                      isDir={false}
                       onEdit={() => void openEditor(abs)}
                       onCopy={() => void copyPath(abs)}
                     />
@@ -809,12 +881,6 @@ export const SidePanel = memo(function SidePanel({
                   spellCheck={false}
                   aria-label={`Edit ${basen(peek.path)}`}
                   onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                      e.preventDefault();
-                      void savePeek();
-                    }
-                  }}
                 />
               ) : peekFileText != null ? (
                 <pre className="file-peek-text">{redact(peekFileText)}</pre>
@@ -905,6 +971,7 @@ export const SidePanel = memo(function SidePanel({
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          {!ctxMenu.isDir ? (
           <button
             type="button"
             role="menuitem"
@@ -915,6 +982,7 @@ export const SidePanel = memo(function SidePanel({
           >
             Open in {editorLabel}
           </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
