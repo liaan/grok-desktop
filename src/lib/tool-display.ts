@@ -9,6 +9,7 @@ import {
   fileFromDiffPayload,
   formatUnifiedHunks,
   pickDiffStrings,
+  shouldRenderDiff,
   type StructuredDiff,
 } from "./line-diff";
 
@@ -297,11 +298,17 @@ export function formatToolDisplay(item: {
   const diff =
     extractStructuredDiff(item.content) ??
     extractStructuredDiffFromRaw(item.raw);
-  const hasDiff = Boolean(diff?.files.some((f) => f.hunks.length > 0));
+  const hasDiff = shouldRenderDiff(diff);
 
   let { subtitle, input } = formatToolInput(item.raw, {
     skipBody: hasDiff,
   });
+  if (hasDiff && input && diff) {
+    const paths = new Set(
+      diff.files.map((f) => f.path).filter((p): p is string => Boolean(p)),
+    );
+    if (paths.has(input.trim())) input = undefined;
+  }
 
   // Title often is `Execute \`long command\`` when rawInput is thin
   if (!input && item.title) {

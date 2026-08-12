@@ -36,42 +36,48 @@ export function DiffView({
     <div
       className={`diff-view ${expanded ? "is-expanded" : ""} ${className}`.trim()}
     >
-      {shown.files.map((file, fi) => (
-        <div key={file.path || fi} className="diff-file">
-          {file.path ? (
-            <div className="diff-path" title={redact(file.path)}>
-              {redact(file.path)}
-            </div>
-          ) : null}
-          {file.hunks.map((hunk, hi) => (
-            <div key={hi} className="diff-hunk">
-              <div className="diff-hunk-header">
-                {`@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`}
+      <div className="diff-scroll">
+        {shown.files.map((file, fi) => (
+          <div key={`${fi}:${file.path ?? ""}`} className="diff-file">
+            {file.path ? (
+              <div className="diff-path" title={redact(file.path)}>
+                {redact(file.path)}
               </div>
-              {hunk.lines.map((line, li) => (
-                <div
-                  key={li}
-                  className={`diff-line diff-line-${line.kind}`}
-                >
-                  <span className="diff-gutter" aria-hidden="true">
-                    {lineMark(line.kind)}
-                  </span>
-                  <span className="diff-text">{redact(line.text)}</span>
+            ) : null}
+            {file.hunks.map((hunk, hi) => (
+              <div key={hi} className="diff-hunk">
+                <div className="diff-hunk-header">
+                  {`@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`}
                 </div>
-              ))}
-            </div>
-          ))}
+                {hunk.lines.map((line, li) => (
+                  <div
+                    key={li}
+                    className={`diff-line diff-line-${line.kind}`}
+                  >
+                    <span className="diff-gutter" aria-hidden="true">
+                      {lineMark(line.kind)}
+                    </span>
+                    <span className="diff-text">{redact(line.text)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {truncated || large ? (
+        <div className="diff-footer">
+          {truncated ? <div className="diff-truncated">… (truncated)</div> : null}
+          {large ? (
+            <button
+              type="button"
+              className="btn btn-sm ghost diff-more"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          ) : null}
         </div>
-      ))}
-      {truncated ? <div className="diff-truncated">… (truncated)</div> : null}
-      {large ? (
-        <button
-          type="button"
-          className="btn btn-sm ghost diff-more"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
       ) : null}
     </div>
   );

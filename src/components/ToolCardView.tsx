@@ -1,4 +1,4 @@
-import { hasDiffHunks } from "../lib/line-diff";
+import { shouldRenderDiff } from "../lib/line-diff";
 import {
   formatCommandDetail,
   formatToolCard,
@@ -63,7 +63,9 @@ export function ToolCardView({
           {detail}
         </pre>
       ) : null}
-      {card.diff && hasDiffHunks(card.diff) ? <DiffView diff={card.diff} /> : null}
+      {shouldRenderDiff(card.diff) && card.diff ? (
+        <DiffView diff={card.diff} />
+      ) : null}
       {metaText ? <div className="tool-card-meta">{metaText}</div> : null}
     </div>
   );

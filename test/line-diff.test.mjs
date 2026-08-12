@@ -11,17 +11,21 @@ const lineDiffUrl = pathToFileURL(
 ).href;
 
 const {
+  DIFF_CHAR_CAP,
   DIFF_HUNK_CAP,
   DIFF_LINE_CAP,
+  NO_NEWLINE_MARK,
   buildHunks,
   computeLineDiff,
   countDiffLines,
   diffLines,
   extractStructuredDiff,
   extractStructuredDiffFromRaw,
+  fileFromDiffPayload,
   formatUnifiedHunks,
   hasDiffHunks,
   parseUnifiedPatch,
+  shouldRenderDiff,
   sliceStructuredDiff,
   splitLines,
 } = await import(lineDiffUrl);
@@ -32,6 +36,11 @@ test("splitLines: trailing newline is not an extra empty line", () => {
   assert.deepEqual(splitLines(""), []);
   assert.deepEqual(splitLines(null), []);
   assert.deepEqual(splitLines("\n"), [""]);
+});
+
+test("splitLines: CRLF normalizes to the same lines as LF", () => {
+  assert.deepEqual(splitLines("a\r\nb\r\n"), ["a", "b"]);
+  assert.deepEqual(splitLines("a\rb\r"), ["a", "b"]);
 });
 
 test("diffLines: identical files are all context", () => {
@@ -126,6 +135,15 @@ test("computeLineDiff: caps huge inputs", () => {
   assert.ok(hunks.length <= DIFF_HUNK_CAP);
 });
 
+test("computeLineDiff: missing trailing newline is a visible change", () => {
+  const { hunks, truncated } = computeLineDiff("hello", "hello\n");
+  assert.equal(truncated, false);
+  assert.equal(hunks.length, 1);
+  const texts = hunks[0].lines.map((l) => `${l.kind}:${l.text}`);
+  assert.ok(texts.includes(`del:${NO_NEWLINE_MARK}`));
+  assert.ok(!texts.includes(`add:${NO_NEWLINE_MARK}`));
+});
+
 test("parseUnifiedPatch: reads @@ hunks", () => {
   const parsed = parseUnifiedPatch(
     [
@@ -144,6 +162,64 @@ test("parseUnifiedPatch: reads @@ hunks", () => {
     parsed.hunks[0].lines.map((l) => l.kind),
     ["ctx", "del", "add"],
   );
+});
+
+test("parseUnifiedPatch: --- / +++ inside a hunk stay as body lines", () => {
+  const parsed = parseUnifiedPatch(
+    [
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1,3 +1,3 @@",
+      " keep",
+      "--- a flag",
+      "+-- a flag",
+    ].join("\n"),
+  );
+  assert.ok(parsed);
+  assert.equal(parsed.path, "README.md");
+  assert.equal(parsed.hunks.length, 1);
+  assert.deepEqual(
+    parsed.hunks[0].lines.map((l) => `${l.kind}:${l.text}`),
+    ["ctx:keep", "del:-- a flag", "add:-- a flag"],
+  );
+});
+
+test("fileFromDiffPayload: caps a huge patch string", () => {
+  const patch = [
+    "--- a/x.ts",
+    "+++ b/x.ts",
+    "@@ -1,1 +1,1 @@",
+    `-${"a".repeat(DIFF_CHAR_CAP)}`,
+    "+b",
+  ].join("\n");
+  const file = fileFromDiffPayload({ patch });
+  assert.equal(file.truncated, true);
+  const bodyChars = file.hunks.reduce(
+    (n, h) => n + h.lines.reduce((m, l) => m + l.text.length, 0),
+    0,
+  );
+  assert.ok(bodyChars < patch.length);
+});
+
+test("fileFromDiffPayload: caps patch hunk count", () => {
+  const parts = ["--- a/x.ts", "+++ b/x.ts"];
+  for (let i = 0; i < DIFF_HUNK_CAP + 20; i++) {
+    parts.push(`@@ -${i + 1},1 +${i + 1},1 @@`, "-old", "+new");
+  }
+  const file = fileFromDiffPayload({ patch: parts.join("\n") });
+  assert.equal(file.truncated, true);
+  assert.equal(file.hunks.length, DIFF_HUNK_CAP);
+});
+
+test("fileFromDiffPayload: caps a single oversized patch hunk", () => {
+  const body = Array.from({ length: DIFF_LINE_CAP + 30 }, (_, i) => `+L${i}`);
+  const patch = ["--- a/x.ts", "+++ b/x.ts", "@@ -0,0 +1,1 @@", ...body].join(
+    "\n",
+  );
+  const file = fileFromDiffPayload({ patch });
+  assert.equal(file.truncated, true);
+  const lines = file.hunks.reduce((n, h) => n + h.lines.length, 0);
+  assert.ok(lines <= DIFF_LINE_CAP);
 });
 
 test("extractStructuredDiff: ACP write block", () => {
@@ -167,8 +243,8 @@ test("extractStructuredDiff: nested content array", () => {
       content: {
         type: "diff",
         path: "a.md",
-        oldText: "x",
-        newText: "y",
+        oldText: "x\n",
+        newText: "y\n",
       },
     },
   ]);
@@ -207,4 +283,15 @@ test("sliceStructuredDiff: collapse preview keeps a prefix", () => {
   assert.ok(countDiffLines(full) > 8);
   const sliced = sliceStructuredDiff(full, 8);
   assert.equal(countDiffLines(sliced), 8);
+  const h = sliced.files[0].hunks[0];
+  assert.equal(h.oldCount, h.lines.filter((l) => l.kind !== "add").length);
+  assert.equal(h.newCount, h.lines.filter((l) => l.kind !== "del").length);
+});
+
+test("shouldRenderDiff: truncated empty hunks still render", () => {
+  const diff = {
+    files: [{ path: "big.ts", hunks: [], truncated: true }],
+  };
+  assert.equal(hasDiffHunks(diff), false);
+  assert.equal(shouldRenderDiff(diff), true);
 });

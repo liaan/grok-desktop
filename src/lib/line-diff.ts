@@ -34,13 +34,19 @@ export const DIFF_CHAR_CAP = 24_000;
 export const DIFF_CONTEXT = 3;
 export const DIFF_COLLAPSE_LINES = 40;
 const MAX_LCS_CELLS = 160_000;
+/** Git-style marker so a missing final NL is visible after splitLines drops it. */
+export const NO_NEWLINE_MARK = "\\ No newline at end of file";
 
 export type LineEdit = { kind: DiffOp; text: string };
+
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
 
 /** Split into lines; a trailing newline does not add an empty last line. */
 export function splitLines(text: string | null | undefined): string[] {
   if (text == null || text === "") return [];
-  const s = String(text);
+  const s = normalizeNewlines(String(text));
   if (s.endsWith("\n")) return s.slice(0, -1).split("\n");
   return s.split("\n");
 }
@@ -50,7 +56,7 @@ function capSide(text: string | null | undefined): {
   truncated: boolean;
 } {
   if (text == null) return { lines: [], truncated: false };
-  let s = String(text);
+  let s = normalizeNewlines(String(text));
   let truncated = false;
   if (s.length > DIFF_CHAR_CAP) {
     s = s.slice(0, DIFF_CHAR_CAP);
@@ -60,6 +66,9 @@ function capSide(text: string | null | undefined): {
   if (lines.length > DIFF_LINE_CAP) {
     lines = lines.slice(0, DIFF_LINE_CAP);
     truncated = true;
+  } else if (s !== "" && !s.endsWith("\n")) {
+    // Only when the whole side is intact — a cap slice is not the real EOF.
+    lines = [...lines, NO_NEWLINE_MARK];
   }
   return { lines, truncated };
 }
@@ -245,7 +254,7 @@ export function parseUnifiedPatch(patch: string): {
   path?: string;
   hunks: DiffHunk[];
 } | null {
-  const raw = String(patch);
+  const raw = normalizeNewlines(String(patch));
   if (!raw.trim()) return null;
   const lines = raw.replace(/\n$/, "").split("\n");
   let path: string | undefined;
@@ -253,12 +262,13 @@ export function parseUnifiedPatch(patch: string): {
   let current: DiffHunk | null = null;
 
   for (const line of lines) {
-    if (line.startsWith("--- ")) {
+    // File headers only before the first hunk — `--- ` inside a hunk is a deletion.
+    if (!current && line.startsWith("--- ")) {
       const p = stripDiffPath(line.slice(4));
       if (p) path = p;
       continue;
     }
-    if (line.startsWith("+++ ")) {
+    if (!current && line.startsWith("+++ ")) {
       const p = stripDiffPath(line.slice(4));
       if (p) path = p;
       continue;
@@ -311,6 +321,7 @@ export function parseUnifiedPatch(patch: string): {
   if (!looksLikeDump) return null;
   const dumpLines: DiffLine[] = [];
   for (const line of lines) {
+    if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
     if (line.startsWith("+")) {
       dumpLines.push({ kind: "add", text: line.slice(1), oldNo: null, newNo: null });
     } else if (line.startsWith("-")) {
@@ -359,6 +370,14 @@ export function hasDiffHunks(diff: StructuredDiff | undefined | null): boolean {
   return diff.files.some((f) => f.hunks.some((h) => h.lines.length > 0));
 }
 
+/** Hunks to paint, or a truncated-empty preview (change past the cap). */
+export function shouldRenderDiff(
+  diff: StructuredDiff | undefined | null,
+): boolean {
+  if (!diff) return false;
+  return hasDiffHunks(diff) || diff.files.some((f) => f.truncated);
+}
+
 export function countDiffLines(diff: StructuredDiff): number {
   let n = 0;
   for (const f of diff.files) {
@@ -367,7 +386,6 @@ export function countDiffLines(diff: StructuredDiff): number {
   return n;
 }
 
-/** First `maxLines` of hunk body (for collapsed preview). */
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
@@ -412,15 +430,22 @@ export function fileFromDiffPayload(opts: {
     return { path: opts.path, hunks, truncated };
   }
   if (opts.patch) {
-    const parsed = parseUnifiedPatch(opts.patch);
+    let patch = opts.patch;
+    let truncated = false;
+    if (patch.length > DIFF_CHAR_CAP) {
+      patch = patch.slice(0, DIFF_CHAR_CAP);
+      truncated = true;
+    }
+    const parsed = parseUnifiedPatch(patch);
     if (parsed) {
-      const hunks = parsed.hunks.slice(0, DIFF_HUNK_CAP);
+      const capped = capParsedHunks(parsed.hunks);
       return {
         path: opts.path ?? parsed.path,
-        hunks,
-        truncated: parsed.hunks.length > DIFF_HUNK_CAP,
+        hunks: capped.hunks,
+        truncated: truncated || capped.truncated,
       };
     }
+    return { path: opts.path, hunks: [], truncated };
   }
   return { path: opts.path, hunks: [], truncated: false };
 }
@@ -461,10 +486,36 @@ export function extractStructuredDiffFromRaw(
     typeof raw.diff === "string" || typeof raw.patch === "string";
   if (!hasTexts && !hasPatch) return undefined;
   const file = fileFromDiffPayload(pickDiffStrings(raw));
-  if (!file.path && file.hunks.length === 0) return undefined;
+  if (!file.path && file.hunks.length === 0 && !file.truncated) return undefined;
   return { files: [file] };
 }
 
+function capParsedHunks(hunks: DiffHunk[]): {
+  hunks: DiffHunk[];
+  truncated: boolean;
+} {
+  let truncated = hunks.length > DIFF_HUNK_CAP;
+  const limited = hunks.slice(0, DIFF_HUNK_CAP);
+  const out: DiffHunk[] = [];
+  let lines = 0;
+  for (const h of limited) {
+    if (lines >= DIFF_LINE_CAP) {
+      truncated = true;
+      break;
+    }
+    if (lines + h.lines.length <= DIFF_LINE_CAP) {
+      out.push(h);
+      lines += h.lines.length;
+    } else {
+      out.push(hunkFromLines(h.lines.slice(0, DIFF_LINE_CAP - lines)));
+      truncated = true;
+      break;
+    }
+  }
+  return { hunks: out, truncated };
+}
+
+/** First `maxLines` of hunk body (for collapsed preview). */
 export function sliceStructuredDiff(
   diff: StructuredDiff,
   maxLines: number,
@@ -480,7 +531,7 @@ export function sliceStructuredDiff(
         hunks.push(h);
         left -= h.lines.length;
       } else {
-        hunks.push({ ...h, lines: h.lines.slice(0, left) });
+        hunks.push(hunkFromLines(h.lines.slice(0, left)));
         left = 0;
       }
     }

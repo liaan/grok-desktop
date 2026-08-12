@@ -2116,8 +2116,6 @@ button {
 
 .diff-view {
   margin: 0 0 8px;
-  max-height: 280px;
-  overflow: auto;
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.4;
@@ -2126,8 +2124,17 @@ button {
   border-radius: 8px;
 }
 
-.diff-view.is-expanded {
+.diff-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.diff-view.is-expanded .diff-scroll {
   max-height: 480px;
+}
+
+.diff-footer {
+  border-top: 1px solid var(--border);
 }
 
 .diff-path {
