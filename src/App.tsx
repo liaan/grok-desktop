@@ -232,6 +232,7 @@ export default function App() {
     setSessions([]);
     setModelId(null);
     setModelName(null);
+    setAvailableModels([]);
     setItems([]);
     setConn("idle");
     setError(null);
@@ -400,24 +401,6 @@ export default function App() {
     },
     [modelId, appendSystem],
   );
-
-  const leaveProject = useCallback(async () => {
-    try {
-      await window.grokDesktop.closeProject();
-    } catch {
-      /* ignore — still clear local UI */
-    }
-    setProject(null);
-    setSessionId(null);
-    setSessions([]);
-    setModelId(null);
-    setModelName(null);
-    setAvailableModels([]);
-    setItems([]);
-    setConn("idle");
-    setError(null);
-    setOfferAgentRestart(false);
-  }, []);
 
   const handleLogout = async () => {
     setAuthBusy(true);
