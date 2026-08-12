@@ -6,9 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  isCancelledRestartError,
   mergeRestartResult,
   restartTargetFromAgent,
   restartTargetFromSources,
+  shouldFallbackToNewSession,
 } from "../electron/agent-restart.mjs";
 
 test("restartTargetFromAgent refuses when no agent or cwd", () => {
@@ -111,4 +113,80 @@ test("mergeRestartResult does not treat inspect failure as restart failure", () 
   assert.equal(missing.modelId, null);
   assert.equal(missing.modelName, null);
   assert.equal(missing.resumed, false);
+});
+
+test("isCancelledRestartError matches leave / logout / teardown", () => {
+  assert.equal(isCancelledRestartError(new Error("Window closed")), true);
+  assert.equal(isCancelledRestartError(new Error("No window for agent:restart")), true);
+  assert.equal(isCancelledRestartError(new Error("cancelled")), true);
+  assert.equal(isCancelledRestartError(new Error("session disposed")), true);
+  assert.equal(
+    isCancelledRestartError(new Error("Could not load session abc")),
+    false,
+  );
+  assert.equal(isCancelledRestartError(new Error("spawn grok ENOENT")), false);
+});
+
+test("shouldFallbackToNewSession only when resume failed on a live window", () => {
+  const loadFail = new Error("Could not load session");
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: loadFail,
+      resumeSessionId: "sid",
+      lastCwd: "/proj",
+      disposed: false,
+      generationMatches: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: new Error("Window closed"),
+      resumeSessionId: "sid",
+      lastCwd: "/proj",
+      disposed: false,
+      generationMatches: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: loadFail,
+      resumeSessionId: "sid",
+      lastCwd: null,
+      disposed: false,
+      generationMatches: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: loadFail,
+      resumeSessionId: "sid",
+      lastCwd: "/proj",
+      disposed: true,
+      generationMatches: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: loadFail,
+      resumeSessionId: "sid",
+      lastCwd: "/proj",
+      disposed: false,
+      generationMatches: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldFallbackToNewSession({
+      err: loadFail,
+      resumeSessionId: null,
+      lastCwd: "/proj",
+      disposed: false,
+      generationMatches: true,
+    }),
+    false,
+  );
 });

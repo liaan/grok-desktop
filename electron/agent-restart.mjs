@@ -27,6 +27,38 @@ export function restartTargetFromSources(live, remembered) {
 }
 
 /**
+ * Leave / logout / window teardown — never treat as a failed session/load.
+ * @param {unknown} err
+ */
+export function isCancelledRestartError(err) {
+  const msg = String(
+    err && typeof err === "object" && "message" in err
+      ? err.message
+      : err || "",
+  );
+  return /window closed|no window|cancelled|disposed/i.test(msg);
+}
+
+/**
+ * session/new fallback only when resume failed on a still-live project window.
+ * @param {{
+ *   err?: unknown,
+ *   resumeSessionId?: string | null,
+ *   lastCwd?: string | null,
+ *   disposed?: boolean,
+ *   generationMatches?: boolean,
+ * }} opts
+ */
+export function shouldFallbackToNewSession(opts = {}) {
+  if (!opts.resumeSessionId) return false;
+  if (opts.disposed) return false;
+  if (!opts.lastCwd) return false;
+  if (opts.generationMatches === false) return false;
+  if (isCancelledRestartError(opts.err)) return false;
+  return true;
+}
+
+/**
  * Attach inspectBackbone to the openProject-shaped restart payload.
  * Inspect `ok` stays on `backbone` — a failed inspect is not a failed restart.
  * @param {{

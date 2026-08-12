@@ -321,7 +321,9 @@ export function useProjectSession(opts: {
     try {
       const res = await window.grokDesktop.restartAgent();
       await applyOpenResult(res, {
-        note: "Restarted Grok agent (same session)",
+        note: res.resumed
+          ? "Restarted Grok agent (same session)"
+          : "Restarted Grok agent (new session)",
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

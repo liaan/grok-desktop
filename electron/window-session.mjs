@@ -19,7 +19,11 @@ import {
   isDebugLogging,
   summarizeSessionUpdate,
 } from "./debug-log.mjs";
-import { restartTargetFromSources } from "./agent-restart.mjs";
+import {
+  isCancelledRestartError,
+  restartTargetFromSources,
+  shouldFallbackToNewSession,
+} from "./agent-restart.mjs";
 
 /**
  * Desktop state loader — set once from main at startup.
@@ -671,12 +675,18 @@ export async function openSessionOnWindow(ws, opts) {
     resumeSessionId = opts.sessionId;
   }
 
+  const gen = ws.generation;
   let client;
   let resumeWarning = null;
   try {
     client = await ensureAgent(ws, cwd, { resumeSessionId, forceNew });
   } catch (err) {
-    if (resumeSessionId && !forceNew) {
+    if (
+      resumeSessionId &&
+      !forceNew &&
+      isSessionLive(ws, gen) &&
+      !isCancelledRestartError(err)
+    ) {
       console.warn(
         "[openSessionOnWindow] resume failed, starting new session:",
         err?.message || err,
@@ -688,6 +698,10 @@ export async function openSessionOnWindow(ws, opts) {
     } else {
       throw err;
     }
+  }
+  if (!isSessionLive(ws, gen)) {
+    await disposeOrphanClient(client);
+    throw new Error("Window closed");
   }
 
   opts.remember?.(cwd, client.sessionId);
@@ -736,6 +750,7 @@ export async function restartAgentOnWindow(ws, opts = {}) {
   if (!ws || ws.disposed || !ws.win || ws.win.isDestroyed()) {
     throw new Error("No window for agent:restart");
   }
+  const gen = ws.generation;
   const target = restartTargetFromSources(ws.agent, {
     cwd: ws.lastCwd,
     sessionId: ws.lastSessionId,
@@ -754,21 +769,33 @@ export async function restartAgentOnWindow(ws, opts = {}) {
       forceRestart: true,
     });
   } catch (err) {
-    if (target.resumeSessionId) {
-      console.warn(
-        "[restartAgentOnWindow] resume failed, starting new session:",
-        err?.message || err,
-      );
-      resumeWarning =
-        err?.message || "Could not resume that chat; started a new session.";
-      client = await ensureAgent(ws, target.cwd, {
-        forceNew: true,
-        forceRestart: true,
-      });
-      resumed = false;
-    } else {
+    if (
+      !shouldFallbackToNewSession({
+        err,
+        resumeSessionId: target.resumeSessionId,
+        lastCwd: ws.lastCwd,
+        disposed: ws.disposed,
+        generationMatches: ws.generation === gen,
+      })
+    ) {
       throw err;
     }
+    console.warn(
+      "[restartAgentOnWindow] resume failed, starting new session:",
+      err?.message || err,
+    );
+    resumeWarning =
+      err?.message || "Could not resume that chat; started a new session.";
+    client = await ensureAgent(ws, target.cwd, {
+      forceNew: true,
+      forceRestart: true,
+    });
+    resumed = false;
+  }
+
+  if (!isSessionLive(ws, gen) || ws.disposed) {
+    await disposeOrphanClient(client);
+    throw new Error("Window closed");
   }
 
   opts.remember?.(target.cwd, client.sessionId);
