@@ -684,6 +684,8 @@ export async function openSessionOnWindow(ws, opts) {
     sessionId: client.sessionId,
     grokBinary: client.grokPath,
     resumed: Boolean(resumeSessionId) && !forceNew,
+    modelId: client.currentModelId || null,
+    modelName: client.currentModelName || null,
     history,
     backgroundTasks,
     usage,

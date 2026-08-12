@@ -13,6 +13,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   conn,
   statusLabel,
   isOpening,
+  modelId,
+  modelName,
   permissionMode,
   reasoningEffort,
   allowOutsideProject,
@@ -28,6 +30,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   conn: ConnState;
   statusLabel: string;
   isOpening: boolean;
+  modelId?: string | null;
+  modelName?: string | null;
   permissionMode: PermissionMode;
   reasoningEffort: ReasoningEffort;
   allowOutsideProject: boolean;
@@ -41,6 +45,12 @@ export const ChatTopbar = memo(function ChatTopbar({
 }) {
   const { redact } = usePrivacy();
   const runningTasks = backgroundTasks.filter((t) => t.status === "running");
+  const modelLabel = modelName || modelId || null;
+  const modelTitle = modelId
+    ? modelName && modelName !== modelId
+      ? `${modelName} (${modelId})`
+      : modelId
+    : modelName || undefined;
 
   return (
     <div className="topbar">
@@ -58,6 +68,16 @@ export const ChatTopbar = memo(function ChatTopbar({
         />
       </div>
       <div className="topbar-actions row">
+        {modelLabel ? (
+          <span
+            className="model-topbar"
+            title={modelTitle}
+            aria-label={`Current model: ${modelTitle || modelLabel}`}
+          >
+            <span className="perm-mode-topbar-label">Model</span>
+            <span className="model-topbar-value">{modelLabel}</span>
+          </span>
+        ) : null}
         <label className="perm-mode-topbar" title="Tool permission mode">
           <span className="perm-mode-topbar-label">Perms</span>
           <select

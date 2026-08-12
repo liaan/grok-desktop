@@ -153,6 +153,10 @@ export type OpenProjectResult = {
   sessionId: string;
   grokBinary: string;
   resumed?: boolean;
+  /** ACP model id for the live session (e.g. grok-4.6) */
+  modelId?: string | null;
+  /** Optional display name from the agent model list */
+  modelName?: string | null;
   history?: TimelineItem[];
   /** Background commands/subagents restored from updates.jsonl */
   backgroundTasks?: Array<{

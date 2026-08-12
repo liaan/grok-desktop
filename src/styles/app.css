@@ -543,6 +543,36 @@ button {
   app-region: no-drag;
 }
 
+.model-topbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 12rem;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.model-topbar-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--code-bg, rgba(20, 20, 26, 0.85));
+}
+
+[data-theme="light"] .model-topbar-value {
+  background: #fff;
+}
+
 .perm-mode-topbar-label {
   font-weight: 600;
 }

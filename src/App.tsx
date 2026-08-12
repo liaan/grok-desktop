@@ -54,6 +54,9 @@ export default function App() {
   const [project, setProject] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  /** Live session model from ACP (session/new|load). */
+  const [modelId, setModelId] = useState<string | null>(null);
+  const [modelName, setModelName] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>("idle");
   const [openingLabel, setOpeningLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +220,8 @@ export default function App() {
     setProject,
     setSessionId,
     setSessions,
+    setModelId,
+    setModelName,
     setConn,
     setOpeningLabel,
     setError,
@@ -273,6 +278,14 @@ export default function App() {
     void refreshAuth();
   };
 
+  // Model is session-scoped; drop the label when the agent/session goes away.
+  useEffect(() => {
+    if (!sessionId) {
+      setModelId(null);
+      setModelName(null);
+    }
+  }, [sessionId]);
+
   const leaveProject = useCallback(async () => {
     try {
       await window.grokDesktop.closeProject();
@@ -282,6 +295,8 @@ export default function App() {
     setProject(null);
     setSessionId(null);
     setSessions([]);
+    setModelId(null);
+    setModelName(null);
     setItems([]);
     setConn("idle");
     setError(null);
@@ -550,6 +565,8 @@ export default function App() {
             conn={conn}
             statusLabel={statusLabel}
             isOpening={isOpening}
+            modelId={modelId}
+            modelName={modelName}
             permissionMode={permissionMode}
             reasoningEffort={reasoningEffort}
             allowOutsideProject={allowOutsideProject}

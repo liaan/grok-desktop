@@ -40,6 +40,8 @@ export function useProjectSession(opts: {
   setProject: Dispatch<SetStateAction<string | null>>;
   setSessionId: Dispatch<SetStateAction<string | null>>;
   setSessions: Dispatch<SetStateAction<SessionSummary[]>>;
+  setModelId: Dispatch<SetStateAction<string | null>>;
+  setModelName: Dispatch<SetStateAction<string | null>>;
   setConn: Dispatch<SetStateAction<ConnState>>;
   setOpeningLabel: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
@@ -66,6 +68,8 @@ export function useProjectSession(opts: {
     setProject,
     setSessionId,
     setSessions,
+    setModelId,
+    setModelName,
     setConn,
     setOpeningLabel,
     setError,
@@ -86,6 +90,8 @@ export function useProjectSession(opts: {
       setProject(res.cwd);
       setSessionId(res.sessionId);
       setSessions(res.sessions || []);
+      setModelId(res.modelId || null);
+      setModelName(res.modelName || null);
       clearSessionScoped();
       // While openingRef is true, live usage is ignored — disk replace is safe.
       hydrateBackgroundTasks(res.backgroundTasks || []);
@@ -105,6 +111,11 @@ export function useProjectSession(opts: {
       const runningBg = (res.backgroundTasks || []).filter(
         (t) => t.status === "running",
       ).length;
+      const modelLabel = res.modelName
+        ? res.modelId
+          ? `${res.modelName} (${res.modelId})`
+          : res.modelName
+        : res.modelId || null;
       const banner: TimelineItem = {
         id: uid("sys"),
         kind: "system",
@@ -116,6 +127,7 @@ export function useProjectSession(opts: {
           res.warning ? `Note: ${res.warning}` : null,
           `Project: ${res.cwd}`,
           `Session: ${res.sessionId}`,
+          modelLabel ? `Model: ${modelLabel}` : null,
           history.length
             ? `History: ${history.length} message(s) restored`
             : "History: empty (fresh chat)",
@@ -159,6 +171,8 @@ export function useProjectSession(opts: {
       clearPromptQueue,
       setSessionId,
       setSessions,
+      setModelId,
+      setModelName,
     ],
   );
 

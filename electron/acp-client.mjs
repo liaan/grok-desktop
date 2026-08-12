@@ -105,6 +105,8 @@ export class GrokAcpClient extends EventEmitter {
     this.agentCapabilities = {};
     /** Last known ACP model id (from session/new|load models.currentModelId). */
     this.currentModelId = null;
+    /** Human-readable name for the current model when the agent provides one. */
+    this.currentModelName = null;
     /**
      * Effort levels advertised by the current model (ids). Empty when unknown.
      * @type {string[]}
@@ -305,6 +307,13 @@ export class GrokAcpClient extends EventEmitter {
     const entry =
       list.find((m) => String(m?.modelId || "") === this.currentModelId) ||
       list[0];
+    const name =
+      entry?.name ||
+      entry?.title ||
+      entry?.displayName ||
+      entry?._meta?.name ||
+      null;
+    this.currentModelName = name ? String(name) : null;
     const efforts = entry?._meta?.reasoningEfforts;
     if (Array.isArray(efforts)) {
       this.availableReasoningEfforts = efforts
@@ -370,6 +379,8 @@ export class GrokAcpClient extends EventEmitter {
       cwd: this.cwd,
       grokBinary: this.grokPath,
       resumed: false,
+      modelId: this.currentModelId,
+      modelName: this.currentModelName,
     });
     return this.sessionId;
   }
@@ -412,6 +423,8 @@ export class GrokAcpClient extends EventEmitter {
       cwd: this.cwd,
       grokBinary: this.grokPath,
       resumed: true,
+      modelId: this.currentModelId,
+      modelName: this.currentModelName,
     });
     return this.sessionId;
   }
