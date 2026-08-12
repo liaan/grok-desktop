@@ -648,7 +648,7 @@ export default function App() {
       hasProject={Boolean(project)}
       skills={backbone?.skills || []}
       skillsError={backbone && !backbone.ok ? backbone.error : null}
-      skillsLoading={backbone == null}
+      skillsLoading={signedIn && backbone == null}
       focusSection={settingsSection}
     />
   );
