@@ -46,6 +46,7 @@ import {
   setCodingDataOptIn,
 } from "./coding-data.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
+import { readFileForPeek } from "./fs-content.mjs";
 import {
   APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
@@ -909,7 +910,7 @@ function registerIpc() {
     const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, filePath);
-    return fs.promises.readFile(safe, "utf8");
+    return readFileForPeek(safe);
   });
 
   ipcMain.handle("fs:list-dir", async (e, dirPath) => {

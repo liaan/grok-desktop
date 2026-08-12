@@ -82,6 +82,41 @@ export function isLikelyBinary(buf) {
   return false;
 }
 
+/** Renderer file peek: never slurp more than this. */
+export const PEEK_READ_CAP = 256 * 1024;
+
+/**
+ * Project-scoped peek for the side panel. Stats first, reads at most `cap`
+ * bytes, and refuses binaries after a prefix sniff (does not load the rest).
+ * @param {string} filePath Absolute path (already resolved)
+ * @param {{ cap?: number }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function readFileForPeek(filePath, opts = {}) {
+  const cap = Number.isFinite(opts.cap) && opts.cap >= 0
+    ? Math.floor(opts.cap)
+    : PEEK_READ_CAP;
+  const st = await fs.promises.stat(filePath);
+  if (!st.isFile()) {
+    throw new Error("Not a file");
+  }
+  const toRead = Math.min(st.size, cap);
+  const fh = await fs.promises.open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(toRead);
+    const { bytesRead } = await fh.read(buf, 0, toRead, 0);
+    const slice = buf.subarray(0, bytesRead);
+    if (isLikelyBinary(slice)) {
+      throw new Error("Binary file");
+    }
+    let text = slice.toString("utf8");
+    if (st.size > cap) text += "\n… (truncated)";
+    return text;
+  } finally {
+    await fh.close();
+  }
+}
+
 /**
  * Build the ACP fs/read_text_file `content` string for a file on disk.
  *

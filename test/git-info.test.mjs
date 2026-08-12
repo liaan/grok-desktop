@@ -9,6 +9,8 @@ import {
   parsePorcelain,
   parsePorcelainLine,
   porcelainStatusLetter,
+  stripGitPrefix,
+  takePorcelainPath,
   unquoteGitPath,
 } from "../electron/git-info.mjs";
 
@@ -102,6 +104,51 @@ test("unquoteGitPath: C-style escapes and leftover after close", () => {
     rest: ' -> "new"',
   });
   assert.equal(unquoteGitPath('"\\141"').value, "a");
+});
+
+test("unquoteGitPath: octal bytes decode as UTF-8", () => {
+  // ü is U+00FC → UTF-8 C3 BC; quotePath emits \303\274
+  assert.equal(unquoteGitPath('"\\303\\274nicode.ts"').value, "ünicode.ts");
+  const files = parsePorcelain('?? "\\303\\274nicode.ts"');
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, "ünicode.ts");
+});
+
+test("parsePorcelainLine: mixed-quote rename dest is unquoted", () => {
+  const destQuoted = parsePorcelainLine('R  old.ts -> "new name.ts"');
+  assert.ok(destQuoted);
+  assert.equal(destQuoted.path, "new name.ts");
+  assert.equal(destQuoted.origPath, "old.ts");
+
+  const srcQuoted = parsePorcelainLine('R  "old name.ts" -> dest.ts');
+  assert.ok(srcQuoted);
+  assert.equal(srcQuoted.path, "dest.ts");
+  assert.equal(srcQuoted.origPath, "old name.ts");
+});
+
+test("parsePorcelainLine: quoted trailing space is kept", () => {
+  const e = parsePorcelainLine('?? "foo "');
+  assert.ok(e);
+  assert.equal(e.path, "foo ");
+});
+
+test("takePorcelainPath: splits unquoted rename at arrow", () => {
+  assert.deepEqual(takePorcelainPath('old.ts -> "new name.ts"'), {
+    value: "old.ts",
+    rest: ' -> "new name.ts"',
+  });
+});
+
+test("stripGitPrefix: repo-root paths become cwd-relative", () => {
+  assert.equal(
+    stripGitPrefix("packages/app/src/a.ts", "packages/app/"),
+    "src/a.ts",
+  );
+  assert.equal(stripGitPrefix("src/a.ts", ""), "src/a.ts");
+  assert.equal(
+    stripGitPrefix("packages/other/x.ts", "packages/app/"),
+    "packages/other/x.ts",
+  );
 });
 
 test("porcelainStatusLetter: prefer D/A over M", () => {

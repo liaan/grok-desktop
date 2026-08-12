@@ -497,7 +497,7 @@ export const SidePanel = memo(function SidePanel({
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   Loading…
                 </p>
-              ) : peekError ? (
+              ) : peekError && peekError !== "Binary file" ? (
                 <p style={{ color: "var(--danger, #f87171)", fontSize: 13 }}>
                   {peekError}
                 </p>
@@ -507,7 +507,7 @@ export const SidePanel = memo(function SidePanel({
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   No textual diff.
                 </p>
-              ) : peekIsBinary ? (
+              ) : peekIsBinary || peekError === "Binary file" ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   Binary file.
                 </p>

@@ -24,6 +24,7 @@ function gitExecOpts(cwd, extra = {}) {
 
 /**
  * Unquote a git C-style path (`core.quotePath`).
+ * Octal escapes are bytes, decoded as UTF-8 (`\303\274` → `ü`).
  * @param {string} raw
  * @returns {{ value: string, rest: string }}
  */
@@ -32,31 +33,39 @@ export function unquoteGitPath(raw) {
   if (!s.startsWith('"')) {
     return { value: s, rest: "" };
   }
-  let out = "";
+  /** @type {number[]} */
+  const bytes = [];
+  const pushUtf8 = (str) => {
+    const buf = Buffer.from(str, "utf8");
+    for (const b of buf) bytes.push(b);
+  };
   for (let i = 1; i < s.length; i++) {
     const c = s[i];
     if (c === '"') {
-      return { value: out, rest: s.slice(i + 1) };
+      return {
+        value: Buffer.from(bytes).toString("utf8"),
+        rest: s.slice(i + 1),
+      };
     }
     if (c === "\\" && i + 1 < s.length) {
       const n = s[i + 1];
       if (n === "n") {
-        out += "\n";
+        bytes.push(0x0a);
         i += 1;
         continue;
       }
       if (n === "t") {
-        out += "\t";
+        bytes.push(0x09);
         i += 1;
         continue;
       }
       if (n === "r") {
-        out += "\r";
+        bytes.push(0x0d);
         i += 1;
         continue;
       }
       if (n === '"' || n === "\\") {
-        out += n;
+        bytes.push(n.charCodeAt(0));
         i += 1;
         continue;
       }
@@ -67,17 +76,34 @@ export function unquoteGitPath(raw) {
           oct += s[j];
           j += 1;
         }
-        out += String.fromCharCode(parseInt(oct, 8));
+        bytes.push(parseInt(oct, 8) & 0xff);
         i = j - 1;
         continue;
       }
-      out += n;
+      pushUtf8(n);
       i += 1;
       continue;
     }
-    out += c;
+    pushUtf8(c);
   }
-  return { value: s.slice(1), rest: "" };
+  return { value: Buffer.from(bytes).toString("utf8"), rest: "" };
+}
+
+/**
+ * One path token from porcelain remainder.
+ * Quoted → C-unquote; unquoted → until ` -> ` (rename) or EOL.
+ * @param {string} raw
+ * @returns {{ value: string, rest: string }}
+ */
+export function takePorcelainPath(raw) {
+  const s = String(raw ?? "");
+  if (s.startsWith('"')) return unquoteGitPath(s);
+  const sep = " -> ";
+  const idx = s.indexOf(sep);
+  if (idx >= 0) {
+    return { value: s.slice(0, idx), rest: s.slice(idx) };
+  }
+  return { value: s, rest: "" };
 }
 
 /**
@@ -120,38 +146,22 @@ export function parsePorcelainLine(line) {
 
   const rest = raw.slice(3);
   const isRename = index === "R" || index === "C";
+  const first = takePorcelainPath(rest);
   /** @type {string} */
   let filePath;
   /** @type {string | null} */
   let origPath = null;
 
-  if (rest.startsWith('"')) {
-    const first = unquoteGitPath(rest);
-    if (isRename) {
-      origPath = first.value;
-      const after = first.rest.replace(/^\s*->\s*/, "");
-      filePath = after.startsWith('"')
-        ? unquoteGitPath(after).value
-        : after;
-    } else {
-      filePath = first.value;
-    }
-  } else if (isRename) {
-    const sep = " -> ";
-    const idx = rest.lastIndexOf(sep);
-    if (idx >= 0) {
-      origPath = rest.slice(0, idx);
-      filePath = rest.slice(idx + sep.length);
-    } else {
-      filePath = rest;
-    }
+  if (isRename) {
+    origPath = first.value;
+    const after = first.rest.replace(/^\s*->\s*/, "");
+    filePath = takePorcelainPath(after).value;
   } else {
-    filePath = rest;
+    filePath = first.value;
   }
 
-  filePath = String(filePath || "").trim();
   if (!filePath) return null;
-  if (origPath != null) origPath = String(origPath).trim() || null;
+  if (origPath != null && !origPath) origPath = null;
 
   const untracked = index === "?" && worktree === "?";
   return {
@@ -221,6 +231,36 @@ export async function getGitBranch(cwd) {
 }
 
 /**
+ * Porcelain paths are repo-root-relative. Strip `--show-prefix` so they
+ * are project-cwd-relative (opening a monorepo package, not the toplevel).
+ * @param {string} filePath
+ * @param {string} prefix
+ */
+export function stripGitPrefix(filePath, prefix) {
+  const p = String(filePath ?? "");
+  const pre = String(prefix ?? "");
+  if (!pre || !p.startsWith(pre)) return p;
+  return p.slice(pre.length);
+}
+
+/**
+ * @param {string} cwd
+ * @returns {Promise<string>}
+ */
+async function gitShowPrefix(cwd) {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["rev-parse", "--show-prefix"],
+      gitExecOpts(cwd),
+    );
+    return String(stdout || "").replace(/\r?\n$/, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
  * @param {string} cwd
  * @returns {Promise<{ files: NonNullable<ReturnType<typeof parsePorcelainLine>>[] }>}
  */
@@ -229,12 +269,20 @@ export async function getGitStatus(cwd) {
     return { files: [] };
   }
   try {
+    const prefix = await gitShowPrefix(cwd);
     const { stdout } = await execFileAsync(
       "git",
-      ["status", "--porcelain=v1", "-uall"],
+      ["status", "--porcelain=v1", "-uall", "--", "."],
       gitExecOpts(cwd, { timeout: 8000, maxBuffer: 1024 * 1024 }),
     );
-    return { files: parsePorcelain(stdout) };
+    const files = parsePorcelain(stdout)
+      .map((f) => ({
+        ...f,
+        path: stripGitPrefix(f.path, prefix),
+        origPath: f.origPath ? stripGitPrefix(f.origPath, prefix) : null,
+      }))
+      .filter((f) => f.path && !f.path.startsWith("../") && f.path !== "..");
+    return { files };
   } catch {
     return { files: [] };
   }
