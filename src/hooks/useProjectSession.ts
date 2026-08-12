@@ -35,6 +35,9 @@ export function useProjectSession(opts: {
   hydrateFromInfo: (i: AppInfo) => void;
   refreshAuth: () => Promise<AuthStatus>;
   refreshBackbone: (cwd?: string) => Promise<BackboneSummary>;
+  setBackbone: Dispatch<SetStateAction<BackboneSummary | null>>;
+  /** Fired after a successful open/restart hydrate (new agent process exists). */
+  onOpenApplied?: () => void;
   setAuth: Dispatch<SetStateAction<AuthStatus | null>>;
   setInfo: Dispatch<SetStateAction<AppInfo | null>>;
   setProject: Dispatch<SetStateAction<string | null>>;
@@ -63,6 +66,8 @@ export function useProjectSession(opts: {
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
+    setBackbone,
+    onOpenApplied,
     setAuth,
     setInfo,
     setProject,
@@ -108,7 +113,8 @@ export function useProjectSession(opts: {
       sendNowRef.current = null;
 
       const history = (res.history || []) as TimelineItem[];
-      const bb = await refreshBackbone(res.cwd);
+      if (res.backbone) setBackbone(res.backbone);
+      const bb = res.backbone ?? (await refreshBackbone(res.cwd));
       const skillN = bb.ok ? bb.skills.length : "?";
       const mcpN = bb.ok ? bb.mcpServers.length : "?";
       const runningBg = (res.backgroundTasks || []).filter(
@@ -153,6 +159,7 @@ export function useProjectSession(opts: {
       setInfo(i);
       setAuth(i.auth);
       hydrateFromInfo(i);
+      onOpenApplied?.();
     },
     [
       clearSessionScoped,
@@ -162,6 +169,8 @@ export function useProjectSession(opts: {
       hydrateFromInfo,
       promptQueueRef,
       refreshBackbone,
+      setBackbone,
+      onOpenApplied,
       sendNowRef,
       setAgentCommands,
       setAuth,
@@ -305,6 +314,7 @@ export function useProjectSession(opts: {
 
     openingRef.current = true;
     busyRef.current = false;
+    clearPromptQueue();
     setConn("connecting");
     setOpeningLabel("Restarting agent…");
     setError(null);
@@ -328,6 +338,7 @@ export function useProjectSession(opts: {
     auth,
     applyOpenResult,
     busyRef,
+    clearPromptQueue,
     openingRef,
     project,
     refreshAuth,

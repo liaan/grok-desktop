@@ -19,7 +19,7 @@ import {
   isDebugLogging,
   summarizeSessionUpdate,
 } from "./debug-log.mjs";
-import { restartTargetFromAgent } from "./agent-restart.mjs";
+import { restartTargetFromSources } from "./agent-restart.mjs";
 
 /**
  * Desktop state loader — set once from main at startup.
@@ -51,8 +51,22 @@ export function setDesktopStateLoader(fn) {
  *   pendingUserQuestions: Map<string, (decision: any) => void>,
  *   disposed: boolean,
  *   generation: number,
+ *   lastCwd: string | null,
+ *   lastSessionId: string | null,
  * }} WindowSession
  */
+
+/**
+ * Keep last project so Restart still works after a failed spawn nulled `agent`.
+ * @param {WindowSession} ws
+ * @param {string | null | undefined} cwd
+ * @param {string | null | undefined} sessionId
+ */
+function rememberProjectOnWindow(ws, cwd, sessionId) {
+  if (!ws || !cwd) return;
+  ws.lastCwd = cwd;
+  ws.lastSessionId = sessionId || null;
+}
 
 /** @type {Map<number, WindowSession>} */
 export const windowSessions = new Map();
@@ -195,6 +209,8 @@ export function clearProjectOnWindow(ws) {
   ws.stopBackgroundTaskTail = null;
   const a = ws.agent;
   ws.agent = null;
+  ws.lastCwd = null;
+  ws.lastSessionId = null;
   try {
     clearPendingPermissions(ws);
   } catch {
@@ -316,6 +332,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
 
     // Always-approve boundary: must respawn process for CLI flags.
     if (forceRestart && agent) {
+      rememberProjectOnWindow(ws, agent.cwd, agent.sessionId);
       clearPendingPermissions(ws);
       await agent.dispose();
       if (ws.agent === agent) ws.agent = null;
@@ -332,6 +349,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
         if (!isSessionLive(ws, gen) || ws.agent !== agent) {
           throw new Error("Window closed");
         }
+        rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
       }
@@ -341,20 +359,24 @@ export function ensureAgent(ws, cwd, opts = {}) {
         if (!isSessionLive(ws, gen) || ws.agent !== agent) {
           throw new Error("Window closed");
         }
+        rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
       }
       if (resumeSessionId && resumeSessionId === agent.sessionId) {
+        rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
       }
       if (!resumeSessionId && !forceNew) {
+        rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
       }
     }
 
     if (agent) {
+      rememberProjectOnWindow(ws, agent.cwd, agent.sessionId);
       clearPendingPermissions(ws);
       await agent.dispose();
       if (ws.agent === agent) ws.agent = null;
@@ -549,6 +571,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
       });
     } catch (err) {
       if (ws.agent === agent) ws.agent = null;
+      await disposeOrphanClient(agent);
       throw err;
     }
 
@@ -557,6 +580,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
       if (ws.agent === agent) ws.agent = null;
       throw new Error("Window closed");
     }
+    rememberProjectOnWindow(ws, cwd, agent.sessionId);
     restartBackgroundTaskTail(ws, cwd, agent.sessionId);
     return agent;
   };
@@ -582,6 +606,8 @@ export function disposeWindowSession(ws) {
   ws.stopBackgroundTaskTail = null;
   const a = ws.agent;
   ws.agent = null;
+  ws.lastCwd = null;
+  ws.lastSessionId = null;
   try {
     clearPendingPermissions(ws);
   } catch {
@@ -710,15 +736,40 @@ export async function restartAgentOnWindow(ws, opts = {}) {
   if (!ws || ws.disposed || !ws.win || ws.win.isDestroyed()) {
     throw new Error("No window for agent:restart");
   }
-  const target = restartTargetFromAgent(ws.agent);
+  const target = restartTargetFromSources(ws.agent, {
+    cwd: ws.lastCwd,
+    sessionId: ws.lastSessionId,
+  });
   if (!target) {
     throw new Error("No project open");
   }
+  rememberProjectOnWindow(ws, target.cwd, target.resumeSessionId);
 
-  const client = await ensureAgent(ws, target.cwd, {
-    resumeSessionId: target.resumeSessionId,
-    forceRestart: true,
-  });
+  let client;
+  let resumeWarning = null;
+  let resumed = Boolean(target.resumeSessionId);
+  try {
+    client = await ensureAgent(ws, target.cwd, {
+      resumeSessionId: target.resumeSessionId,
+      forceRestart: true,
+    });
+  } catch (err) {
+    if (target.resumeSessionId) {
+      console.warn(
+        "[restartAgentOnWindow] resume failed, starting new session:",
+        err?.message || err,
+      );
+      resumeWarning =
+        err?.message || "Could not resume that chat; started a new session.";
+      client = await ensureAgent(ws, target.cwd, {
+        forceNew: true,
+        forceRestart: true,
+      });
+      resumed = false;
+    } else {
+      throw err;
+    }
+  }
 
   opts.remember?.(target.cwd, client.sessionId);
   setWindowTitle(ws, client.cwd);
@@ -729,7 +780,7 @@ export async function restartAgentOnWindow(ws, opts = {}) {
   let backgroundTasks = [];
   /** @type {any} */
   let usage = null;
-  if (client.sessionId && opts.loadState) {
+  if (client.sessionId && resumed && opts.loadState) {
     const loaded = opts.loadState(target.cwd, client.sessionId);
     history = loaded.items || [];
     backgroundTasks = loaded.tasks || [];
@@ -740,13 +791,14 @@ export async function restartAgentOnWindow(ws, opts = {}) {
     cwd: client.cwd,
     sessionId: client.sessionId,
     grokBinary: client.grokPath,
-    resumed: Boolean(target.resumeSessionId),
+    resumed,
     modelId: client.currentModelId || null,
     modelName: client.currentModelName || null,
     history,
     backgroundTasks,
     usage,
     sessions: opts.listSessions?.(target.cwd) || [],
+    warning: resumeWarning,
   };
 }
 
@@ -840,6 +892,8 @@ export function createWindowSession(win) {
     pendingUserQuestions: new Map(),
     disposed: false,
     generation: 0,
+    lastCwd: null,
+    lastSessionId: null,
   };
   // Main owns native titles; HTML <title> / document.title must not clobber.
   win.on("page-title-updated", (e) => {

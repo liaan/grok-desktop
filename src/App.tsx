@@ -86,6 +86,10 @@ export default function App() {
     ]);
   }, []);
 
+  const clearOfferAgentRestart = useCallback(() => {
+    setOfferAgentRestart(false);
+  }, []);
+
   const {
     permissionMode,
     reasoningEffort,
@@ -217,6 +221,8 @@ export default function App() {
       hydrateFromInfo,
       refreshAuth,
       refreshBackbone,
+      setBackbone,
+      onOpenApplied: clearOfferAgentRestart,
       setAuth,
       setInfo,
       setProject,
@@ -302,6 +308,7 @@ export default function App() {
     setItems([]);
     setConn("idle");
     setError(null);
+    setOfferAgentRestart(false);
   }, []);
 
   const handleLogout = async () => {
@@ -565,7 +572,6 @@ export default function App() {
           onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
           onRestartAgent={() => {
             setSettingsOpen(false);
-            setOfferAgentRestart(false);
             void restartAgent();
           }}
           restarting={isOpening}

@@ -17,7 +17,18 @@ export function restartTargetFromAgent(agent) {
 }
 
 /**
- * Combine ensureAgent session fields with inspectBackbone for agent:restart.
+ * Live agent first; remembered lastCwd/lastSessionId if the client was
+ * disposed after a failed spawn (retry must still work).
+ * @param {{ cwd?: string | null, sessionId?: string | null } | null | undefined} live
+ * @param {{ cwd?: string | null, sessionId?: string | null } | null | undefined} remembered
+ */
+export function restartTargetFromSources(live, remembered) {
+  return restartTargetFromAgent(live) || restartTargetFromAgent(remembered);
+}
+
+/**
+ * Attach inspectBackbone to the openProject-shaped restart payload.
+ * Inspect `ok` stays on `backbone` — a failed inspect is not a failed restart.
  * @param {{
  *   cwd?: string,
  *   sessionId?: string | null,
@@ -41,14 +52,8 @@ export function restartTargetFromAgent(agent) {
  * } | null | undefined} backbone
  */
 export function mergeRestartResult(session, backbone) {
-  const bb = backbone || {
-    ok: false,
-    skills: [],
-    mcpServers: [],
-    plugins: [],
-  };
-  return {
-    ok: Boolean(bb.ok),
+  /** @type {Record<string, unknown>} */
+  const result = {
     cwd: session.cwd,
     sessionId: session.sessionId,
     grokBinary: session.grokBinary,
@@ -60,6 +65,7 @@ export function mergeRestartResult(session, backbone) {
     usage: session.usage ?? null,
     sessions: session.sessions || [],
     warning: session.warning ?? null,
-    backbone: bb,
   };
+  if (backbone) result.backbone = backbone;
+  return result;
 }

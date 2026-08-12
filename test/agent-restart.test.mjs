@@ -1,12 +1,14 @@
 /**
  * GUI agent:restart helpers — refuse without a project, resume same session,
- * merge inspectBackbone into the openProject-shaped payload.
+ * fall back to remembered cwd after a failed spawn, attach inspect without
+ * treating inspect failure as restart failure.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   mergeRestartResult,
   restartTargetFromAgent,
+  restartTargetFromSources,
 } from "../electron/agent-restart.mjs";
 
 test("restartTargetFromAgent refuses when no agent or cwd", () => {
@@ -33,7 +35,27 @@ test("restartTargetFromAgent resumes the current session id", () => {
   );
 });
 
-test("mergeRestartResult includes ok + openProject session fields", () => {
+test("restartTargetFromSources prefers live agent then remembered cwd", () => {
+  assert.deepEqual(
+    restartTargetFromSources(
+      { cwd: "/live", sessionId: "live-sid" },
+      { cwd: "/old", sessionId: "old-sid" },
+    ),
+    { cwd: "/live", resumeSessionId: "live-sid" },
+  );
+  assert.deepEqual(
+    restartTargetFromSources(null, { cwd: "/old", sessionId: "old-sid" }),
+    { cwd: "/old", resumeSessionId: "old-sid" },
+  );
+  assert.deepEqual(
+    restartTargetFromSources({ cwd: "" }, { cwd: "/old", sessionId: "old-sid" }),
+    { cwd: "/old", resumeSessionId: "old-sid" },
+  );
+  assert.equal(restartTargetFromSources(null, null), null);
+  assert.equal(restartTargetFromSources({}, { sessionId: "only-sid" }), null);
+});
+
+test("mergeRestartResult attaches backbone without a top-level inspect ok", () => {
   const merged = mergeRestartResult(
     {
       cwd: "/proj",
@@ -55,7 +77,7 @@ test("mergeRestartResult includes ok + openProject session fields", () => {
       grokVersion: "1.2.3",
     },
   );
-  assert.equal(merged.ok, true);
+  assert.equal("ok" in merged, false);
   assert.equal(merged.cwd, "/proj");
   assert.equal(merged.sessionId, "sid");
   assert.equal(merged.grokBinary, "/usr/bin/grok");
@@ -71,18 +93,22 @@ test("mergeRestartResult includes ok + openProject session fields", () => {
   assert.equal(merged.backbone.grokVersion, "1.2.3");
 });
 
-test("mergeRestartResult is ok:false when inspect failed or missing", () => {
-  assert.equal(mergeRestartResult({ cwd: "/p", sessionId: "s" }, null).ok, false);
-  assert.equal(
-    mergeRestartResult({ cwd: "/p", sessionId: "s" }, { ok: false, error: "nope" })
-      .ok,
-    false,
+test("mergeRestartResult does not treat inspect failure as restart failure", () => {
+  const failed = mergeRestartResult(
+    { cwd: "/p", sessionId: "s" },
+    { ok: false, error: "nope" },
   );
-  const empty = mergeRestartResult({ cwd: "/p", sessionId: "s" }, undefined);
-  assert.equal(empty.ok, false);
-  assert.deepEqual(empty.history, []);
-  assert.deepEqual(empty.sessions, []);
-  assert.equal(empty.modelId, null);
-  assert.equal(empty.modelName, null);
-  assert.equal(empty.resumed, false);
+  assert.equal("ok" in failed, false);
+  assert.equal(failed.sessionId, "s");
+  assert.equal(failed.backbone.ok, false);
+  assert.equal(failed.backbone.error, "nope");
+
+  const missing = mergeRestartResult({ cwd: "/p", sessionId: "s" }, undefined);
+  assert.equal("ok" in missing, false);
+  assert.equal("backbone" in missing, false);
+  assert.deepEqual(missing.history, []);
+  assert.deepEqual(missing.sessions, []);
+  assert.equal(missing.modelId, null);
+  assert.equal(missing.modelName, null);
+  assert.equal(missing.resumed, false);
 });

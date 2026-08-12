@@ -176,6 +176,8 @@ export type OpenProjectResult = {
   /** Summed turn_completed usage from updates.jsonl (status bar) */
   usage?: import("./lib/usage").SessionUsage | null;
   sessions?: SessionSummary[];
+  /** Present when main already ran `grok inspect` (agent:restart). */
+  backbone?: BackboneSummary;
 };
 
 export type AppInfo = {
@@ -238,13 +240,7 @@ declare global {
       /** Drop agent on this window; native title returns to empty shell. */
       closeProject: () => Promise<boolean>;
       /** Respawn grok agent and resume the same chat. */
-      restartAgent: () => Promise<
-        OpenProjectResult & {
-          ok: boolean;
-          warning?: string | null;
-          backbone?: BackboneSummary;
-        }
-      >;
+      restartAgent: () => Promise<OpenProjectResult>;
       listSessions: (cwd: string) => Promise<SessionSummary[]>;
       openSession: (opts: {
         cwd: string;

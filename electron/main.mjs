@@ -614,10 +614,7 @@ function registerIpc() {
     return clearProjectOnWindow(ws);
   });
 
-  /**
-   * Respawn this window's grok agent (same session). Dedicated channel —
-   * do not expose a generic "run any grok args" method.
-   */
+  /** Respawn this window's grok agent and resume the current session. */
   ipcMain.handle("agent:restart", async (e) => {
     const ws = sessionFromEvent(e);
     if (!ws) throw new Error("No window for agent:restart");
