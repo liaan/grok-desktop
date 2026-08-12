@@ -45,9 +45,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          # App build uses Node 20 (Electron 35). JS *actions* run on the
-          # runner's action runtime (Node 24) — that is unrelated to this field.
-          node-version: "20"
+          # Build toolchain (npm, Vite, electron-builder). Not the Node
+          # version inside the packaged app — Electron 35 embeds Node 22.
+          # JS *actions* use the runner action runtime (Node 24); unrelated.
+          node-version: "22"
           cache: npm
 
       - name: Verify tag matches package.json version

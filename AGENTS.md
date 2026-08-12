@@ -59,7 +59,7 @@ grok-desktop/
 
 | Command | Purpose |
 |---------|---------|
-| `npm install` | Deps (Node 20+) |
+| `npm install` | Deps (Node 22+) |
 | `npm run dev` | Vite + Electron (day-to-day) |
 | `npm run build` | Vite production UI → `dist/` |
 | `npm start` | Electron against existing `dist/` |

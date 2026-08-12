@@ -106,7 +106,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 
 1. **Grok Build CLI** installed (`grok` on `PATH`, or `~/.grok/bin/grok` / `grok.exe`)
 2. **Sign-in** from the app (browser OAuth), or an API key / `XAI_API_KEY`
-3. **Node.js 20+** — only if building/running from source (`npm run dev`)
+3. **Node.js 22+** — only if building/running from source (`npm run dev`)
 
 Install the CLI with the official installer for your OS (see [Grok Build](https://github.com/xai-org/grok-build) / project docs), then start this app and use **Sign in with browser**.
 
