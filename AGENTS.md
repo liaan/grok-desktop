@@ -66,7 +66,7 @@ grok-desktop/
 | `npm run preview` | build + start |
 | `npm run pack` | build + electron-builder `--dir` (unpacked app) |
 | `npm run dist` | build + installer for **current** OS |
-| `npm run dist:win` / `dist:mac` | Platform-specific (CI ships Win + mac only; no `dist:linux` yet) |
+| `npm run dist:win` / `dist:mac` / `dist:linux` | Platform-specific (CI ships Win + mac + Linux AppImage) |
 
 **End users never run these.** They use GitHub Release installers.
 
@@ -94,11 +94,13 @@ Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts
    - `GrokDesktop-*-Windows-Setup.exe`
    - `GrokDesktop-*-Mac-AppleSilicon.dmg`
    - `GrokDesktop-*-Mac-Intel.dmg`
+   - `GrokDesktop-*-Linux-x64.AppImage`
    **Auto-update metadata** (for Help → Check for updates; not for hand install):
    - `latest.yml` (Windows)
    - `latest-mac.yml` + `GrokDesktop-*-Mac-arm64.zip` / `…-Mac-x64.zip`
+   - `latest-linux.yml` (Linux AppImage)
    - optional `*.blockmap`
-   No AppImage/portable. CI renames DMGs for friendlier names; **mac zips keep arch names** so yml paths stay valid.
+   No portable Windows / extra Linux noise. CI renames DMGs for friendlier names; **mac zips keep arch names** so yml paths stay valid.
 6. Point the team at **Releases → latest**.
 
 ### Releases and auto-update
@@ -160,7 +162,6 @@ Desktop is a shell. Config ownership:
 - No in-app editor for project `AGENTS.md` (edit in the repo)
 - Plugins inherited but barely surfaced in UI
 - Config changes under `~/.grok` need a **new agent process** (Settings → Restart agent) to bind into the live session
-- Linux team installers not in CI yet (Win + mac only)
 
 ### Client capabilities
 
@@ -284,5 +285,5 @@ Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `buildpack-de
 - [ ] Tag `vX.Y.Z` matches `package.json` version (CI enforces)
 - [ ] Release assets use `GrokDesktop-…` names (no spaces)
 - [ ] README team install still points at Releases with correct name patterns
-- [ ] Team installers: Setup.exe + two DMGs; auto-update assets (latest*.yml, mac zip) also present
+- [ ] Team installers: Setup.exe + two DMGs + Linux AppImage; auto-update assets (latest*.yml, mac zip) also present
 - [ ] Help → Check for updates uses electron-updater (not only a browser link)

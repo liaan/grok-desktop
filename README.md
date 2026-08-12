@@ -25,9 +25,10 @@ and download **one** file:
 | **Windows** | `…-Windows-Setup.exe` | Double-click → install |
 | **Mac (M1/M2/M3/M4)** | `…-Mac-AppleSilicon.dmg` | Open DMG → drag app to **Applications** → then see Mac note below |
 | **Mac (Intel)** | `…-Mac-Intel.dmg` | Same as above |
+| **Linux (x64)** | `…-Linux-x64.AppImage` | `chmod +x` then run |
 | **Source code** | GitHub **Source code (zip)** | Only if you want to build from source |
 
-**Team install:** use Setup.exe or a DMG only. Files named `latest.yml`, `latest-mac.yml`, Mac `.zip`, or blockmap are for **in-app auto-update** (not hand install). Skip AppImage/portable.
+**Team install:** use Setup.exe, a DMG, or the Linux AppImage. Files named `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, Mac `.zip`, or blockmap are for **in-app auto-update** (not hand install).
 
 Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
@@ -76,7 +77,7 @@ This project is **not** a reimplementation of the agent, models, or tools. It is
 └────────────────────────────┘
 ```
 
-Runs on **Windows, macOS, and Linux** (Electron). Team installers currently ship for **Windows + macOS** from Releases; Linux is source/`npm run dist` for now. You need the Grok Build CLI installed; day-to-day login can be done entirely in the app.
+Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Windows, macOS, and Linux** from Releases. You need the Grok Build CLI installed; day-to-day login can be done entirely in the app.
 
 ## Features
 
@@ -96,7 +97,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers currently ship
 | Resume CLI sessions with history | Done (same `~/.grok/sessions`) |
 | Multi-session tabs | Basic (sidebar chat list) |
 | Settings UI (model / MCP / skills editor) | **Planned** — configure under `~/.grok` for now |
-| Native installers | **Windows + macOS Done** — [Releases](https://github.com/liaan/grok-desktop/releases); Linux via source / `npm run dist` |
+| Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
 
 ## Requirements
 
