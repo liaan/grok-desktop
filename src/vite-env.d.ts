@@ -176,6 +176,35 @@ export type McpWriteResult = {
   error?: string | null;
 };
 
+/** Sanitized plugin row from `grok plugin list --json` (no component inventory). */
+export type PluginInfo = {
+  name: string;
+  enabled?: boolean | null;
+  status?: string | null;
+  version?: string | null;
+  description?: string | null;
+  marketplace?: string | null;
+  source?: string | null;
+  skillCount?: number | null;
+  hasHooks?: boolean | null;
+  hasAgents?: boolean | null;
+  hasMcp?: boolean | null;
+};
+
+export type PluginListResult = {
+  ok: boolean;
+  plugins: PluginInfo[];
+  source?: "list" | "inspect";
+  error?: string | null;
+};
+
+export type PluginWriteResult = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
 export type BackboneSummary = {
   ok: boolean;
   skills: Array<{ name: string; description?: string; source?: string }>;
@@ -440,6 +469,10 @@ declare global {
         opts?: { scope?: "user" | "project" },
       ) => Promise<McpWriteResult>;
       doctorMcp: (name?: string) => Promise<McpWriteResult>;
+      listPlugins: () => Promise<PluginListResult>;
+      enablePlugin: (name: string) => Promise<PluginWriteResult>;
+      disablePlugin: (name: string) => Promise<PluginWriteResult>;
+      installPlugin: (source: string) => Promise<PluginWriteResult>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
   }

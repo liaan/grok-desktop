@@ -8,10 +8,14 @@ import os from "node:os";
 import path from "node:path";
 import {
   assertMcpName,
+  assertPluginName,
+  assertPluginSource,
   checkGrokUpdate,
   isMissingGrokBinaryError,
   listMcpServers,
+  listPlugins,
   mapMcpServerRow,
+  mapPluginRow,
   mcpAddArgv,
   mcpDisableArgv,
   mcpDoctorArgv,
@@ -21,6 +25,11 @@ import {
   mcpServersFromData,
   missingGrokBinaryMessage,
   parseGrokJson,
+  pluginDisableArgv,
+  pluginEnableArgv,
+  pluginInstallArgv,
+  pluginListArgv,
+  pluginsFromData,
   runGrok,
   updateFromData,
   versionFromData,
@@ -365,6 +374,226 @@ process.exit(2);
   assert.equal(res.ok, true);
   assert.equal(res.source, "inspect");
   assert.equal(res.servers[0]?.name, "from-inspect");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** Probed from `grok plugin list --available --json` (installed rows drop status=available). */
+const PLUGIN_LIST_FIXTURE = [
+  {
+    status: "enabled",
+    name: "deploy-tools",
+    version: "1.2.0",
+    description: "Deploy helpers",
+    marketplace: "xAI Official",
+    skill_count: 3,
+    has_hooks: true,
+    has_agents: false,
+    has_mcp: false,
+    components: { skills: [{ name: "release", description: "secret-not-leaked" }] },
+  },
+  {
+    status: "disabled",
+    name: "noisy-plugin",
+    version: null,
+    description: "Noisy",
+    marketplace: null,
+    skill_count: 0,
+    has_hooks: false,
+    has_agents: false,
+    has_mcp: false,
+  },
+  {
+    status: "available",
+    name: "vercel",
+    version: null,
+    description: "Marketplace-only; not installed",
+    marketplace: "xAI Official",
+    skill_count: 0,
+    has_hooks: false,
+    has_agents: false,
+    has_mcp: false,
+  },
+];
+
+test("plugin argv builders match CLI grok plugin list/enable/disable/install", () => {
+  assert.deepEqual(pluginListArgv(), ["plugin", "list", "--json"]);
+  assert.deepEqual(pluginEnableArgv("deploy-tools"), [
+    "plugin",
+    "enable",
+    "deploy-tools",
+  ]);
+  assert.deepEqual(pluginDisableArgv("deploy-tools"), [
+    "plugin",
+    "disable",
+    "deploy-tools",
+  ]);
+  assert.deepEqual(pluginEnableArgv("user/a1b2c3d4/team-tools"), [
+    "plugin",
+    "enable",
+    "user/a1b2c3d4/team-tools",
+  ]);
+  assert.deepEqual(
+    pluginInstallArgv("https://github.com/org/plugin.git"),
+    ["plugin", "install", "--trust", "https://github.com/org/plugin.git"],
+  );
+  assert.deepEqual(pluginInstallArgv("owner/repo@v1.0"), [
+    "plugin",
+    "install",
+    "--trust",
+    "owner/repo@v1.0",
+  ]);
+  assert.deepEqual(pluginInstallArgv("owner/repo#subdir"), [
+    "plugin",
+    "install",
+    "--trust",
+    "owner/repo#subdir",
+  ]);
+  assert.deepEqual(pluginInstallArgv("owner/repo", { trust: false }), [
+    "plugin",
+    "install",
+    "owner/repo",
+  ]);
+});
+
+test("plugin argv builders reject unsafe names/sources and never splice extra grok flags", () => {
+  assert.throws(() => assertPluginName(""), /required/);
+  assert.throws(() => assertPluginName("--help"), /letters/);
+  assert.throws(() => assertPluginName("../escape"), /letters/);
+  assert.throws(() => pluginEnableArgv("--help"), /letters/);
+  assert.throws(() => assertPluginSource(""), /required/);
+  assert.throws(() => assertPluginSource("--trust"), /must not start with -/);
+  assert.throws(() => pluginInstallArgv("owner/repo extra"), /single argv/);
+  assert.throws(() => pluginInstallArgv("-e evil=1"), /must not start with -/);
+  const argv = pluginInstallArgv("https://github.com/org/plugin.git");
+  assert.deepEqual(argv.slice(0, 3), ["plugin", "install", "--trust"]);
+  assert.ok(!argv.includes("--json"));
+  assert.ok(!argv.includes("--available"));
+});
+
+test("pluginsFromData maps grok plugin list fixture and drops available + components", () => {
+  const mapped = pluginsFromData(PLUGIN_LIST_FIXTURE);
+  assert.equal(mapped.length, 2);
+  assert.deepEqual(mapped[0], {
+    name: "deploy-tools",
+    enabled: true,
+    status: "enabled",
+    version: "1.2.0",
+    description: "Deploy helpers",
+    marketplace: "xAI Official",
+    source: "xAI Official",
+    skillCount: 3,
+    hasHooks: true,
+    hasAgents: false,
+    hasMcp: false,
+  });
+  assert.equal(mapped[1].name, "noisy-plugin");
+  assert.equal(mapped[1].enabled, false);
+  assert.equal(mapped[1].status, "disabled");
+  const dumped = JSON.stringify(mapped);
+  assert.equal(dumped.includes("secret-not-leaked"), false);
+  assert.equal(dumped.includes("components"), false);
+});
+
+test("mapPluginRow is defensive on inspect-shaped and unknown fields", () => {
+  const inspectRow = mapPluginRow({
+    name: "from-inspect",
+    source: { type: "installed" },
+    extra: { ignore: true },
+  });
+  assert.equal(inspectRow.name, "from-inspect");
+  assert.equal(inspectRow.enabled, null);
+  assert.equal(inspectRow.source, "installed");
+
+  assert.equal(mapPluginRow(null).name, "");
+  assert.equal(mapPluginRow({ weird: 1 }).name, "");
+  assert.deepEqual(pluginsFromData({ plugins: [{ name: "a" }] }).map((p) => p.name), [
+    "a",
+  ]);
+  assert.deepEqual(pluginsFromData("nope"), []);
+});
+
+test("listPlugins result never includes raw data/stdout or component inventory", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-plugin-"));
+  const bin = path.join(dir, "grok");
+  fs.writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.includes("plugin list")) {
+  console.log(${JSON.stringify(JSON.stringify(PLUGIN_LIST_FIXTURE))});
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  const res = await listPlugins({ bin, timeoutMs: 8000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, "list");
+  assert.equal(res.plugins.length, 2);
+  assert.equal("data" in res, false);
+  assert.equal("stdout" in res, false);
+  assert.equal(res.plugins[0].name, "deploy-tools");
+  const dumped = JSON.stringify(res);
+  assert.equal(dumped.includes("secret-not-leaked"), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("listPlugins falls back to inspect when list JSON is unparseable", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-plugin-"));
+  const bin = path.join(dir, "grok");
+  fs.writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.includes("plugin list")) {
+  console.log("not json");
+  process.exit(0);
+}
+if (args.includes("inspect")) {
+  console.log(JSON.stringify({
+    plugins: [{ name: "from-inspect" }],
+  }));
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  const res = await listPlugins({ bin, timeoutMs: 8000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, "inspect");
+  assert.equal(res.plugins[0]?.name, "from-inspect");
+  assert.equal("data" in res, false);
+  assert.equal("stdout" in res, false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("listPlugins empty installed list does not fall back to inspect", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-plugin-"));
+  const bin = path.join(dir, "grok");
+  fs.writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.includes("plugin list")) {
+  console.log("[]");
+  process.exit(0);
+}
+if (args.includes("inspect")) {
+  console.log(JSON.stringify({
+    plugins: [{ name: "should-not-appear" }],
+  }));
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  const res = await listPlugins({ bin, timeoutMs: 8000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, "list");
+  assert.deepEqual(res.plugins, []);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

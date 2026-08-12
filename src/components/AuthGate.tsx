@@ -34,7 +34,7 @@ type Props = {
   onLogout: () => void;
   onSetApiKey: (key: string) => void;
   onOpenInstallDocs: () => void;
-  onOpenMcpSettings?: () => void;
+  onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
 };
 
 export function AuthGate({
@@ -49,7 +49,7 @@ export function AuthGate({
   onLogout,
   onSetApiKey,
   onOpenInstallDocs,
-  onOpenMcpSettings,
+  onOpenSettingsSection,
 }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -198,15 +198,27 @@ export function AuthGate({
         {backbone?.ok ? (
           <div className="auth-backbone">
             <div>
-              <strong>{backbone.skills.length}</strong> skills
-              <span className="auth-muted"> · same as CLI</span>
-            </div>
-            <div>
-              {onOpenMcpSettings ? (
+              {onOpenSettingsSection ? (
                 <button
                   type="button"
                   className="auth-link"
-                  onClick={onOpenMcpSettings}
+                  onClick={() => onOpenSettingsSection("skills")}
+                >
+                  <strong>{backbone.skills.length}</strong> skills
+                </button>
+              ) : (
+                <>
+                  <strong>{backbone.skills.length}</strong> skills
+                </>
+              )}
+              <span className="auth-muted"> · same as CLI</span>
+            </div>
+            <div>
+              {onOpenSettingsSection ? (
+                <button
+                  type="button"
+                  className="auth-link"
+                  onClick={() => onOpenSettingsSection("mcp")}
                 >
                   <strong>{backbone.mcpServers.length}</strong> MCP
                   {backbone.mcpServers.length === 1 ? "" : "s"}
@@ -229,6 +241,34 @@ export function AuthGate({
                 </span>
               )}
             </div>
+            <div>
+              {onOpenSettingsSection ? (
+                <button
+                  type="button"
+                  className="auth-link"
+                  onClick={() => onOpenSettingsSection("plugins")}
+                >
+                  <strong>{backbone.plugins.length}</strong> plugin
+                  {backbone.plugins.length === 1 ? "" : "s"}
+                </button>
+              ) : (
+                <>
+                  <strong>{backbone.plugins.length}</strong> plugin
+                  {backbone.plugins.length === 1 ? "" : "s"}
+                </>
+              )}
+              {backbone.plugins.length > 0 ? (
+                <span className="auth-muted">
+                  {" "}
+                  · {backbone.plugins.map((p) => p.name).join(", ")}
+                </span>
+              ) : (
+                <span className="auth-muted">
+                  {" "}
+                  · install from a git URL in Settings
+                </span>
+              )}
+            </div>
             {versionLabel ? (
               <div className="auth-muted">Grok {versionLabel}</div>
             ) : null}
@@ -238,10 +278,12 @@ export function AuthGate({
           </div>
         ) : backbone && !backbone.ok ? (
           <p className="auth-muted">
-            Could not list skills/MCP yet: {backbone.error}
+            Could not list skills/MCP/plugins yet: {backbone.error}
           </p>
         ) : (
-          <p className="auth-muted">Loading skills &amp; MCP from ~/.grok…</p>
+          <p className="auth-muted">
+            Loading skills, MCP &amp; plugins from ~/.grok…
+          </p>
         )}
       </div>
     );

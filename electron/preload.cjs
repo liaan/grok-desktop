@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   removeMcpServer: (name, opts) =>
     ipcRenderer.invoke("mcp:remove", { name, scope: opts?.scope }),
   doctorMcp: (name) => ipcRenderer.invoke("mcp:doctor", name),
+  listPlugins: () => ipcRenderer.invoke("plugin:list"),
+  enablePlugin: (name) => ipcRenderer.invoke("plugin:enable", name),
+  disablePlugin: (name) => ipcRenderer.invoke("plugin:disable", name),
+  installPlugin: (source) => ipcRenderer.invoke("plugin:install", source),
 
   on: (channel, handler) => {
     const valid = [

@@ -153,16 +153,17 @@ Desktop is a shell. Config ownership:
 | Project tree (`AGENTS.md`, `CLAUDE.md`, rules, …) | Agent instruction files | **None** — agent loads from cwd (same as CLI) |
 | `GROK_HOME` / `~/.grok` | Skills, MCP, plugins, auth, models | Env via `buildGrokEnv`; never edit `config.toml` in-app |
 | Client `mcpServers: []` | Embed contract | Always empty; agent merges its own MCP (upstream Grok Build) |
-| `grok inspect --json` | Skill/MCP **names** for UI | Slash menu + AuthGate counts — not the runtime loader |
+| `grok inspect --json` | Skill/MCP/plugin **names** for UI | Slash menu + AuthGate counts + Settings skills list — not the runtime loader |
 | `grok mcp list/add/enable/disable/remove/doctor` | Settings → MCP | Dedicated IPC only; never parse or write `config.toml` |
+| `grok plugin list/enable/disable/install` | Settings → Plugins | Dedicated IPC only; install uses `--trust` after UI confirm |
 | Runtime skills | `/name` as `session/prompt` | Same as CLI; no separate skill runner here |
 
 **Outstanding / not in GUI (document for team):**
 
-- No settings UI for models or skill install (README: Planned). MCP list/add/toggle is in Settings.
+- No settings UI for models or skill authoring (README: Planned). MCP and plugin list/toggle are in Settings; skills are listed read-only.
 - No in-app editor for project `AGENTS.md` (edit in the repo)
-- Plugins inherited but barely surfaced in UI
-- Config changes under `~/.grok` need a **new agent process** (Settings → Restart agent) to bind into the live session
+- No plugin marketplace browser (install from git URL only)
+- Config changes under `~/.grok` need a **new agent process** (Settings → Restart agent) to bind into the live session. MCP/plugin writes already restart.
 
 ### Client capabilities
 

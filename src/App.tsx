@@ -77,7 +77,9 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"mcp" | null>(null);
+  const [settingsSection, setSettingsSection] = useState<
+    "mcp" | "plugins" | "skills" | null
+  >(null);
   const [offerAgentRestart, setOfferAgentRestart] = useState(false);
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
 
@@ -595,10 +597,13 @@ export default function App() {
         ? "platform-win"
         : "platform-linux";
 
-  const onOpenSettings = useCallback((section?: "mcp") => {
-    setSettingsSection(section || null);
-    setSettingsOpen(true);
-  }, []);
+  const onOpenSettings = useCallback(
+    (section?: "mcp" | "plugins" | "skills") => {
+      setSettingsSection(section || null);
+      setSettingsOpen(true);
+    },
+    [],
+  );
   const onComposerError = useCallback((message: string) => {
     setError(message);
   }, []);
@@ -633,7 +638,7 @@ export default function App() {
         setSettingsSection(null);
         void restartAgent();
       }}
-      onRestartAfterMcpWrite={async () => {
+      onRestartAfterWrite={async () => {
         if (project) await restartAgent();
         await refreshBackbone(project || undefined);
       }}
@@ -641,6 +646,9 @@ export default function App() {
       offerRestart={offerAgentRestart}
       grokBinary={info?.grokBinary || auth?.binary || ""}
       hasProject={Boolean(project)}
+      skills={backbone?.skills || []}
+      skillsError={backbone && !backbone.ok ? backbone.error : null}
+      skillsLoading={backbone == null}
       focusSection={settingsSection}
     />
   );
@@ -672,7 +680,7 @@ export default function App() {
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
           onOpenProject={(cwd) => void openProject(cwd)}
-          onOpenMcpSettings={() => onOpenSettings("mcp")}
+          onOpenSettingsSection={onOpenSettings}
           platform={platform}
         />
         {settingsDialog}
@@ -699,7 +707,7 @@ export default function App() {
           onOpenProject={(cwd) => void openProject(cwd, { mode: "continue" })}
           onOpenSession={(opts) => void openSession(opts)}
           onLogout={() => void handleLogout()}
-          onOpenMcpSettings={() => onOpenSettings("mcp")}
+          onOpenSettingsSection={onOpenSettings}
         />
 
         {settingsDialog}

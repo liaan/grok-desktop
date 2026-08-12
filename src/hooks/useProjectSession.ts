@@ -124,6 +124,7 @@ export function useProjectSession(opts: {
       const bb = res.backbone ?? (await refreshBackbone(res.cwd));
       const skillN = bb.ok ? bb.skills.length : "?";
       const mcpN = bb.ok ? bb.mcpServers.length : "?";
+      const pluginN = bb.ok ? bb.plugins.length : "?";
       const runningBg = (res.backgroundTasks || []).filter(
         (t) => t.status === "running",
       ).length;
@@ -151,7 +152,7 @@ export function useProjectSession(opts: {
             ? `Background tasks: ${runningBg} still running (see Tasks dock)`
             : null,
           `Binary: ${res.grokBinary}`,
-          `Skills: ${skillN} · MCP: ${mcpN}`,
+          `Skills: ${skillN} · MCP: ${mcpN} · Plugins: ${pluginN}`,
         ]
           .filter(Boolean)
           .join("\n"),

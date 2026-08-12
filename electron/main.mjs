@@ -25,11 +25,15 @@ import {
   addMcpServer,
   checkGrokUpdate,
   disableMcpServer,
+  disablePlugin,
   doctorMcp,
   enableMcpServer,
+  enablePlugin,
   getGrokEngine,
   installGrokUpdate,
+  installPlugin,
   listMcpServers,
+  listPlugins,
   removeMcpServer,
 } from "./grok-cli.mjs";
 import {
@@ -190,7 +194,7 @@ function mcpIpcError(err) {
   const message =
     err && typeof err === "object" && "message" in err
       ? String(/** @type {{ message?: unknown }} */ (err).message || err)
-      : String(err || "MCP command failed");
+      : String(err || "CLI command failed");
   return {
     ok: false,
     data: null,
@@ -647,6 +651,34 @@ function registerIpc() {
   ipcMain.handle("mcp:doctor", async (e, name) => {
     try {
       return await doctorMcp(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:list", async (e) => {
+    return listPlugins({ cwd: mcpCwdFromEvent(e) });
+  });
+
+  ipcMain.handle("plugin:enable", async (e, name) => {
+    try {
+      return await enablePlugin(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:disable", async (e, name) => {
+    try {
+      return await disablePlugin(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:install", async (e, source) => {
+    try {
+      return await installPlugin(source, { cwd: mcpCwdFromEvent(e) });
     } catch (err) {
       return mcpIpcError(err);
     }

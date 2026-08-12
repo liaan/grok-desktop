@@ -22,7 +22,7 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenProject,
   onOpenSession,
   onLogout,
-  onOpenMcpSettings,
+  onOpenSettingsSection,
 }: {
   infoVersion?: string;
   grokBinary?: string | null;
@@ -39,7 +39,7 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenProject: (cwd: string) => void;
   onOpenSession: (opts: { mode: "new" | "resume"; sessionId?: string }) => void;
   onLogout: () => void;
-  onOpenMcpSettings?: () => void;
+  onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
 }) {
   const { redact } = usePrivacy();
   const busyGate = isOpening || conn === "busy";
@@ -80,17 +80,35 @@ export const AppSidebar = memo(function AppSidebar({
           </div>
           <div className="path">
             {backbone?.ok ? (
-              onOpenMcpSettings ? (
-                <button
-                  type="button"
-                  className="auth-link"
-                  onClick={onOpenMcpSettings}
-                >
-                  {backbone.skills.length} skills · {backbone.mcpServers.length}{" "}
-                  MCP
-                </button>
+              onOpenSettingsSection ? (
+                <span>
+                  <button
+                    type="button"
+                    className="auth-link"
+                    onClick={() => onOpenSettingsSection("skills")}
+                  >
+                    {backbone.skills.length} skills
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="auth-link"
+                    onClick={() => onOpenSettingsSection("mcp")}
+                  >
+                    {backbone.mcpServers.length} MCP
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="auth-link"
+                    onClick={() => onOpenSettingsSection("plugins")}
+                  >
+                    {backbone.plugins.length} plugin
+                    {backbone.plugins.length === 1 ? "" : "s"}
+                  </button>
+                </span>
               ) : (
-                `${backbone.skills.length} skills · ${backbone.mcpServers.length} MCP`
+                `${backbone.skills.length} skills · ${backbone.mcpServers.length} MCP · ${backbone.plugins.length} plugin${backbone.plugins.length === 1 ? "" : "s"}`
               )
             ) : (
               auth?.method || "session"

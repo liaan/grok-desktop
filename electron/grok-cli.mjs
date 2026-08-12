@@ -716,3 +716,266 @@ export async function doctorMcp(name, opts = {}) {
     bin: opts.bin,
   });
 }
+
+/** Plugin names: kebab-case or scoped `<scope>/<hash>/<name>` from `grok plugin list`. */
+const PLUGIN_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_./+-]*$/;
+
+/**
+ * @param {unknown} name
+ * @returns {string}
+ */
+export function assertPluginName(name) {
+  const n = String(name || "").trim();
+  if (!n) throw new Error("Plugin name is required");
+  if (n.startsWith("-") || n.includes("..") || !PLUGIN_NAME_RE.test(n)) {
+    throw new Error(
+      "Plugin name may only contain letters, numbers, slashes, dots, and hyphens",
+    );
+  }
+  return n;
+}
+
+/**
+ * Git URL, GitHub shorthand (user/repo[@ref][#subdir]), or local path.
+ * Single argv token — never starts with `-` (no extra grok flags).
+ * @param {unknown} source
+ * @returns {string}
+ */
+export function assertPluginSource(source) {
+  const s = String(source || "").trim();
+  if (!s) throw new Error("Plugin source is required");
+  if (s.startsWith("-")) {
+    throw new Error("Plugin source must not start with -");
+  }
+  if (/[\s\r\n]/.test(s)) {
+    throw new Error("Plugin source must be a single argv token");
+  }
+  return s;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {unknown[]}
+ */
+export function extractPluginRows(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return [];
+  const o = /** @type {Record<string, unknown>} */ (raw);
+  if (Array.isArray(o.plugins)) return o.plugins;
+  if (Array.isArray(o.items)) return o.items;
+  return [];
+}
+
+/**
+ * Map one `grok plugin list --json` / inspect row. Drops `components`.
+ * @param {unknown} raw
+ * @returns {{
+ *   name: string,
+ *   enabled: boolean | null,
+ *   status: string | null,
+ *   version: string | null,
+ *   description: string | null,
+ *   marketplace: string | null,
+ *   source: string | null,
+ *   skillCount: number | null,
+ *   hasHooks: boolean | null,
+ *   hasAgents: boolean | null,
+ *   hasMcp: boolean | null,
+ * }}
+ */
+export function mapPluginRow(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {
+      name: "",
+      enabled: null,
+      status: null,
+      version: null,
+      description: null,
+      marketplace: null,
+      source: null,
+      skillCount: null,
+      hasHooks: null,
+      hasAgents: null,
+      hasMcp: null,
+    };
+  }
+  const o = /** @type {Record<string, unknown>} */ (raw);
+  const name = String(o.name || o.id || "").trim();
+  const status =
+    o.status == null || o.status === "" ? null : String(o.status).toLowerCase();
+  /** @type {boolean | null} */
+  let enabled = null;
+  if (typeof o.enabled === "boolean") enabled = o.enabled;
+  else if (o.enabled === "true" || o.enabled === 1) enabled = true;
+  else if (o.enabled === "false" || o.enabled === 0) enabled = false;
+  else if (status === "disabled") enabled = false;
+  else if (status === "enabled" || status === "installed") enabled = true;
+
+  const version = o.version == null || o.version === "" ? null : String(o.version);
+  const description =
+    o.description == null || o.description === "" ? null : String(o.description);
+  const marketplace =
+    o.marketplace == null || o.marketplace === "" ? null : String(o.marketplace);
+  let source = null;
+  if (typeof o.source === "string" && o.source) source = o.source;
+  else if (o.source && typeof o.source === "object") {
+    const src = /** @type {Record<string, unknown>} */ (o.source);
+    source = src.type != null ? String(src.type) : null;
+  } else if (marketplace) {
+    source = marketplace;
+  }
+
+  const skillRaw = o.skill_count ?? o.skillCount;
+  const skillCount =
+    typeof skillRaw === "number" && Number.isFinite(skillRaw)
+      ? skillRaw
+      : null;
+
+  /** @param {unknown} v */
+  const boolOrNull = (v) => (typeof v === "boolean" ? v : null);
+
+  return {
+    name,
+    enabled,
+    status,
+    version,
+    description,
+    marketplace,
+    source,
+    skillCount,
+    hasHooks: boolOrNull(o.has_hooks ?? o.hasHooks),
+    hasAgents: boolOrNull(o.has_agents ?? o.hasAgents),
+    hasMcp: boolOrNull(o.has_mcp ?? o.hasMcp),
+  };
+}
+
+/**
+ * @param {unknown} data
+ */
+export function pluginsFromData(data) {
+  return extractPluginRows(data)
+    .map(mapPluginRow)
+    .filter((p) => Boolean(p.name) && p.status !== "available");
+}
+
+/** @returns {string[]} */
+export function pluginListArgv() {
+  return ["plugin", "list", "--json"];
+}
+
+/**
+ * @param {unknown} name
+ */
+export function pluginEnableArgv(name) {
+  return ["plugin", "enable", assertPluginName(name)];
+}
+
+/**
+ * @param {unknown} name
+ */
+export function pluginDisableArgv(name) {
+  return ["plugin", "disable", assertPluginName(name)];
+}
+
+/**
+ * `grok plugin install [--trust] <source>`. UI confirms, then always --trust
+ * (CLI otherwise prints a warning and stops; stdin is not a TTY here).
+ *
+ * @param {unknown} source
+ * @param {{ trust?: boolean }} [opts]
+ * @returns {string[]}
+ */
+export function pluginInstallArgv(source, opts = {}) {
+  const src = assertPluginSource(source);
+  const argv = ["plugin", "install"];
+  if (opts.trust !== false) argv.push("--trust");
+  argv.push(src);
+  return argv;
+}
+
+/**
+ * Sanitized list payload for plugin:list IPC. Never includes raw grok data/stdout.
+ * @param {boolean} ok
+ * @param {ReturnType<typeof pluginsFromData>} plugins
+ * @param {"list" | "inspect"} source
+ * @param {string | null} [error]
+ */
+function pluginListResult(ok, plugins, source, error = null) {
+  return {
+    ok: Boolean(ok),
+    plugins,
+    source,
+    error: ok ? null : error || "Failed to list plugins",
+  };
+}
+
+/**
+ * `grok plugin list --json`. Falls back to `grok inspect --json` plugins
+ * when list fails or is unparseable.
+ * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
+ */
+export async function listPlugins(opts = {}) {
+  const runOpts = {
+    cwd: opts.cwd,
+    timeoutMs: opts.timeoutMs ?? 20_000,
+    json: true,
+    bin: opts.bin,
+  };
+  const listed = await runGrok(pluginListArgv(), runOpts);
+  if (listed.ok) {
+    return pluginListResult(true, pluginsFromData(listed.data), "list");
+  }
+
+  const inspected = await runGrok(["inspect", "--json"], runOpts);
+  if (inspected.ok) {
+    return pluginListResult(
+      true,
+      pluginsFromData(inspected.data?.plugins ?? inspected.data),
+      "inspect",
+    );
+  }
+
+  return pluginListResult(
+    false,
+    [],
+    "list",
+    listed.error || "Failed to list plugins",
+  );
+}
+
+/**
+ * @param {unknown} name
+ * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
+ */
+export async function enablePlugin(name, opts = {}) {
+  return runGrok(pluginEnableArgv(name), {
+    cwd: opts.cwd,
+    timeoutMs: opts.timeoutMs ?? 20_000,
+    bin: opts.bin,
+  });
+}
+
+/**
+ * @param {unknown} name
+ * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
+ */
+export async function disablePlugin(name, opts = {}) {
+  return runGrok(pluginDisableArgv(name), {
+    cwd: opts.cwd,
+    timeoutMs: opts.timeoutMs ?? 20_000,
+    bin: opts.bin,
+  });
+}
+
+/**
+ * `grok plugin install --trust <source>` after the UI confirms.
+ * @param {unknown} source
+ * @param {{ cwd?: string, timeoutMs?: number, bin?: string, trust?: boolean }} [opts]
+ */
+export async function installPlugin(source, opts = {}) {
+  return runGrok(pluginInstallArgv(source, { trust: opts.trust }), {
+    cwd: opts.cwd,
+    timeoutMs: opts.timeoutMs ?? 120_000,
+    bin: opts.bin,
+  });
+}
