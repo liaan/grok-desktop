@@ -21,6 +21,7 @@ export function SettingsDialog({
   sandboxStatus,
   debugLogging,
   debugLogPath,
+  allowPrerelease,
   onSetTheme,
   onSetPrivacyMode,
   onSetCodingDataOptIn,
@@ -28,6 +29,7 @@ export function SettingsDialog({
   onToggleAllowOutside,
   onSetSandboxTerminal,
   onSetDebugLogging,
+  onSetAllowPrerelease,
   onOpenDebugLog,
 }: {
   open: boolean;
@@ -43,6 +45,8 @@ export function SettingsDialog({
   sandboxStatus: string;
   debugLogging: boolean;
   debugLogPath: string;
+  /** Opt into prerelease installers (testers). Default off. */
+  allowPrerelease: boolean;
   onSetTheme: (theme: "dark" | "light") => void;
   onSetPrivacyMode: (next: boolean) => void;
   onSetCodingDataOptIn: (next: boolean) => void;
@@ -51,6 +55,7 @@ export function SettingsDialog({
   /** Desired checked state from the checkbox (not a toggle). */
   onSetSandboxTerminal: (next: boolean) => void;
   onSetDebugLogging: (next: boolean) => void;
+  onSetAllowPrerelease: (next: boolean) => void;
   onOpenDebugLog: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -246,6 +251,28 @@ export function SettingsDialog({
                 type="checkbox"
                 checked={allowOutsideProject}
                 onChange={onToggleAllowOutside}
+              />
+            </label>
+          </section>
+
+          <section className="settings-section">
+            <h3>Updates</h3>
+            <label className="settings-row">
+              <div className="settings-row-text">
+                <span className="settings-label">Preview updates</span>
+                <span className="settings-desc">
+                  Off (default) stays on the last stable installer. On,{" "}
+                  <strong>Help → Check for updates</strong> can install
+                  prerelease builds (tags like v0.1.41-beta.1). Testers only —
+                  preview may be rougher. Turning this off does not uninstall a
+                  preview you already have; wait for the next stable or
+                  reinstall from Releases → latest.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={allowPrerelease}
+                onChange={(e) => onSetAllowPrerelease(e.target.checked)}
               />
             </label>
           </section>

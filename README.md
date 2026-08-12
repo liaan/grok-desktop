@@ -33,7 +33,7 @@ Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
 Then: **Grok Desktop** → **Sign in with browser** → **Open project…**
 
-**Updates:** in a packaged install, **Help → Check for updates…** checks GitHub Releases and downloads the next version in-app (restart when prompted). You only need a fresh installer from Releases if auto-update metadata is missing for that build.
+**Updates:** in a packaged install, **Help → Check for updates…** checks GitHub Releases and downloads the next **stable** version in-app (restart when prompted). Testers who should try a prerelease: **Settings → Preview updates**, then Check for updates. Everyone else leave that off. You only need a fresh installer from Releases if auto-update metadata is missing for that build.
 
 ### Mac: “damaged and can’t be opened”
 

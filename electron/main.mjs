@@ -24,6 +24,7 @@ import {
   setupAutoUpdater,
   checkForUpdatesInteractive,
   isQuittingForUpdate,
+  setAllowPrerelease,
 } from "./auto-update.mjs";
 import {
   listSessionsForCwd,
@@ -108,6 +109,11 @@ function loadState() {
       privacyMode: false,
       /** Write diagnostic JSONL to userData/desktop-debug.log */
       debugLogging: false,
+      /**
+       * When true, Help → Check for updates includes GitHub prereleases
+       * (vX.Y.Z-beta.N). Default off — team installers stay on stable.
+       */
+      allowPrerelease: false,
       lastProject: null,
       ...raw,
     };
@@ -120,6 +126,7 @@ function loadState() {
     merged.privacyMode = Boolean(merged.privacyMode);
     merged.reasoningEffort = normalizeReasoningEffort(merged.reasoningEffort);
     merged.debugLogging = Boolean(merged.debugLogging);
+    merged.allowPrerelease = Boolean(merged.allowPrerelease);
     return merged;
   } catch {
     return {
@@ -130,6 +137,7 @@ function loadState() {
       theme: "dark",
       privacyMode: false,
       debugLogging: false,
+      allowPrerelease: false,
       lastProject: null,
       recentProjects: [],
     };
@@ -501,6 +509,7 @@ function registerIpc() {
       codingDataStatus: codingData,
       debugLogging: isDebugLogging() || Boolean(state.debugLogging),
       debugLogPath: getDebugLogPath(),
+      allowPrerelease: Boolean(state.allowPrerelease),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -779,6 +788,14 @@ function registerIpc() {
     return setCodingDataOptIn(Boolean(value));
   });
 
+  ipcMain.handle("app:set-allow-prerelease", async (_e, value) => {
+    const state = loadState();
+    state.allowPrerelease = Boolean(value);
+    saveState(state);
+    setAllowPrerelease(state.allowPrerelease);
+    return state.allowPrerelease;
+  });
+
   ipcMain.handle("app:set-debug-logging", async (_e, value) => {
     const state = loadState();
     state.debugLogging = Boolean(value);
@@ -881,6 +898,7 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   setDesktopStateLoader(loadState);
+  setAllowPrerelease(Boolean(loadState().allowPrerelease));
   installApplicationMenu();
   registerIpc();
   createWindow();

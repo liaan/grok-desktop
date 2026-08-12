@@ -106,6 +106,7 @@ Preferred path is **CI**, not local cross-builds. Softprops + multi-OS artifacts
 - Softprops still owns the Release page — **do not** enable electron-builder `--publish`.
 - CI **does** upload `latest*.yml` + mac zip so `electron-updater` works in packaged apps.
 - Help → **Check for updates…** runs `checkForUpdatesInteractive()` (download + restart dialog). **Open Releases page** is the manual fallback.
+- **Preview channel:** Settings → **Preview updates** sets `allowPrerelease` in `desktop-state.json` (default off). Stable installers ignore `vX.Y.Z-beta.N` GitHub prereleases. Testers turn the switch on, then Check for updates. Do **not** tag a hyphen-free `vX.Y.Z` for a test flight — that updates everyone.
 - First install after enabling auto-update still needs a normal installer once; later upgrades can be in-app.
 - **macOS install path:** builds are ad-hoc signed. Do **not** rely on Squirrel.Mac/`quitAndInstall` alone — `electron/auto-update.mjs` replaces the `.app` from the downloaded zip via a detached helper (then relaunches). Failures log to `~/Library/Logs/grok-desktop-update.log`.
 

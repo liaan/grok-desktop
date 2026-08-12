@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getCodingDataStatus: () => ipcRenderer.invoke("app:get-coding-data"),
   setCodingDataOptIn: (value) =>
     ipcRenderer.invoke("app:set-coding-data-opt-in", value),
+  setAllowPrerelease: (value) =>
+    ipcRenderer.invoke("app:set-allow-prerelease", value),
   setDebugLogging: (value) => ipcRenderer.invoke("app:set-debug-logging", value),
   openDebugLog: () => ipcRenderer.invoke("app:open-debug-log"),
   getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),

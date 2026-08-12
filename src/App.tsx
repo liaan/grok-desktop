@@ -68,6 +68,7 @@ export default function App() {
   const [codingDataNote, setCodingDataNote] = useState<string | undefined>();
   const [debugLogging, setDebugLogging] = useState(false);
   const [debugLogPath, setDebugLogPath] = useState("");
+  const [allowPrerelease, setAllowPrerelease] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -144,6 +145,7 @@ export default function App() {
     setCodingDataNote(i.codingDataStatus?.note);
     setDebugLogging(Boolean(i.debugLogging));
     setDebugLogPath(i.debugLogPath || "");
+    setAllowPrerelease(Boolean(i.allowPrerelease));
     const nextTheme = i.theme === "light" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
@@ -395,6 +397,27 @@ export default function App() {
     }
   };
 
+  const applyAllowPrerelease = async (next: boolean) => {
+    if (next === allowPrerelease) return;
+    if (
+      next &&
+      !window.confirm(
+        "Preview updates can install untested prerelease builds.\n\nThe rest of the team stays on stable unless they turn this on too.\n\nAfter you turn this on, use Help → Check for updates.",
+      )
+    ) {
+      return;
+    }
+    setAllowPrerelease(next);
+    try {
+      const stored = await window.grokDesktop.setAllowPrerelease(next);
+      setAllowPrerelease(Boolean(stored));
+    } catch (e: unknown) {
+      setAllowPrerelease(!next);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Failed to set preview updates");
+    }
+  };
+
   const applyDebugLogging = async (next: boolean) => {
     if (next === debugLogging) return;
     setDebugLogging(next);
@@ -549,6 +572,7 @@ export default function App() {
           sandboxStatus={sandboxStatus}
           debugLogging={debugLogging}
           debugLogPath={debugLogPath}
+          allowPrerelease={allowPrerelease}
           onSetTheme={(t) => void setAppTheme(t)}
           onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
           onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
@@ -556,6 +580,7 @@ export default function App() {
           onToggleAllowOutside={() => void toggleAllowOutside()}
           onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
           onSetDebugLogging={(next) => void applyDebugLogging(next)}
+          onSetAllowPrerelease={(next) => void applyAllowPrerelease(next)}
           onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
         />
 

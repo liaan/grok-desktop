@@ -27,6 +27,28 @@ let wired = false;
 let busy = false;
 /** True while we are forcing quit to install an update */
 let quittingForUpdate = false;
+/** Settings → Preview updates. Default off so team installers stay on stable. */
+let allowPrereleasePref = false;
+
+/**
+ * Opt into GitHub prerelease installers (tags like v0.1.41-beta.1).
+ * Stable apps ignore those until this is on.
+ * @param {boolean} value
+ */
+export function setAllowPrerelease(value) {
+  allowPrereleasePref = Boolean(value);
+  if (!wired) return;
+  try {
+    getAutoUpdater().allowPrerelease = allowPrereleasePref;
+  } catch {
+    /* updater not loaded */
+  }
+}
+
+/** @returns {boolean} */
+export function getAllowPrerelease() {
+  return allowPrereleasePref;
+}
 
 export function isQuittingForUpdate() {
   return quittingForUpdate;
@@ -409,7 +431,7 @@ function ensureWired(hooks = {}) {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   // Public GitHub repo — no token required for download.
-  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowPrerelease = allowPrereleasePref;
 
   autoUpdater.on("error", (err) => {
     busy = false;
@@ -538,6 +560,7 @@ export function setupAutoUpdater(hooks = {}) {
   if (!app.isPackaged) return;
   const autoUpdater = ensureWired(hooks);
   if (!autoUpdater) return;
+  autoUpdater.allowPrerelease = allowPrereleasePref;
 
   setTimeout(() => {
     checkForUpdatesWithRetry(autoUpdater, { attempts: 3, delayMs: 2000 }).catch(
@@ -581,6 +604,7 @@ export async function checkForUpdatesInteractive(hooks = {}) {
   }
 
   const autoUpdater = ensureWired(hooks);
+  if (autoUpdater) autoUpdater.allowPrerelease = allowPrereleasePref;
   if (!autoUpdater) {
     await box({
       type: "error",

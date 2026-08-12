@@ -220,6 +220,11 @@ export type AppInfo = {
   /** Diagnostic JSONL log for tools/hooks/terminals */
   debugLogging: boolean;
   debugLogPath: string;
+  /**
+   * When true, Check for updates includes GitHub prereleases
+   * (vX.Y.Z-beta.N). Default off.
+   */
+  allowPrerelease: boolean;
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -298,6 +303,7 @@ declare global {
         managed: boolean;
         note?: string;
       }>;
+      setAllowPrerelease: (value: boolean) => Promise<boolean>;
       setDebugLogging: (
         value: boolean,
       ) => Promise<{ debugLogging: boolean; debugLogPath: string }>;
