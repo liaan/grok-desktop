@@ -37,6 +37,11 @@ jobs:
             args: --linux
 
     runs-on: ${{ matrix.os }}
+    env:
+      # Must be set for npm ci (electron's install.js) AND electron-builder.
+      # Cache restore happens before npm ci so Linux does not re-download Electron.
+      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
     steps:
       - name: Checkout
@@ -62,14 +67,11 @@ jobs:
           fi
           echo "OK: tag v$TAG matches package.json $PKG"
 
-      - name: Install dependencies
-        run: npm ci
-
       # Persist electron + electron-builder toolsets across runs (NSIS, icons, …).
+      # Restore BEFORE npm ci — electron's postinstall downloads the binary.
       # IMPORTANT: cache MUST live outside the repo. package.json has "type":"module",
       # and electron-builder's icon-tool.js is CJS — if it runs under the project tree
       # Node treats it as ESM and fails with "require is not defined".
-      # actions/cache@v5 = Node 24 runtime (v4 is deprecated on GH runners).
       - name: Cache Electron toolchains
         uses: actions/cache@v5
         with:
@@ -80,13 +82,39 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-eb-
 
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
+          # Retry: Linux often socket-hangs downloading Electron during postinstall.
+          max=3
+          attempt=1
+          while [ "$attempt" -le "$max" ]; do
+            echo "=== npm ci attempt ${attempt}/${max} ==="
+            set +e
+            npm ci
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              echo "npm ci succeeded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "npm ci exited ${status} on attempt ${attempt}"
+            if [ "$attempt" -eq "$max" ]; then
+              exit "$status"
+            fi
+            rm -rf node_modules
+            delay=$((attempt * 20))
+            echo "Retrying in ${delay}s..."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
+
       - name: Build installers
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          # Outside workspace — see Cache Electron toolchains comment above.
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
-          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: |
           set -uo pipefail
           mkdir -p "${ELECTRON_CACHE}" "${ELECTRON_BUILDER_CACHE}"
@@ -174,7 +202,9 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Win/mac artifacts are enough for a Release. A flaky Linux npm ci must
+    # not skip latest.yml / latest-mac.yml (Preview updates 404s without them).
+    if: always() && startsWith(github.ref, 'refs/tags/v') && !cancelled()
     runs-on: ubuntu-latest
 
     steps:
@@ -199,14 +229,18 @@ jobs:
           set -euo pipefail
           exe=$(find dist-installers -type f -name '*.exe' | wc -l)
           dmg=$(find dist-installers -type f -name '*.dmg' | wc -l)
+          yml=$(find dist-installers -type f -name 'latest*.yml' | wc -l)
           appimage=$(find dist-installers -type f -name '*.AppImage' | wc -l)
-          echo "Found ${exe} .exe, ${dmg} .dmg, ${appimage} .AppImage"
+          echo "Found ${exe} .exe, ${dmg} .dmg, ${yml} latest*.yml, ${appimage} .AppImage"
           find dist-installers -type f | sort
-          # Tag releases run the full matrix. Missing a type means a job was dropped.
-          # workflow_dispatch never reaches this job (tags only).
-          if [ "$exe" -lt 1 ] || [ "$dmg" -lt 1 ] || [ "$appimage" -lt 1 ]; then
-            echo "Need Windows .exe, macOS .dmg, and Linux .AppImage after download-artifact."
+          # Team auto-update needs Win + mac + yml. Linux AppImage is best-effort
+          # (ubuntu electron download flakes; do not skip the whole Release).
+          if [ "$exe" -lt 1 ] || [ "$dmg" -lt 1 ] || [ "$yml" -lt 1 ]; then
+            echo "Need Windows .exe, macOS .dmg, and latest*.yml after download-artifact."
             exit 1
+          fi
+          if [ "$appimage" -lt 1 ]; then
+            echo "WARNING: no Linux AppImage (Linux job likely failed). Publishing Win/mac anyway."
           fi
 
       # Tag is vX.Y.Z; installer names use X.Y.Z (no "v")
