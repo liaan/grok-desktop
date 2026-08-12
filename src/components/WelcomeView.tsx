@@ -26,6 +26,7 @@ export function WelcomeView({
   onSetApiKey,
   onPickProject,
   onOpenProject,
+  platform,
 }: {
   platformClass: string;
   isOpening: boolean;
@@ -46,6 +47,7 @@ export function WelcomeView({
   onSetApiKey: (key: string) => void;
   onPickProject: () => void;
   onOpenProject: (cwd: string) => void;
+  platform?: string;
 }) {
   return (
     <div className={`app no-project ${platformClass}`.trim()}>
@@ -76,6 +78,7 @@ export function WelcomeView({
             onLogout={onLogout}
             onSetApiKey={onSetApiKey}
             onOpenInstallDocs={() => void window.grokDesktop.openInstallDocs()}
+            platform={platform}
           />
 
           <ul className="checklist">

@@ -13,6 +13,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import { resolveGrokBinary } from "./grok-home.mjs";
+import {
+  isMissingGrokBinaryError,
+  missingGrokBinaryMessage,
+} from "./grok-cli.mjs";
 import { AcpTerminalManager } from "./acp-terminals.mjs";
 import { expandUserPath, resolveProjectPath } from "./path-safety.mjs";
 import { readFileForAcp } from "./fs-content.mjs";
@@ -264,8 +268,17 @@ export class GrokAcpClient extends EventEmitter {
     });
 
     this.proc.on("error", (err) => {
-      debugLog("agent", "spawn error", { message: err?.message || String(err) });
-      this.emit("error", err);
+      const wrapped = isMissingGrokBinaryError(err)
+        ? Object.assign(new Error(missingGrokBinaryMessage(this.grokPath)), {
+            code: "ENOENT",
+          })
+        : err;
+      debugLog("agent", "spawn error", {
+        message: wrapped?.message || String(wrapped),
+      });
+      // Unblock initialize / session RPCs — do not wait for the 60s timeout.
+      this._rejectAllPending(wrapped);
+      this.emit("error", wrapped);
     });
 
     this.proc.on("exit", (code, signal) => {

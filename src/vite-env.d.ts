@@ -114,6 +114,29 @@ export type AuthStatus = {
   loginInProgress: boolean;
 };
 
+export type GrokEngineInfo = {
+  binary: string;
+  binaryFound: boolean;
+  version: string | null;
+  error?: string;
+};
+
+export type GrokUpdateCheck = {
+  ok: boolean;
+  updateAvailable: boolean;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  channel?: string | null;
+  error?: string | null;
+};
+
+export type GrokUpdateInstall = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
 export type BackboneSummary = {
   ok: boolean;
   skills: Array<{ name: string; description?: string; source?: string }>;
@@ -350,6 +373,9 @@ declare global {
       ) => Promise<{ ok: boolean; status: AuthStatus }>;
       openInstallDocs: () => Promise<boolean>;
       inspectBackbone: (cwd?: string) => Promise<BackboneSummary>;
+      getGrokEngine: () => Promise<GrokEngineInfo>;
+      checkGrokUpdate: () => Promise<GrokUpdateCheck>;
+      installGrokUpdate: () => Promise<GrokUpdateInstall>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
   }

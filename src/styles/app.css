@@ -2768,6 +2768,27 @@ button {
   line-height: 1.45;
 }
 
+.auth-steps {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-step.is-current .auth-label {
+  color: var(--accent);
+}
+
+.auth-step-cmd {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .auth-actions {
   display: flex;
   flex-wrap: wrap;

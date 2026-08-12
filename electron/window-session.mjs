@@ -7,6 +7,8 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { GrokAcpClient } from "./acp-client.mjs";
+import { grokBinaryExists, resolveGrokBinary } from "./grok-home.mjs";
+import { missingGrokBinaryMessage } from "./grok-cli.mjs";
 import {
   cancelAllPermissions,
   listPendingPermissionRequests,
@@ -388,6 +390,10 @@ export function ensureAgent(ws, cwd, opts = {}) {
       if (!isSessionLive(ws, gen)) {
         throw new Error("Window closed");
       }
+    }
+
+    if (!grokBinaryExists()) {
+      throw new Error(missingGrokBinaryMessage(resolveGrokBinary()));
     }
 
     const state = loadDesktopState();

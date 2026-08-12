@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setApiKey: (key) => ipcRenderer.invoke("auth:set-api-key", key),
   openInstallDocs: () => ipcRenderer.invoke("auth:open-install-docs"),
   inspectBackbone: (cwd) => ipcRenderer.invoke("backbone:inspect", cwd),
+  getGrokEngine: () => ipcRenderer.invoke("grok:engine"),
+  checkGrokUpdate: () => ipcRenderer.invoke("grok:update-check"),
+  installGrokUpdate: () => ipcRenderer.invoke("grok:update-install"),
 
   on: (channel, handler) => {
     const valid = [

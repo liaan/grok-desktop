@@ -4,7 +4,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { isAuthError, type ConnState } from "../lib/conn";
+import { isAuthError, isMissingBinaryError, type ConnState } from "../lib/conn";
 import { basen } from "../lib/path-utils";
 import { uid } from "../lib/timeline";
 import type {
@@ -53,6 +53,8 @@ export function useProjectSession(opts: {
   setItems: Dispatch<SetStateAction<TimelineItem[]>>;
   setAgentCommands: Dispatch<SetStateAction<SlashCommand[]>>;
   clearPromptQueue: () => void;
+  /** Leave the project and return to AuthGate install when grok is missing. */
+  onMissingBinary?: () => void | Promise<void>;
 }) {
   const {
     auth,
@@ -84,6 +86,7 @@ export function useProjectSession(opts: {
     setItems,
     setAgentCommands,
     clearPromptQueue,
+    onMissingBinary,
   } = opts;
 
   const applyOpenResult = useCallback(
@@ -225,11 +228,17 @@ export function useProjectSession(opts: {
         await applyOpenResult(res);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        setConn("error");
         setOpeningLabel(null);
-        setError(msg);
-        if (isAuthError(msg)) {
-          void refreshAuth();
+        if (isMissingBinaryError(msg)) {
+          setConn("idle");
+          await onMissingBinary?.();
+          setError(msg);
+        } else {
+          setConn("error");
+          setError(msg);
+          if (isAuthError(msg)) {
+            void refreshAuth();
+          }
         }
       } finally {
         openingRef.current = false;
@@ -240,6 +249,7 @@ export function useProjectSession(opts: {
       applyOpenResult,
       busyRef,
       clearSessionScoped,
+      onMissingBinary,
       openingRef,
       refreshAuth,
       setConn,
@@ -283,9 +293,15 @@ export function useProjectSession(opts: {
         });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        setConn("error");
         setOpeningLabel(null);
-        setError(msg);
+        if (isMissingBinaryError(msg)) {
+          setConn("idle");
+          await onMissingBinary?.();
+          setError(msg);
+        } else {
+          setConn("error");
+          setError(msg);
+        }
       } finally {
         openingRef.current = false;
       }
@@ -295,6 +311,7 @@ export function useProjectSession(opts: {
       applyOpenResult,
       busyRef,
       clearSessionScoped,
+      onMissingBinary,
       openingRef,
       project,
       refreshAuth,
@@ -332,11 +349,17 @@ export function useProjectSession(opts: {
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setConn("error");
       setOpeningLabel(null);
-      setError(msg);
-      if (isAuthError(msg)) {
-        void refreshAuth();
+      if (isMissingBinaryError(msg)) {
+        setConn("idle");
+        await onMissingBinary?.();
+        setError(msg);
+      } else {
+        setConn("error");
+        setError(msg);
+        if (isAuthError(msg)) {
+          void refreshAuth();
+        }
       }
     } finally {
       openingRef.current = false;
@@ -346,6 +369,7 @@ export function useProjectSession(opts: {
     applyOpenResult,
     busyRef,
     clearPromptQueue,
+    onMissingBinary,
     openingRef,
     project,
     refreshAuth,

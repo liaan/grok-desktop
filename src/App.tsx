@@ -27,7 +27,7 @@ import {
   nextAlwaysApproveMode,
   runDesktopCommand,
 } from "./lib/desktop-commands";
-import { type ConnState } from "./lib/conn";
+import { isMissingBinaryError, type ConnState } from "./lib/conn";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
@@ -216,6 +216,28 @@ export default function App() {
 
   const signedIn = Boolean(auth?.authenticated && !auth?.expired);
 
+  const leaveProject = useCallback(async () => {
+    try {
+      await window.grokDesktop.closeProject();
+    } catch {
+      /* ignore — still clear local UI */
+    }
+    setProject(null);
+    setSessionId(null);
+    setSessions([]);
+    setModelId(null);
+    setModelName(null);
+    setItems([]);
+    setConn("idle");
+    setError(null);
+    setOfferAgentRestart(false);
+  }, []);
+
+  const onMissingBinary = useCallback(async () => {
+    await leaveProject();
+    await refreshAuth();
+  }, [leaveProject, refreshAuth]);
+
   const { openProject, openSession, restartAgent, isAuthError } =
     useProjectSession({
       auth,
@@ -247,6 +269,7 @@ export default function App() {
       setItems,
       setAgentCommands,
       clearPromptQueue,
+      onMissingBinary,
     });
 
   const pickProject = async () => {
@@ -279,11 +302,17 @@ export default function App() {
       } else if (result.error) {
         setAuthMessage(result.error);
         setError(result.error);
+        if (isMissingBinaryError(result.error)) {
+          await refreshAuth();
+        }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setAuthMessage(msg);
       setError(msg);
+      if (isMissingBinaryError(msg)) {
+        await refreshAuth();
+      }
     } finally {
       setAuthBusy(false);
       void refreshAuth();
@@ -597,6 +626,7 @@ export default function App() {
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
           onOpenProject={(cwd) => void openProject(cwd)}
+          platform={platform}
         />
       </PrivacyProvider>
     );
@@ -650,6 +680,7 @@ export default function App() {
           }}
           restarting={isOpening}
           offerRestart={offerAgentRestart}
+          grokBinary={info?.grokBinary || auth?.binary || ""}
         />
 
         <main className="main">

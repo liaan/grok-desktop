@@ -22,6 +22,11 @@ import { mergeRestartResult } from "./agent-restart.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
 import {
+  checkGrokUpdate,
+  getGrokEngine,
+  installGrokUpdate,
+} from "./grok-cli.mjs";
+import {
   setupAutoUpdater,
   checkForUpdatesInteractive,
   isQuittingForUpdate,
@@ -559,6 +564,12 @@ function registerIpc() {
   ipcMain.handle("backbone:inspect", async (_e, cwd) => {
     return inspectBackbone(cwd || process.cwd());
   });
+
+  ipcMain.handle("grok:engine", async () => getGrokEngine());
+
+  ipcMain.handle("grok:update-check", async () => checkGrokUpdate());
+
+  ipcMain.handle("grok:update-install", async () => installGrokUpdate());
 
   ipcMain.handle("project:pick", async (e) => {
     const ws = sessionFromEvent(e);
