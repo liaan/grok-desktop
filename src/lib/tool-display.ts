@@ -3,6 +3,18 @@
  * Avoid dumping pure JSON when we can show command + plain output.
  */
 
+import {
+  extractStructuredDiff,
+  extractStructuredDiffFromRaw,
+  fileFromDiffPayload,
+  formatUnifiedHunks,
+  pickDiffStrings,
+  type StructuredDiff,
+} from "./line-diff";
+
+export type { StructuredDiff, StructuredDiffFile } from "./line-diff";
+export { extractStructuredDiff, extractStructuredDiffFromRaw } from "./line-diff";
+
 export type ToolDisplay = {
   /** One-line subtitle under the title (e.g. description) */
   subtitle?: string;
@@ -10,6 +22,8 @@ export type ToolDisplay = {
   input?: string;
   /** Tool result / stdout */
   output?: string;
+  /** Structured ACP write/search_replace diff (rendered by DiffView) */
+  diff?: StructuredDiff;
 };
 
 /**
@@ -76,31 +90,26 @@ function pickString(
   return undefined;
 }
 
-function formatDiffBlock(opts: {
-  path?: string;
-  oldText?: string | null;
-  newText?: string | null;
-  patch?: string;
-}): string {
-  const lines: string[] = [];
-  if (opts.path) lines.push(opts.path);
-  if (opts.patch) {
-    lines.push(truncate(opts.patch, INPUT_BODY_CAP));
-    return lines.join("\n");
+function formatDiffBlock(
+  opts: {
+    path?: string;
+    oldText?: string | null;
+    newText?: string | null;
+    patch?: string;
+  },
+  cap = INPUT_BODY_CAP,
+): string {
+  const file = fileFromDiffPayload(opts);
+  if (file.hunks.length === 0 && opts.patch) {
+    return [opts.path, truncate(opts.patch, cap)].filter(Boolean).join("\n");
   }
-  if (opts.oldText != null || opts.newText != null) {
-    if (opts.oldText != null && opts.oldText !== "") {
-      for (const line of String(opts.oldText).split("\n").slice(0, 80)) {
-        lines.push(`- ${line}`);
-      }
-    }
-    if (opts.newText != null && opts.newText !== "") {
-      for (const line of String(opts.newText).split("\n").slice(0, 80)) {
-        lines.push(`+ ${line}`);
-      }
-    }
-  }
-  return lines.join("\n");
+  return truncate(
+    formatUnifiedHunks(file.hunks, {
+      path: file.path,
+      truncated: file.truncated,
+    }),
+    cap,
+  );
 }
 
 function slimJson(raw: Record<string, unknown>): string | undefined {
@@ -120,7 +129,10 @@ function slimJson(raw: Record<string, unknown>): string | undefined {
 }
 
 /** Pull text out of ACP content blocks / nested content. */
-export function extractTextFromContent(content: unknown): string {
+export function extractTextFromContent(
+  content: unknown,
+  opts?: { skipDiff?: boolean },
+): string {
   if (content == null) return "";
   if (typeof content === "string") return content;
   if (typeof content === "number" || typeof content === "boolean") {
@@ -129,7 +141,7 @@ export function extractTextFromContent(content: unknown): string {
 
   if (Array.isArray(content)) {
     return content
-      .map((block) => extractTextFromContent(block))
+      .map((block) => extractTextFromContent(block, opts))
       .filter(Boolean)
       .join("\n\n");
   }
@@ -147,30 +159,16 @@ export function extractTextFromContent(content: unknown): string {
 
   // { type: "content", content: { type: "text", text: "..." } }
   if (content.type === "content" && content.content != null) {
-    return extractTextFromContent(content.content);
+    return extractTextFromContent(content.content, opts);
   }
   // { type: "text", text: "..." }
   if (typeof content.text === "string") return content.text;
 
   // ACP diff: { type: "diff", path, oldText, newText } (also legacy diff/patch)
   if (content.type === "diff") {
-    const path =
-      pickString(content, ["path", "file"]) ?? undefined;
-    const patch =
-      pickString(content, ["diff", "patch"]) ?? undefined;
-    const oldText =
-      content.oldText != null
-        ? String(content.oldText)
-        : content.old_text != null
-          ? String(content.old_text)
-          : null;
-    const newText =
-      content.newText != null
-        ? String(content.newText)
-        : content.new_text != null
-          ? String(content.new_text)
-          : null;
-    return formatDiffBlock({ path, oldText, newText, patch });
+    if (opts?.skipDiff) return "";
+    const picked = pickDiffStrings(content);
+    return formatDiffBlock(picked, OUTPUT_CAP);
   }
 
   // { type: "terminal", terminalId } — live output not wired yet
@@ -180,7 +178,7 @@ export function extractTextFromContent(content: unknown): string {
 
   for (const key of ["content", "output", "stdout", "result", "message"]) {
     if (content[key] != null) {
-      const inner = extractTextFromContent(content[key]);
+      const inner = extractTextFromContent(content[key], opts);
       if (inner) return inner;
     }
   }
@@ -201,7 +199,9 @@ export function extractTextFromContent(content: unknown): string {
 function appendBodyLines(
   lines: string[],
   raw: Record<string, unknown>,
+  skipBody = false,
 ): void {
+  if (skipBody) return;
   const body = pickString(raw, BODY_KEYS);
   if (body != null) {
     lines.push(truncate(body, INPUT_BODY_CAP));
@@ -220,7 +220,10 @@ function appendBodyLines(
 }
 
 /** Format tool rawInput into a short human label + detail. Always owns fallbacks. */
-export function formatToolInput(raw: unknown): {
+export function formatToolInput(
+  raw: unknown,
+  opts?: { skipBody?: boolean },
+): {
   subtitle?: string;
   input?: string;
 } {
@@ -267,7 +270,7 @@ export function formatToolInput(raw: unknown): {
   const filePath = pickString(raw, PATH_KEYS);
   if (filePath) {
     const lines = [filePath];
-    appendBodyLines(lines, raw);
+    appendBodyLines(lines, raw, opts?.skipBody);
     return { subtitle, input: lines.join("\n") };
   }
 
@@ -279,7 +282,7 @@ export function formatToolInput(raw: unknown): {
       lines.push(`${k}: ${String(raw[k])}`);
     }
   }
-  appendBodyLines(lines, raw);
+  appendBodyLines(lines, raw, opts?.skipBody);
   if (lines.length) return { subtitle, input: lines.join("\n") };
 
   const fallback = slimJson(raw);
@@ -291,7 +294,14 @@ export function formatToolDisplay(item: {
   content?: unknown;
   title?: string;
 }): ToolDisplay {
-  let { subtitle, input } = formatToolInput(item.raw);
+  const diff =
+    extractStructuredDiff(item.content) ??
+    extractStructuredDiffFromRaw(item.raw);
+  const hasDiff = Boolean(diff?.files.some((f) => f.hunks.length > 0));
+
+  let { subtitle, input } = formatToolInput(item.raw, {
+    skipBody: hasDiff,
+  });
 
   // Title often is `Execute \`long command\`` when rawInput is thin
   if (!input && item.title) {
@@ -299,7 +309,7 @@ export function formatToolDisplay(item: {
     if (fromTitle) input = truncate(fromTitle, INPUT_BODY_CAP);
   }
 
-  let output = extractTextFromContent(item.content);
+  let output = extractTextFromContent(item.content, { skipDiff: hasDiff });
 
   if (
     output.startsWith('"') &&
@@ -326,6 +336,7 @@ export function formatToolDisplay(item: {
     subtitle,
     input: input || undefined,
     output: output || undefined,
+    diff: hasDiff ? diff : undefined,
   };
 }
 
@@ -412,6 +423,7 @@ export function formatToolCard(item: {
     subtitle: display.subtitle,
     input: display.input,
     output: display.output,
+    diff: display.diff,
   };
 }
 

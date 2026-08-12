@@ -2114,6 +2114,83 @@ button {
   margin-bottom: 8px;
 }
 
+.diff-view {
+  margin: 0 0 8px;
+  max-height: 280px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.diff-view.is-expanded {
+  max-height: 480px;
+}
+
+.diff-path {
+  padding: 6px 8px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.diff-hunk + .diff-hunk {
+  border-top: 1px solid var(--border-soft);
+}
+
+.diff-hunk-header {
+  padding: 2px 8px;
+  color: var(--accent-2);
+  background: var(--code-inline-bg);
+  white-space: pre-wrap;
+}
+
+.diff-line {
+  display: flex;
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.diff-line-add {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success);
+}
+
+.diff-line-del {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger);
+}
+
+.diff-line-ctx {
+  color: var(--text-muted);
+}
+
+.diff-gutter {
+  flex: none;
+  width: 1.1em;
+  user-select: none;
+}
+
+.diff-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.diff-truncated {
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.diff-more {
+  margin: 6px 8px 8px;
+}
+
 /* Permission cards use amber action label */
 .perm-card .tool-card-action {
   color: #fbbf24;
