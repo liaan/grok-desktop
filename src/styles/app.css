@@ -1794,7 +1794,7 @@ button {
   vertical-align: middle;
 }
 
-/* Right panel (Files + Tasks dock) */
+/* Right panel (Files | Changes + Tasks dock) */
 .panel {
   border-left: 1px solid var(--border);
   background: var(--panel-bg);
@@ -1826,7 +1826,6 @@ button {
   color: var(--text);
 }
 
-/* Legacy tab strip (unused after Approvals moved inline; keep button styles if re-added) */
 .panel-tabs {
   display: flex;
   align-items: stretch;
@@ -1871,6 +1870,13 @@ button {
   min-width: 180px;
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.panel-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-body {
@@ -2047,6 +2053,101 @@ button {
   color: var(--text);
 }
 
+.file-row.is-selected {
+  background: var(--bg-soft);
+}
+
+.file-row.is-selected .file-item-file {
+  color: var(--text);
+}
+
+.change-badge {
+  flex: 0 0 auto;
+  width: 1.25em;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.change-badge-M,
+.change-badge-R,
+.change-badge-C {
+  color: #fbbf24;
+}
+
+.change-badge-A {
+  color: var(--success);
+}
+
+.change-badge-D {
+  color: var(--danger);
+}
+
+.change-badge-untracked,
+.change-badge-U {
+  color: var(--text-muted);
+}
+
+.file-peek {
+  flex: 1 1 45%;
+  min-height: 140px;
+  max-height: 55%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--code-bg, rgba(20, 20, 26, 0.55));
+}
+
+.file-peek-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.file-peek-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.file-peek-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 8px;
+}
+
+.file-peek-text {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.file-peek .diff-view {
+  margin: 0;
+  border: none;
+  background: transparent;
+}
+
+.file-peek .diff-scroll {
+  max-height: none;
+}
+
 .perm-batch-actions {
   display: flex;
   flex-direction: column;
@@ -2112,6 +2213,90 @@ button {
   font-size: 11px;
   color: var(--text-muted);
   margin-bottom: 8px;
+}
+
+.diff-view {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.diff-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.diff-view.is-expanded .diff-scroll {
+  max-height: 480px;
+}
+
+.diff-footer {
+  border-top: 1px solid var(--border);
+}
+
+.diff-path {
+  padding: 6px 8px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.diff-hunk + .diff-hunk {
+  border-top: 1px solid var(--border-soft);
+}
+
+.diff-hunk-header {
+  padding: 2px 8px;
+  color: var(--accent-2);
+  background: var(--code-inline-bg);
+  white-space: pre-wrap;
+}
+
+.diff-line {
+  display: flex;
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.diff-line-add {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success);
+}
+
+.diff-line-del {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger);
+}
+
+.diff-line-ctx {
+  color: var(--text-muted);
+}
+
+.diff-gutter {
+  flex: none;
+  width: 1.1em;
+  user-select: none;
+}
+
+.diff-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.diff-truncated {
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.diff-more {
+  margin: 6px 8px 8px;
 }
 
 /* Permission cards use amber action label */
@@ -2392,8 +2577,8 @@ button {
 }
 
 .modal-dialog {
-  width: min(440px, 100%);
-  max-height: min(90vh, 640px);
+  width: min(520px, 100%);
+  max-height: min(90vh, 720px);
   overflow: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -2487,6 +2672,97 @@ button {
   display: block;
   margin-top: 6px;
   color: var(--warn);
+}
+
+.settings-lead {
+  margin: 0 0 12px;
+}
+
+.settings-input {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--code-bg, rgba(20, 20, 26, 0.85));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+[data-theme="light"] .settings-input {
+  background: #fff;
+}
+
+.mcp-row {
+  cursor: default;
+  align-items: flex-start;
+}
+
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.mcp-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.mcp-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mcp-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.settings-doctor {
+  margin: 10px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 10px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
+.auth-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-link:hover {
+  color: var(--accent);
 }
 
 .coding-data-toggle {
@@ -2682,6 +2958,27 @@ button {
   font-size: 12px;
   margin: 6px 0 0;
   line-height: 1.45;
+}
+
+.auth-steps {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-step.is-current .auth-label {
+  color: var(--accent);
+}
+
+.auth-step-cmd {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: pre;
 }
 
 .auth-actions {

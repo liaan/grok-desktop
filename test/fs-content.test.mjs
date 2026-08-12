@@ -10,6 +10,7 @@ import {
   isLikelyBinary,
   mimeFromExtension,
   readFileForAcp,
+  readFileForPeek,
   sniffImageMime,
 } from "../electron/fs-content.mjs";
 import { expandUserPath } from "../electron/path-safety.mjs";
@@ -77,6 +78,28 @@ test("readFileForAcp text with line limit", async () => {
   } finally {
     try {
       fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("readFileForPeek caps bytes and refuses binary from a prefix", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-peek-"));
+  const text = path.join(dir, "big.txt");
+  fs.writeFileSync(text, "a".repeat(1000));
+  const bin = path.join(dir, "x.bin");
+  fs.writeFileSync(bin, Buffer.from([0x00, 0x01, 0x02]));
+  try {
+    const capped = await readFileForPeek(text, { cap: 50 });
+    assert.equal(capped.startsWith("a".repeat(50)), true);
+    assert.match(capped, /truncated/);
+    await assert.rejects(() => readFileForPeek(bin), /Binary file/);
+  } finally {
+    try {
+      fs.unlinkSync(text);
+      fs.unlinkSync(bin);
       fs.rmdirSync(dir);
     } catch {
       /* ignore */

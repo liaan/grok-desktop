@@ -1,4 +1,4 @@
-# Builds simple installers only: Windows Setup.exe + macOS DMGs.
+# Builds simple installers: Windows Setup.exe + macOS DMGs + Linux AppImage.
 # GitHub also offers Source code (zip) on every tag automatically.
 # Release process: AGENTS.md. Team install: README.md.
 
@@ -32,6 +32,9 @@ jobs:
           - os: macos-latest
             label: macOS
             args: --mac
+          - os: ubuntu-latest
+            label: Linux
+            args: --linux
 
     runs-on: ${{ matrix.os }}
 
@@ -132,10 +135,9 @@ jobs:
         shell: bash
         run: |
           # Keep human installers + auto-update metadata (yml/zip/blockmap).
-          # Drop Linux noise if any. Do NOT delete latest*.yml or mac zip —
-          # electron-updater needs them for Help → Check for updates.
+          # Do NOT delete latest*.yml, mac zip, or the Linux AppImage —
+          # electron-updater needs yml/zip; AppImage is the Linux team file.
           cd release
-          rm -f *.AppImage 2>/dev/null || true
           # mac: friendlier DMG names (zip keeps -arm64 / -x64 for latest-mac.yml)
           if ls GrokDesktop-*-Mac-arm64.dmg 1>/dev/null 2>&1; then
             for f in GrokDesktop-*-Mac-arm64.dmg; do
@@ -163,6 +165,7 @@ jobs:
               release/*.exe
               release/*.dmg
               release/*.zip
+              release/*.AppImage
               release/latest*.yml
               release/*.blockmap
             if-no-files-found: error
@@ -194,11 +197,15 @@ jobs:
       - name: Verify installers present
         run: |
           set -euo pipefail
-          count=$(find dist-installers -type f \( -name '*.exe' -o -name '*.dmg' \) | wc -l)
-          echo "Found ${count} installer file(s)"
+          exe=$(find dist-installers -type f -name '*.exe' | wc -l)
+          dmg=$(find dist-installers -type f -name '*.dmg' | wc -l)
+          appimage=$(find dist-installers -type f -name '*.AppImage' | wc -l)
+          echo "Found ${exe} .exe, ${dmg} .dmg, ${appimage} .AppImage"
           find dist-installers -type f | sort
-          if [ "$count" -lt 1 ]; then
-            echo "No .exe/.dmg after download-artifact — build artifacts missing or empty."
+          # Tag releases run the full matrix. Missing a type means a job was dropped.
+          # workflow_dispatch never reaches this job (tags only).
+          if [ "$exe" -lt 1 ] || [ "$dmg" -lt 1 ] || [ "$appimage" -lt 1 ]; then
+            echo "Need Windows .exe, macOS .dmg, and Linux .AppImage after download-artifact."
             exit 1
           fi
 
@@ -223,10 +230,11 @@ jobs:
             | **Windows** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Windows-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Windows-Setup.exe) |
             | **Mac (M1 / M2 / M3 / M4)** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-AppleSilicon.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-AppleSilicon.dmg) |
             | **Mac (Intel)** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-Intel.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Mac-Intel.dmg) |
+            | **Linux (x64)** | [GrokDesktop-${{ steps.ver.outputs.app_version }}-Linux-x64.AppImage](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GrokDesktop-${{ steps.ver.outputs.app_version }}-Linux-x64.AppImage) |
 
-            **Team install = one of those three links only.**
+            **Team install = one of those four links only.**
 
-            Other Assets (`latest.yml`, `latest-mac.yml`, Mac `.zip`, blockmaps) are for **in-app auto-update** (Help → Check for updates). You do not need them by hand. GitHub’s **Source code** zip is only if you build from source.
+            Other Assets (`latest.yml`, `latest-mac.yml`, `latest-linux.yml`, Mac `.zip`, blockmaps) are for **in-app auto-update** (Help → Check for updates). You do not need them by hand. GitHub’s **Source code** zip is only if you build from source.
 
             ### After download
             1. Install **Grok Build CLI** (`grok`) — this app is only the GUI.
@@ -234,8 +242,9 @@ jobs:
             3. **Mac:** drag app to Applications, eject DMG, then in Terminal:
                `xattr -cr "/Applications/Grok Desktop.app"`
                (macOS says “damaged” for unsigned Safari downloads — that command clears quarantine; app is fine.)
-            4. Open app → **Sign in with browser** → **Open project…**
-            5. Later: **Help → Check for updates…** downloads and installs in-app (no browser).
+            4. **Linux:** `chmod +x` the AppImage, then run it.
+            5. Open app → **Sign in with browser** → **Open project…**
+            6. Later: **Help → Check for updates…** downloads and installs in-app (no browser).
           files: |
             dist-installers/**
         env:

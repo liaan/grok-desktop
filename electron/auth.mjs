@@ -166,10 +166,10 @@ export function startLogin(opts = {}) {
   }
 
   const bin = resolveGrokBinary();
-  if (!grokBinaryExists() && !bin.includes("grok")) {
+  if (!grokBinaryExists()) {
     return Promise.reject(
       new Error(
-        "Grok CLI not found. Install Grok Build first, then sign in here.",
+        `Grok CLI not found (${bin}). Install Grok Build first, then retry.`,
       ),
     );
   }
@@ -201,7 +201,7 @@ export function startLogin(opts = {}) {
       reject(
         new Error(
           err?.code === "ENOENT"
-            ? "Grok CLI not found on PATH. Install from https://x.ai/cli then retry Sign in."
+            ? `Grok CLI not found (${bin}). Install Grok Build first, then retry.`
             : err.message || String(err),
         ),
       );

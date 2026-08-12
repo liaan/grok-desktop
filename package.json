@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "0.1.40",
+  "version": "1.0.0",
   "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",
@@ -19,6 +19,7 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
     "test": "node --test test/**/*.test.mjs",
     "test:acp": "node --test test/acp-rpc.test.mjs"
   },
@@ -103,6 +104,18 @@
     },
     "dmg": {
       "writeUpdateInfo": true
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Development",
+      "artifactName": "GrokDesktop-${version}-Linux-${arch}.${ext}"
     }
   }
 }

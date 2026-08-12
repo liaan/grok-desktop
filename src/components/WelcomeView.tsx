@@ -26,6 +26,8 @@ export function WelcomeView({
   onSetApiKey,
   onPickProject,
   onOpenProject,
+  onOpenSettingsSection,
+  platform,
 }: {
   platformClass: string;
   isOpening: boolean;
@@ -46,6 +48,8 @@ export function WelcomeView({
   onSetApiKey: (key: string) => void;
   onPickProject: () => void;
   onOpenProject: (cwd: string) => void;
+  onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
+  platform?: string;
 }) {
   return (
     <div className={`app no-project ${platformClass}`.trim()}>
@@ -61,8 +65,9 @@ export function WelcomeView({
           </div>
           <p className="welcome-lead">
             Graphical shell over the same agent as the CLI. Sign in once in the
-            app, then open a project — skills and MCP from <code>~/.grok</code>{" "}
-            load automatically (configure them in the CLI for now).
+            app, then open a project — skills, plugins, and MCP from{" "}
+            <code>~/.grok</code> load automatically. Manage them in Settings —
+            no terminal.
           </p>
 
           <AuthGate
@@ -76,11 +81,13 @@ export function WelcomeView({
             onLogout={onLogout}
             onSetApiKey={onSetApiKey}
             onOpenInstallDocs={() => void window.grokDesktop.openInstallDocs()}
+            onOpenSettingsSection={onOpenSettingsSection}
+            platform={platform}
           />
 
           <ul className="checklist">
             <li>Browser sign-in (no CLI required after Grok is installed)</li>
-            <li>Skills &amp; MCP from your existing ~/.grok setup</li>
+            <li>Skills, plugins &amp; MCP from your existing ~/.grok setup</li>
             <li>Streaming chat, thoughts, plans, tool approvals</li>
           </ul>
 

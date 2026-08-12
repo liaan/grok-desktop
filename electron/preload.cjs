@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),
   /** Drop agent on this window; title returns to empty shell. */
   closeProject: () => ipcRenderer.invoke("project:close"),
+  /** Respawn grok agent on this window and resume the same chat. */
+  restartAgent: () => ipcRenderer.invoke("agent:restart"),
   listSessions: (cwd) => ipcRenderer.invoke("sessions:list", cwd),
   openSession: (opts) => ipcRenderer.invoke("sessions:open", opts || {}),
   prompt: (text, opts) =>
@@ -28,6 +30,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:set-permission-mode", value),
   setReasoningEffort: (value) =>
     ipcRenderer.invoke("agent:set-reasoning-effort", value),
+  setModel: (modelId) => ipcRenderer.invoke("agent:set-model", modelId),
   setAllowOutsideProject: (value) =>
     ipcRenderer.invoke("agent:set-allow-outside-project", value),
   setSandboxTerminal: (value) =>
@@ -42,6 +45,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setDebugLogging: (value) => ipcRenderer.invoke("app:set-debug-logging", value),
   openDebugLog: () => ipcRenderer.invoke("app:open-debug-log"),
   getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),
+  getGitStatus: (cwd) => ipcRenderer.invoke("git:status", cwd),
+  getGitDiff: (path, opts) => ipcRenderer.invoke("git:diff", path, opts || {}),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
@@ -55,6 +60,20 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setApiKey: (key) => ipcRenderer.invoke("auth:set-api-key", key),
   openInstallDocs: () => ipcRenderer.invoke("auth:open-install-docs"),
   inspectBackbone: (cwd) => ipcRenderer.invoke("backbone:inspect", cwd),
+  getGrokEngine: () => ipcRenderer.invoke("grok:engine"),
+  checkGrokUpdate: () => ipcRenderer.invoke("grok:update-check"),
+  installGrokUpdate: () => ipcRenderer.invoke("grok:update-install"),
+  listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  addMcpServer: (spec) => ipcRenderer.invoke("mcp:add", spec || {}),
+  enableMcpServer: (name) => ipcRenderer.invoke("mcp:enable", name),
+  disableMcpServer: (name) => ipcRenderer.invoke("mcp:disable", name),
+  removeMcpServer: (name, opts) =>
+    ipcRenderer.invoke("mcp:remove", { name, scope: opts?.scope }),
+  doctorMcp: (name) => ipcRenderer.invoke("mcp:doctor", name),
+  listPlugins: () => ipcRenderer.invoke("plugin:list"),
+  enablePlugin: (name) => ipcRenderer.invoke("plugin:enable", name),
+  disablePlugin: (name) => ipcRenderer.invoke("plugin:disable", name),
+  installPlugin: (source) => ipcRenderer.invoke("plugin:install", source),
 
   on: (channel, handler) => {
     const valid = [

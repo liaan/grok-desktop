@@ -114,6 +114,97 @@ export type AuthStatus = {
   loginInProgress: boolean;
 };
 
+export type GrokEngineInfo = {
+  binary: string;
+  binaryFound: boolean;
+  version: string | null;
+  error?: string;
+};
+
+export type GrokUpdateCheck = {
+  ok: boolean;
+  updateAvailable: boolean;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  channel?: string | null;
+  error?: string | null;
+};
+
+export type GrokUpdateInstall = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
+/** Sanitized MCP row — env/header *values* never cross IPC. */
+export type McpServerInfo = {
+  name: string;
+  transport?: string | null;
+  enabled?: boolean | null;
+  scope?: string | null;
+  command?: string | null;
+  args?: string[];
+  url?: string | null;
+  envKeys?: string[];
+  headerKeys?: string[];
+  source?: string | null;
+};
+
+export type McpAddSpec = {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Array<{ key: string; value: string }>;
+  headers?: Array<{ name: string; value: string }>;
+  scope?: "user" | "project";
+};
+
+export type McpListResult = {
+  ok: boolean;
+  servers: McpServerInfo[];
+  source?: "list" | "inspect";
+  error?: string | null;
+};
+
+export type McpWriteResult = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
+/** Sanitized plugin row from `grok plugin list --json` (no component inventory). */
+export type PluginInfo = {
+  name: string;
+  enabled?: boolean | null;
+  status?: string | null;
+  version?: string | null;
+  description?: string | null;
+  marketplace?: string | null;
+  source?: string | null;
+  skillCount?: number | null;
+  hasHooks?: boolean | null;
+  hasAgents?: boolean | null;
+  hasMcp?: boolean | null;
+};
+
+export type PluginListResult = {
+  ok: boolean;
+  plugins: PluginInfo[];
+  source?: "list" | "inspect";
+  error?: string | null;
+};
+
+export type PluginWriteResult = {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
 export type BackboneSummary = {
   ok: boolean;
   skills: Array<{ name: string; description?: string; source?: string }>;
@@ -135,6 +226,17 @@ export type SlashCommand = {
   local?: boolean;
 };
 
+export type GitStatusEntry = {
+  path: string;
+  origPath: string | null;
+  index: string;
+  worktree: string;
+  status: string;
+  untracked: boolean;
+  staged: boolean;
+  unstaged: boolean;
+};
+
 export type SessionSummary = {
   id: string;
   cwd: string;
@@ -148,6 +250,11 @@ export type SessionSummary = {
   modelId: string | null;
 };
 
+export type AvailableModel = {
+  modelId: string;
+  name: string;
+};
+
 export type OpenProjectResult = {
   cwd: string;
   sessionId: string;
@@ -157,6 +264,8 @@ export type OpenProjectResult = {
   modelId?: string | null;
   /** Optional display name from the agent model list */
   modelName?: string | null;
+  /** Models advertised on session/new|load — empty when the agent omits them */
+  availableModels?: AvailableModel[];
   history?: TimelineItem[];
   /** Background commands/subagents restored from updates.jsonl */
   backgroundTasks?: Array<{
@@ -176,6 +285,8 @@ export type OpenProjectResult = {
   /** Summed turn_completed usage from updates.jsonl (status bar) */
   usage?: import("./lib/usage").SessionUsage | null;
   sessions?: SessionSummary[];
+  /** Present when main already ran `grok inspect` (agent:restart). */
+  backbone?: BackboneSummary;
 };
 
 export type AppInfo = {
@@ -242,6 +353,8 @@ declare global {
       ) => Promise<OpenProjectResult>;
       /** Drop agent on this window; native title returns to empty shell. */
       closeProject: () => Promise<boolean>;
+      /** Respawn grok agent and resume the same chat. */
+      restartAgent: () => Promise<OpenProjectResult>;
       listSessions: (cwd: string) => Promise<SessionSummary[]>;
       openSession: (opts: {
         cwd: string;
@@ -287,6 +400,13 @@ declare global {
         agentSynced: boolean;
         error?: string;
       }>;
+      setModel: (modelId: string) => Promise<{
+        modelId: string | null;
+        modelName: string | null;
+        availableModels: AvailableModel[];
+        agentSynced: boolean;
+        error?: string;
+      }>;
       setAllowOutsideProject: (value: boolean) => Promise<boolean>;
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
@@ -311,6 +431,11 @@ declare global {
       getGitBranch: (
         cwd?: string,
       ) => Promise<{ branch: string | null; detached: boolean }>;
+      getGitStatus: (cwd?: string) => Promise<{ files: GitStatusEntry[] }>;
+      getGitDiff: (
+        path: string,
+        opts?: { staged?: boolean },
+      ) => Promise<{ path: string; staged: boolean; diff: string | null }>;
       readFile: (path: string) => Promise<string>;
       listDir: (
         path: string,
@@ -338,6 +463,22 @@ declare global {
       ) => Promise<{ ok: boolean; status: AuthStatus }>;
       openInstallDocs: () => Promise<boolean>;
       inspectBackbone: (cwd?: string) => Promise<BackboneSummary>;
+      getGrokEngine: () => Promise<GrokEngineInfo>;
+      checkGrokUpdate: () => Promise<GrokUpdateCheck>;
+      installGrokUpdate: () => Promise<GrokUpdateInstall>;
+      listMcpServers: () => Promise<McpListResult>;
+      addMcpServer: (spec: McpAddSpec) => Promise<McpWriteResult>;
+      enableMcpServer: (name: string) => Promise<McpWriteResult>;
+      disableMcpServer: (name: string) => Promise<McpWriteResult>;
+      removeMcpServer: (
+        name: string,
+        opts?: { scope?: "user" | "project" },
+      ) => Promise<McpWriteResult>;
+      doctorMcp: (name?: string) => Promise<McpWriteResult>;
+      listPlugins: () => Promise<PluginListResult>;
+      enablePlugin: (name: string) => Promise<PluginWriteResult>;
+      disablePlugin: (name: string) => Promise<PluginWriteResult>;
+      installPlugin: (source: string) => Promise<PluginWriteResult>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
   }

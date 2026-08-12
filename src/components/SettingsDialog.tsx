@@ -1,4 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type {
+  GrokEngineInfo,
+  GrokUpdateCheck,
+  McpServerInfo,
+  PluginInfo,
+} from "../vite-env";
 import {
   PERMISSION_MODE_OPTIONS,
   type PermissionMode,
@@ -31,6 +37,16 @@ export function SettingsDialog({
   onSetDebugLogging,
   onSetAllowPrerelease,
   onOpenDebugLog,
+  onRestartAgent,
+  onRestartAfterWrite,
+  restarting,
+  offerRestart,
+  grokBinary,
+  hasProject,
+  skills,
+  skillsError,
+  skillsLoading,
+  focusSection,
 }: {
   open: boolean;
   onClose: () => void;
@@ -57,8 +73,36 @@ export function SettingsDialog({
   onSetDebugLogging: (next: boolean) => void;
   onSetAllowPrerelease: (next: boolean) => void;
   onOpenDebugLog: () => void;
+  onRestartAgent: () => void;
+  /** After MCP/plugin writes: restart agent if a project is open, always refresh backbone. */
+  onRestartAfterWrite?: () => Promise<void> | void;
+  restarting?: boolean;
+  /** Highlight restart after coding-data (or other spawn-bound) changes. */
+  offerRestart?: boolean;
+  grokBinary?: string;
+  hasProject?: boolean;
+  /** From inspectBackbone — same list as the slash menu. */
+  skills?: Array<{ name: string; description?: string; source?: string }>;
+  skillsError?: string | null;
+  skillsLoading?: boolean;
+  focusSection?: "mcp" | "plugins" | "skills" | null;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [engine, setEngine] = useState<GrokEngineInfo | null>(null);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setUpdateNote(null);
+    void window.grokDesktop.getGrokEngine().then((info) => {
+      if (!cancelled) setEngine(info);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -104,6 +148,118 @@ export function SettingsDialog({
         </div>
 
         <div className="modal-body">
+          <section className="settings-section">
+            <h3>Engine</h3>
+            <div className="settings-row settings-row-stack">
+              <div className="settings-row-text">
+                <span className="settings-label">Grok CLI</span>
+                <span className="settings-desc">
+                  Path:{" "}
+                  <code
+                    className="settings-path"
+                    title={engine?.binary || grokBinary || ""}
+                  >
+                    {engine?.binary || grokBinary || "…"}
+                  </code>
+                </span>
+                <span className="settings-desc">
+                  Version:{" "}
+                  {engine == null
+                    ? "…"
+                    : engine.binaryFound
+                      ? engine.version || engine.error || "unknown"
+                      : "not found"}
+                </span>
+                {updateNote ? (
+                  <span className="settings-desc settings-note">{updateNote}</span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={engineBusy || !engine?.binaryFound}
+                onClick={() => {
+                  void (async () => {
+                    setEngineBusy(true);
+                    setUpdateNote(null);
+                    try {
+                      const check: GrokUpdateCheck =
+                        await window.grokDesktop.checkGrokUpdate();
+                      if (!check.ok) {
+                        setUpdateNote(
+                          check.error || "Could not check for CLI updates.",
+                        );
+                        return;
+                      }
+                      if (!check.updateAvailable) {
+                        setUpdateNote(
+                          check.currentVersion
+                            ? `Grok ${check.currentVersion} is up to date.`
+                            : "Grok CLI is up to date.",
+                        );
+                        return;
+                      }
+                      const from = check.currentVersion || "current";
+                      const to = check.latestVersion || "latest";
+                      if (
+                        !window.confirm(
+                          `Install Grok CLI ${to}?\n\nCurrent: ${from}\nDesktop will not auto-upgrade the engine.`,
+                        )
+                      ) {
+                        setUpdateNote(
+                          `Update available: ${from} → ${to}. Install cancelled.`,
+                        );
+                        return;
+                      }
+                      const installed = await window.grokDesktop.installGrokUpdate();
+                      if (!installed.ok) {
+                        setUpdateNote(
+                          installed.error || "CLI update failed.",
+                        );
+                        return;
+                      }
+                      const next = await window.grokDesktop.getGrokEngine();
+                      setEngine(next);
+                      setUpdateNote(
+                        `Installed Grok ${next.version || to}. Restart the agent to use it.`,
+                      );
+                    } catch (e: unknown) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      setUpdateNote(msg || "CLI update check failed.");
+                    } finally {
+                      setEngineBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {engineBusy ? "Working…" : "Check for CLI updates"}
+              </button>
+            </div>
+          </section>
+
+          <SkillsSettingsPanel
+            open={open}
+            skills={skills || []}
+            error={skillsError}
+            loading={Boolean(skillsLoading)}
+            focus={focusSection === "skills"}
+          />
+
+          <PluginsSettingsPanel
+            open={open}
+            restarting={Boolean(restarting)}
+            focus={focusSection === "plugins"}
+            onRestartAfterWrite={onRestartAfterWrite}
+          />
+
+          <McpSettingsPanel
+            open={open}
+            restarting={Boolean(restarting)}
+            hasProject={Boolean(hasProject)}
+            focus={focusSection === "mcp"}
+            onRestartAfterWrite={onRestartAfterWrite}
+          />
+
           <section className="settings-section">
             <h3>Appearance</h3>
             <label className="settings-row">
@@ -159,12 +315,17 @@ export function SettingsDialog({
                   debugging. Simple product metrics may still be collected.
                   Same setting as CLI{" "}
                   <code>/privacy</code>. Default is <strong>Opt in</strong>.
-                  Re-open the project after changing so the agent process picks
+                  Restart the agent after changing so the running process picks
                   it up.
                 </span>
                 {codingDataNote ? (
                   <span className="settings-desc settings-note">
                     {codingDataNote}
+                  </span>
+                ) : null}
+                {offerRestart ? (
+                  <span className="settings-desc settings-note">
+                    Restart the agent to apply this change.
                   </span>
                 ) : null}
               </div>
@@ -192,6 +353,24 @@ export function SettingsDialog({
                   Opt out
                 </button>
               </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <span className="settings-label">Restart agent</span>
+                <span className="settings-desc">
+                  Respawn the Grok process for this window and resume the same
+                  chat. Use after coding-data or ~/.grok skill changes. MCP and
+                  plugin writes already restart.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={restarting}
+                onClick={() => onRestartAgent()}
+              >
+                {restarting ? "Restarting…" : "Restart agent"}
+              </button>
             </div>
           </section>
 
@@ -322,5 +501,674 @@ export function SettingsDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+type KvRow = { key: string; value: string };
+
+function splitArgTokens(command: string, extra: string): string[] {
+  return [...command.trim().split(/\s+/), ...extra.trim().split(/\s+/)].filter(
+    Boolean,
+  );
+}
+
+function mcpRowDetail(s: McpServerInfo): string {
+  const bits = [
+    s.transport || "unknown",
+    s.enabled === false ? "disabled" : null,
+    s.scope || null,
+    s.url || (s.command ? [s.command, ...(s.args || [])].join(" ") : null),
+    s.envKeys?.length ? `env ${s.envKeys.join(", ")}` : null,
+    s.headerKeys?.length ? `headers ${s.headerKeys.join(", ")}` : null,
+  ].filter(Boolean);
+  return bits.join(" · ");
+}
+
+function McpSettingsPanel({
+  open,
+  restarting,
+  hasProject,
+  focus,
+  onRestartAfterWrite,
+}: {
+  open: boolean;
+  restarting: boolean;
+  hasProject: boolean;
+  focus: boolean;
+  onRestartAfterWrite?: () => Promise<void> | void;
+}) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [servers, setServers] = useState<McpServerInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [doctorOut, setDoctorOut] = useState<string | null>(null);
+
+  const [name, setName] = useState("");
+  const [transport, setTransport] = useState<"stdio" | "http" | "sse">("stdio");
+  const [command, setCommand] = useState("");
+  const [argsText, setArgsText] = useState("");
+  const [url, setUrl] = useState("");
+  const [projectScope, setProjectScope] = useState(false);
+  const [envRows, setEnvRows] = useState<KvRow[]>([{ key: "", value: "" }]);
+  const [headerRows, setHeaderRows] = useState<KvRow[]>([{ key: "", value: "" }]);
+
+  const locked = busy || restarting;
+
+  const reload = async () => {
+    const res = await window.grokDesktop.listMcpServers();
+    setServers(res.servers || []);
+    if (!res.ok && res.error) setNote(res.error);
+    return res;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setNote(null);
+    setDoctorOut(null);
+    setLoading(true);
+    void reload()
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setNote(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && focus) {
+      sectionRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [open, focus]);
+
+  const afterWrite = async (ok: boolean, error?: string | null) => {
+    if (!ok) {
+      setNote(error || "MCP command failed.");
+      return;
+    }
+    setNote(null);
+    if (onRestartAfterWrite) {
+      await onRestartAfterWrite();
+    }
+    await reload();
+  };
+
+  const onToggle = async (s: McpServerInfo) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const res =
+        s.enabled === false
+          ? await window.grokDesktop.enableMcpServer(s.name)
+          : await window.grokDesktop.disableMcpServer(s.name);
+      await afterWrite(res.ok, res.error);
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRemove = async (s: McpServerInfo) => {
+    if (
+      !window.confirm(
+        `Remove MCP server “${s.name}”? This runs grok mcp remove (does not edit config.toml in the app).`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await window.grokDesktop.removeMcpServer(
+        s.name,
+        s.scope === "user" || s.scope === "project"
+          ? { scope: s.scope }
+          : undefined,
+      );
+      await afterWrite(res.ok, res.error);
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDoctor = async (s?: McpServerInfo) => {
+    setBusy(true);
+    setDoctorOut(null);
+    setNote(null);
+    try {
+      const res = await window.grokDesktop.doctorMcp(s?.name);
+      const text = [res.stdout, res.stderr].filter(Boolean).join("\n").trim();
+      setDoctorOut(text || (res.ok ? "Doctor finished with no output." : res.error || "Doctor failed."));
+      if (!res.ok && res.error) setNote(res.error);
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onAdd = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNote("Name is required.");
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const tokens = splitArgTokens(command, argsText);
+      const spec =
+        transport === "stdio"
+          ? {
+              name: trimmed,
+              transport,
+              command: tokens[0] || "",
+              args: tokens.slice(1),
+              env: envRows.filter((r) => r.key.trim()),
+              scope: (projectScope && hasProject ? "project" : "user") as
+                | "project"
+                | "user",
+            }
+          : {
+              name: trimmed,
+              transport,
+              url: url.trim(),
+              headers: headerRows
+                .filter((r) => r.key.trim())
+                .map((r) => ({ name: r.key.trim(), value: r.value })),
+              scope: (projectScope && hasProject ? "project" : "user") as
+                | "project"
+                | "user",
+            };
+      const res = await window.grokDesktop.addMcpServer(spec);
+      await afterWrite(res.ok, res.error);
+      if (res.ok) {
+        setName("");
+        setCommand("");
+        setArgsText("");
+        setUrl("");
+        setEnvRows([{ key: "", value: "" }]);
+        setHeaderRows([{ key: "", value: "" }]);
+      }
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="settings-section" ref={sectionRef} id="settings-mcp">
+      <h3>MCP servers</h3>
+      <p className="settings-desc settings-lead">
+        Same as <code>grok mcp</code> — add, toggle, or remove here. Desktop
+        never edits <code>config.toml</code>. Writes restart the agent so the
+        live session picks them up.
+      </p>
+      {loading ? <p className="settings-desc">Loading MCP servers…</p> : null}
+      {!loading && servers.length === 0 ? (
+        <p className="settings-desc">No MCP servers. Add one here — no terminal.</p>
+      ) : null}
+      {servers.map((s) => (
+        <div className="settings-row mcp-row" key={`${s.name}:${s.scope || ""}`}>
+          <div className="settings-row-text">
+            <span className="settings-label">{s.name}</span>
+            <span className="settings-desc">{mcpRowDetail(s)}</span>
+          </div>
+          <div className="mcp-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() => void onToggle(s)}
+            >
+              {s.enabled === false ? "Enable" : "Disable"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() => void onDoctor(s)}
+            >
+              Test
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() => void onRemove(s)}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <div className="mcp-add">
+        <span className="settings-label">Add server</span>
+        <label className="mcp-field">
+          <span>Name</span>
+          <input
+            className="settings-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="filesystem"
+            autoComplete="off"
+            disabled={locked}
+          />
+        </label>
+        <label className="mcp-field">
+          <span>Transport</span>
+          <select
+            className="settings-select"
+            value={transport}
+            aria-label="MCP transport"
+            disabled={locked}
+            onChange={(e) =>
+              setTransport(e.target.value as "stdio" | "http" | "sse")
+            }
+          >
+            <option value="stdio">stdio</option>
+            <option value="http">HTTP</option>
+            <option value="sse">SSE</option>
+          </select>
+        </label>
+        {transport === "stdio" ? (
+          <>
+            <label className="mcp-field">
+              <span>Command</span>
+              <input
+                className="settings-input"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="npx -y @modelcontextprotocol/server-filesystem"
+                autoComplete="off"
+                disabled={locked}
+              />
+            </label>
+            <label className="mcp-field">
+              <span>Args</span>
+              <input
+                className="settings-input"
+                value={argsText}
+                onChange={(e) => setArgsText(e.target.value)}
+                placeholder="/path/to/dir"
+                autoComplete="off"
+                disabled={locked}
+              />
+            </label>
+            {envRows.map((row, i) => (
+              <div className="mcp-kv" key={`env-${i}`}>
+                <input
+                  className="settings-input"
+                  value={row.key}
+                  placeholder="ENV_KEY"
+                  autoComplete="off"
+                  disabled={locked}
+                  onChange={(e) => {
+                    const next = [...envRows];
+                    next[i] = { ...row, key: e.target.value };
+                    setEnvRows(next);
+                  }}
+                />
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={row.value}
+                  placeholder="value"
+                  autoComplete="off"
+                  disabled={locked}
+                  onChange={(e) => {
+                    const next = [...envRows];
+                    next[i] = { ...row, value: e.target.value };
+                    setEnvRows(next);
+                  }}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() => setEnvRows([...envRows, { key: "", value: "" }])}
+            >
+              Add env
+            </button>
+          </>
+        ) : (
+          <>
+            <label className="mcp-field">
+              <span>URL</span>
+              <input
+                className="settings-input"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://mcp.example.com/mcp"
+                autoComplete="off"
+                disabled={locked}
+              />
+            </label>
+            {headerRows.map((row, i) => (
+              <div className="mcp-kv" key={`hdr-${i}`}>
+                <input
+                  className="settings-input"
+                  value={row.key}
+                  placeholder="Header"
+                  autoComplete="off"
+                  disabled={locked}
+                  onChange={(e) => {
+                    const next = [...headerRows];
+                    next[i] = { ...row, key: e.target.value };
+                    setHeaderRows(next);
+                  }}
+                />
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={row.value}
+                  placeholder="value"
+                  autoComplete="off"
+                  disabled={locked}
+                  onChange={(e) => {
+                    const next = [...headerRows];
+                    next[i] = { ...row, value: e.target.value };
+                    setHeaderRows(next);
+                  }}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() =>
+                setHeaderRows([...headerRows, { key: "", value: "" }])
+              }
+            >
+              Add header
+            </button>
+          </>
+        )}
+        <label className="mcp-check">
+          <input
+            type="checkbox"
+            checked={projectScope && hasProject}
+            disabled={locked || !hasProject}
+            onChange={(e) => setProjectScope(e.target.checked)}
+          />
+          <span>
+            Project scope (<code>.grok/config.toml</code>
+            {hasProject ? "" : " — open a project first"})
+          </span>
+        </label>
+        <div className="mcp-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={locked}
+            onClick={() => void onAdd()}
+          >
+            {restarting ? "Restarting…" : busy ? "Working…" : "Add"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={locked}
+            onClick={() => void onDoctor()}
+          >
+            Test all
+          </button>
+        </div>
+      </div>
+      {note ? <span className="settings-desc settings-note">{note}</span> : null}
+      {doctorOut ? <pre className="settings-doctor">{doctorOut}</pre> : null}
+    </section>
+  );
+}
+
+function skillRowDetail(s: {
+  description?: string;
+  source?: string;
+}): string {
+  return [s.source || null, s.description || null].filter(Boolean).join(" · ");
+}
+
+function SkillsSettingsPanel({
+  open,
+  skills,
+  error,
+  loading,
+  focus,
+}: {
+  open: boolean;
+  skills: Array<{ name: string; description?: string; source?: string }>;
+  error?: string | null;
+  loading?: boolean;
+  focus: boolean;
+}) {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (open && focus) {
+      sectionRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [open, focus]);
+
+  return (
+    <section className="settings-section" ref={sectionRef} id="settings-skills">
+      <h3>Skills</h3>
+      <p className="settings-desc settings-lead">
+        From <code>grok inspect</code> — same names as the composer{" "}
+        <code>/</code> menu. Desktop does not install or edit skills; add them
+        under <code>~/.grok/skills</code>.
+      </p>
+      {loading ? <p className="settings-desc">Loading skills…</p> : null}
+      {!loading && skills.length === 0 && !error ? (
+        <p className="settings-desc">No skills discovered.</p>
+      ) : null}
+      {skills.map((s) => (
+        <div className="settings-row mcp-row" key={s.name}>
+          <div className="settings-row-text">
+            <span className="settings-label">/{s.name}</span>
+            <span className="settings-desc">{skillRowDetail(s)}</span>
+          </div>
+        </div>
+      ))}
+      {error ? (
+        <span className="settings-desc settings-note">{error}</span>
+      ) : null}
+    </section>
+  );
+}
+
+function pluginRowDetail(p: PluginInfo): string {
+  const bits = [
+    p.enabled === false ? "disabled" : p.enabled === true ? "enabled" : null,
+    p.version || null,
+    p.marketplace || p.source || null,
+    p.skillCount != null ? `${p.skillCount} skills` : null,
+    p.hasHooks ? "hooks" : null,
+    p.hasAgents ? "agents" : null,
+    p.hasMcp ? "MCP" : null,
+    p.description || null,
+  ].filter(Boolean);
+  return bits.join(" · ");
+}
+
+function PluginsSettingsPanel({
+  open,
+  restarting,
+  focus,
+  onRestartAfterWrite,
+}: {
+  open: boolean;
+  restarting: boolean;
+  focus: boolean;
+  onRestartAfterWrite?: () => Promise<void> | void;
+}) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [source, setSource] = useState("");
+
+  const locked = busy || restarting;
+
+  const reload = async () => {
+    const res = await window.grokDesktop.listPlugins();
+    setPlugins(res.plugins || []);
+    if (!res.ok && res.error) setNote(res.error);
+    return res;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setNote(null);
+    setLoading(true);
+    void reload()
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setNote(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && focus) {
+      sectionRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [open, focus]);
+
+  const afterWrite = async (ok: boolean, error?: string | null) => {
+    if (!ok) {
+      setNote(error || "Plugin command failed.");
+      return;
+    }
+    setNote(null);
+    if (onRestartAfterWrite) {
+      await onRestartAfterWrite();
+    }
+    await reload();
+  };
+
+  const onToggle = async (p: PluginInfo) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const res =
+        p.enabled === false
+          ? await window.grokDesktop.enablePlugin(p.name)
+          : await window.grokDesktop.disablePlugin(p.name);
+      await afterWrite(res.ok, res.error);
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onInstall = async () => {
+    const trimmed = source.trim();
+    if (!trimmed) {
+      setNote("Git URL or owner/repo is required.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Install plugin from “${trimmed}”?\n\nThis runs grok plugin install --trust (does not edit config.toml in the app). Only install plugins from sources you trust.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await window.grokDesktop.installPlugin(trimmed);
+      await afterWrite(res.ok, res.error);
+      if (res.ok) setSource("");
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="settings-section" ref={sectionRef} id="settings-plugins">
+      <h3>Plugins</h3>
+      <p className="settings-desc settings-lead">
+        Same as <code>grok plugin</code> — enable, disable, or install from a
+        git URL. Desktop never edits <code>config.toml</code>. Writes restart
+        the agent so skills from the plugin show up in <code>/</code>.
+      </p>
+      {loading ? <p className="settings-desc">Loading plugins…</p> : null}
+      {!loading && plugins.length === 0 ? (
+        <p className="settings-desc">
+          No plugins installed. Paste a git URL below — no terminal.
+        </p>
+      ) : null}
+      {plugins.map((p) => (
+        <div className="settings-row mcp-row" key={p.name}>
+          <div className="settings-row-text">
+            <span className="settings-label">{p.name}</span>
+            <span className="settings-desc">{pluginRowDetail(p)}</span>
+          </div>
+          <div className="mcp-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={locked}
+              onClick={() => void onToggle(p)}
+            >
+              {p.enabled === false ? "Enable" : "Disable"}
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <div className="mcp-add">
+        <span className="settings-label">Install from git URL</span>
+        <label className="mcp-field">
+          <span>Source</span>
+          <input
+            className="settings-input"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="owner/repo or https://github.com/org/plugin.git"
+            autoComplete="off"
+            disabled={locked}
+          />
+        </label>
+        <div className="mcp-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={locked || !source.trim()}
+            onClick={() => void onInstall()}
+          >
+            {restarting ? "Restarting…" : busy ? "Working…" : "Install"}
+          </button>
+        </div>
+      </div>
+      {note ? <span className="settings-desc settings-note">{note}</span> : null}
+    </section>
   );
 }

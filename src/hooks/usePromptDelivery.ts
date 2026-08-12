@@ -43,6 +43,7 @@ export function usePromptDelivery(opts: {
   const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
   const promptQueueRef = useRef<QueuedPrompt[]>([]);
   const sendNowRef = useRef<QueuedPrompt | null>(null);
+  const deliveryGenRef = useRef(0);
   const deliverRef = useRef<(payload: {
     text: string;
     images: PendingImage[];
@@ -53,6 +54,7 @@ export function usePromptDelivery(opts: {
   }, [promptQueue]);
 
   const clearPromptQueue = useCallback(() => {
+    deliveryGenRef.current += 1;
     setPromptQueue([]);
     promptQueueRef.current = [];
     sendNowRef.current = null;
@@ -87,11 +89,12 @@ export function usePromptDelivery(opts: {
 
   const deliverPrompt = useCallback(
     async (payload: { text: string; images: PendingImage[] }) => {
-      if (!project || busyRef.current) return;
+      if (!project || busyRef.current || openingRef.current) return;
       const text = payload.text.trim();
       const images = payload.images;
       if (!text && images.length === 0) return;
 
+      const gen = deliveryGenRef.current;
       pinToBottom();
       busyRef.current = true;
       setConn("busy");
@@ -114,13 +117,17 @@ export function usePromptDelivery(opts: {
           at: Date.now(),
         },
       ]);
+      const stale = () =>
+        openingRef.current || deliveryGenRef.current !== gen;
       try {
         await window.grokDesktop.prompt(text, {
           images: images.map(({ data, mimeType }) => ({ data, mimeType })),
         });
+        if (stale()) return;
         setItems((prev) => finalizeOpenTools(prev, "completed"));
         setConn("online");
       } catch (e: unknown) {
+        if (stale()) return;
         const msg = e instanceof Error ? e.message : String(e);
         const cancelled = /cancel/i.test(msg);
         if (cancelled) {
@@ -142,6 +149,7 @@ export function usePromptDelivery(opts: {
         }
       } finally {
         busyRef.current = false;
+        if (stale()) return;
         const nextNow = sendNowRef.current;
         if (nextNow) {
           sendNowRef.current = null;
@@ -173,6 +181,7 @@ export function usePromptDelivery(opts: {
     [
       project,
       busyRef,
+      openingRef,
       pinToBottom,
       setConn,
       setError,
@@ -224,6 +233,7 @@ export function usePromptDelivery(opts: {
 
   const sendQueuedNow = useCallback(
     (id?: string) => {
+      if (openingRef.current) return;
       const list = promptQueueRef.current;
       const item = id ? list.find((q) => q.id === id) : list[0];
       if (!item) return;
@@ -240,7 +250,7 @@ export function usePromptDelivery(opts: {
         void deliverPrompt({ text: item.text, images: item.images });
       }
     },
-    [busyRef, setItems, deliverPrompt],
+    [busyRef, openingRef, setItems, deliverPrompt],
   );
 
   return {

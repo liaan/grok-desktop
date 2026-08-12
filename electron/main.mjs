@@ -18,8 +18,24 @@ import {
   startLogin,
   startLogout,
 } from "./auth.mjs";
+import { mergeRestartResult } from "./agent-restart.mjs";
 import { inspectBackbone } from "./backbone.mjs";
 import { resolveGrokBinary, grokHomeDir } from "./grok-home.mjs";
+import {
+  addMcpServer,
+  checkGrokUpdate,
+  disableMcpServer,
+  disablePlugin,
+  doctorMcp,
+  enableMcpServer,
+  enablePlugin,
+  getGrokEngine,
+  installGrokUpdate,
+  installPlugin,
+  listMcpServers,
+  listPlugins,
+  removeMcpServer,
+} from "./grok-cli.mjs";
 import {
   setupAutoUpdater,
   checkForUpdatesInteractive,
@@ -41,6 +57,7 @@ import {
   setCodingDataOptIn,
 } from "./coding-data.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
+import { readFileForPeek } from "./fs-content.mjs";
 import {
   APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
@@ -51,6 +68,7 @@ import {
   focusedSession,
   openSessionOnWindow,
   ownerIdFor,
+  restartAgentOnWindow,
   send,
   sessionFromEvent,
   setDesktopStateLoader,
@@ -66,7 +84,7 @@ import {
   DEFAULT_REASONING_EFFORT,
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
-import { getGitBranch } from "./git-info.mjs";
+import { getGitBranch, getGitDiff, getGitStatus } from "./git-info.mjs";
 import {
   debugLog,
   getDebugLogPath,
@@ -169,6 +187,30 @@ function openSettingsFromMenu() {
     ws.win.focus();
     send(ws, "app:open-settings");
   }
+}
+
+/** Project cwd for grok mcp --scope project (user scope still works without). */
+function mcpCwdFromEvent(e) {
+  const ws = sessionFromEvent(e);
+  if (!ws) return undefined;
+  const cwd = ws.agent?.cwd || ws.lastCwd;
+  return cwd || undefined;
+}
+
+/** @param {unknown} err */
+function mcpIpcError(err) {
+  const message =
+    err && typeof err === "object" && "message" in err
+      ? String(/** @type {{ message?: unknown }} */ (err).message || err)
+      : String(err || "CLI command failed");
+  return {
+    ok: false,
+    data: null,
+    stdout: "",
+    stderr: message,
+    code: null,
+    error: message,
+  };
 }
 
 /**
@@ -567,6 +609,90 @@ function registerIpc() {
     return inspectBackbone(cwd || process.cwd());
   });
 
+  ipcMain.handle("grok:engine", async () => getGrokEngine());
+
+  ipcMain.handle("grok:update-check", async () => checkGrokUpdate());
+
+  ipcMain.handle("grok:update-install", async () => installGrokUpdate());
+
+  ipcMain.handle("mcp:list", async (e) => {
+    return listMcpServers({ cwd: mcpCwdFromEvent(e) });
+  });
+
+  ipcMain.handle("mcp:add", async (e, spec = {}) => {
+    const cwd = mcpCwdFromEvent(e);
+    if (spec?.scope === "project" && !cwd) {
+      return mcpIpcError("Open a project to add a project-scoped MCP server.");
+    }
+    try {
+      return await addMcpServer(spec || {}, { cwd });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:enable", async (e, name) => {
+    try {
+      return await enableMcpServer(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:disable", async (e, name) => {
+    try {
+      return await disableMcpServer(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:remove", async (e, payload) => {
+    const name = typeof payload === "string" ? payload : payload?.name;
+    const scope = typeof payload === "object" && payload ? payload.scope : undefined;
+    try {
+      return await removeMcpServer(name, { cwd: mcpCwdFromEvent(e), scope });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:doctor", async (e, name) => {
+    try {
+      return await doctorMcp(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:list", async (e) => {
+    return listPlugins({ cwd: mcpCwdFromEvent(e) });
+  });
+
+  ipcMain.handle("plugin:enable", async (e, name) => {
+    try {
+      return await enablePlugin(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:disable", async (e, name) => {
+    try {
+      return await disablePlugin(name, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("plugin:install", async (e, source) => {
+    try {
+      return await installPlugin(source, { cwd: mcpCwdFromEvent(e) });
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
   ipcMain.handle("project:pick", async (e) => {
     const ws = sessionFromEvent(e);
     const parent =
@@ -619,6 +745,19 @@ function registerIpc() {
     const ws = sessionFromEvent(e);
     if (!ws) return false;
     return clearProjectOnWindow(ws);
+  });
+
+  /** Respawn this window's grok agent and resume the current session. */
+  ipcMain.handle("agent:restart", async (e) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) throw new Error("No window for agent:restart");
+    const result = await restartAgentOnWindow(ws, {
+      loadState: loadSessionOpenState,
+      listSessions: listSessionsForCwd,
+      remember: rememberProjectSession,
+    });
+    const backbone = await inspectBackbone(result.cwd);
+    return mergeRestartResult(result, backbone);
   });
 
   ipcMain.handle("sessions:list", async (_e, cwd) => {
@@ -741,6 +880,33 @@ function registerIpc() {
     return result;
   });
 
+  ipcMain.handle("agent:set-model", async (e, modelId) => {
+    const ws = sessionFromEvent(e);
+    const agent = ws?.agent;
+    if (!agent?.setModel) {
+      return {
+        modelId: null,
+        modelName: null,
+        availableModels: [],
+        agentSynced: false,
+        error: "No live agent",
+      };
+    }
+    const sessionId = agent.sessionId;
+    const result = await agent.setModel(modelId);
+    const live = sessionFromEvent(e)?.agent;
+    if (live !== agent || live?.sessionId !== sessionId) {
+      return {
+        ...(typeof live?._modelsPublic === "function"
+          ? live._modelsPublic()
+          : result),
+        agentSynced: false,
+        error: "Session changed",
+      };
+    }
+    return result;
+  });
+
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {
     const state = loadState();
     state.allowOutsideProject = Boolean(value);
@@ -840,11 +1006,40 @@ function registerIpc() {
     return getGitBranch(root);
   });
 
+  ipcMain.handle("git:status", async (e, cwd) => {
+    const sessionCwd = sessionFromEvent(e)?.agent?.cwd;
+    if (!sessionCwd) return { files: [] };
+    try {
+      const root =
+        typeof cwd === "string" && cwd
+          ? assertPathInProject(sessionCwd, cwd)
+          : sessionCwd;
+      return getGitStatus(root);
+    } catch {
+      return { files: [] };
+    }
+  });
+
+  ipcMain.handle("git:diff", async (e, filePath, opts) => {
+    const staged = Boolean(opts && opts.staged);
+    const rel = filePath == null ? "" : String(filePath);
+    const sessionCwd = sessionFromEvent(e)?.agent?.cwd;
+    if (!sessionCwd || !rel) {
+      return { path: rel, staged, diff: null };
+    }
+    try {
+      const safe = assertPathInProject(sessionCwd, rel);
+      return getGitDiff(sessionCwd, safe, { staged });
+    } catch {
+      return { path: rel, staged, diff: null };
+    }
+  });
+
   ipcMain.handle("fs:read-file", async (e, filePath) => {
     const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, filePath);
-    return fs.promises.readFile(safe, "utf8");
+    return readFileForPeek(safe);
   });
 
   ipcMain.handle("fs:list-dir", async (e, dirPath) => {

@@ -27,7 +27,7 @@ import {
   nextAlwaysApproveMode,
   runDesktopCommand,
 } from "./lib/desktop-commands";
-import { type ConnState } from "./lib/conn";
+import { isMissingBinaryError, type ConnState } from "./lib/conn";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
@@ -40,6 +40,7 @@ import { useStickToBottom } from "./hooks/useStickToBottom";
 import type {
   AppInfo,
   AuthStatus,
+  AvailableModel,
   BackboneSummary,
   SessionSummary,
   TimelineItem,
@@ -57,6 +58,11 @@ export default function App() {
   /** Live session model from ACP (session/new|load). */
   const [modelId, setModelId] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
+  /** Optimistic pick while session/set_model is in flight. */
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
+  /** Bumped on failed switch so the native <select> remounts onto the previous id. */
+  const [modelSelectEpoch, setModelSelectEpoch] = useState(0);
   const [conn, setConn] = useState<ConnState>("idle");
   const [openingLabel, setOpeningLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,18 +78,30 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<
+    "mcp" | "plugins" | "skills" | null
+  >(null);
+  const [offerAgentRestart, setOfferAgentRestart] = useState(false);
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(false);
   const openingRef = useRef(false);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const modelApplyLock = useRef(false);
+  const modelApplyGen = useRef(0);
 
   const appendSystem = useCallback((text: string) => {
     setItems((prev) => [
       ...prev,
       { id: uid("sys"), kind: "system", text, at: Date.now() },
     ]);
+  }, []);
+
+  const clearOfferAgentRestart = useCallback(() => {
+    setOfferAgentRestart(false);
   }, []);
 
   const {
@@ -203,34 +221,61 @@ export default function App() {
 
   const signedIn = Boolean(auth?.authenticated && !auth?.expired);
 
-  const { openProject, openSession, isAuthError } = useProjectSession({
-    auth,
-    project,
-    busyRef,
-    openingRef,
-    promptQueueRef,
-    sendNowRef,
-    clearSessionScoped,
-    hydrateBackgroundTasks,
-    hydrateSessionUsage,
-    syncPermissionsFromMain,
-    hydrateFromInfo,
-    refreshAuth,
-    refreshBackbone,
-    setAuth,
-    setInfo,
-    setProject,
-    setSessionId,
-    setSessions,
-    setModelId,
-    setModelName,
-    setConn,
-    setOpeningLabel,
-    setError,
-    setItems,
-    setAgentCommands,
-    clearPromptQueue,
-  });
+  const leaveProject = useCallback(async () => {
+    try {
+      await window.grokDesktop.closeProject();
+    } catch {
+      /* ignore — still clear local UI */
+    }
+    setProject(null);
+    setSessionId(null);
+    setSessions([]);
+    setModelId(null);
+    setModelName(null);
+    setItems([]);
+    setConn("idle");
+    setError(null);
+    setOfferAgentRestart(false);
+  }, []);
+
+  const onMissingBinary = useCallback(async () => {
+    await leaveProject();
+    await refreshAuth();
+  }, [leaveProject, refreshAuth]);
+
+  const { openProject, openSession, restartAgent, isAuthError } =
+    useProjectSession({
+      auth,
+      project,
+      busyRef,
+      openingRef,
+      promptQueueRef,
+      sendNowRef,
+      clearSessionScoped,
+      hydrateBackgroundTasks,
+      hydrateSessionUsage,
+      syncPermissionsFromMain,
+      hydrateFromInfo,
+      refreshAuth,
+      refreshBackbone,
+      setBackbone,
+      onOpenApplied: clearOfferAgentRestart,
+      setAuth,
+      setInfo,
+      setProject,
+      setSessionId,
+      setSessions,
+      setModelId,
+      setModelName,
+      setAvailableModels,
+      setConn,
+      setOpeningLabel,
+      setError,
+      setItems,
+      setAgentCommands,
+      clearPromptQueue,
+      onMissingBinary,
+    });
 
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
@@ -262,11 +307,17 @@ export default function App() {
       } else if (result.error) {
         setAuthMessage(result.error);
         setError(result.error);
+        if (isMissingBinaryError(result.error)) {
+          await refreshAuth();
+        }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setAuthMessage(msg);
       setError(msg);
+      if (isMissingBinaryError(msg)) {
+        await refreshAuth();
+      }
     } finally {
       setAuthBusy(false);
       void refreshAuth();
@@ -285,8 +336,70 @@ export default function App() {
     if (!sessionId) {
       setModelId(null);
       setModelName(null);
+      setAvailableModels([]);
     }
+    modelApplyGen.current += 1;
+    modelApplyLock.current = false;
+    setPendingModelId(null);
   }, [sessionId]);
+
+  const applyModel = useCallback(
+    async (nextId: string) => {
+      if (!nextId || nextId === modelId || modelApplyLock.current) return;
+      const sessionAtStart = sessionIdRef.current;
+      const gen = modelApplyGen.current;
+      modelApplyLock.current = true;
+      setPendingModelId(nextId);
+      try {
+        const result = await window.grokDesktop.setModel(nextId);
+        if (
+          gen !== modelApplyGen.current ||
+          sessionAtStart !== sessionIdRef.current
+        ) {
+          return;
+        }
+        if (result.agentSynced === false) {
+          setPendingModelId(null);
+          setModelSelectEpoch((n) => n + 1);
+          setError(
+            result.error
+              ? `Could not switch model (${result.error}).`
+              : "Could not switch model.",
+          );
+          return;
+        }
+        setModelId(result.modelId || nextId);
+        setModelName(result.modelName || null);
+        if (Array.isArray(result.availableModels)) {
+          setAvailableModels(result.availableModels);
+        }
+        setPendingModelId(null);
+        setError(null);
+        const label = result.modelName
+          ? result.modelId && result.modelName !== result.modelId
+            ? `${result.modelName} (${result.modelId})`
+            : result.modelName
+          : result.modelId || nextId;
+        appendSystem(`Model: ${label}`);
+      } catch (e: unknown) {
+        if (
+          gen !== modelApplyGen.current ||
+          sessionAtStart !== sessionIdRef.current
+        ) {
+          return;
+        }
+        setPendingModelId(null);
+        setModelSelectEpoch((n) => n + 1);
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Failed to set model: ${msg}`);
+      } finally {
+        if (gen === modelApplyGen.current) {
+          modelApplyLock.current = false;
+        }
+      }
+    },
+    [modelId, appendSystem],
+  );
 
   const leaveProject = useCallback(async () => {
     try {
@@ -299,9 +412,11 @@ export default function App() {
     setSessions([]);
     setModelId(null);
     setModelName(null);
+    setAvailableModels([]);
     setItems([]);
     setConn("idle");
     setError(null);
+    setOfferAgentRestart(false);
   }, []);
 
   const handleLogout = async () => {
@@ -386,10 +501,11 @@ export default function App() {
       } else {
         appendSystem(
           next
-            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Re-open the project if an agent is already running."
-            : "Coding data: Opt out. Re-open the project if an agent is already running.",
+            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Restart the agent so the running process picks it up."
+            : "Coding data: Opt out. Restart the agent so the running process picks it up.",
         );
       }
+      setOfferAgentRestart(true);
     } catch (e: unknown) {
       setCodingDataOptIn(!next);
       const msg = e instanceof Error ? e.message : String(e);
@@ -474,8 +590,11 @@ export default function App() {
     [homeDir, privacyMode],
   );
 
+  const restarting = openingLabel === "Restarting agent…";
   const statusLabel = useMemo(() => {
-    if (conn === "connecting") return "Starting agent…";
+    if (conn === "connecting") {
+      return restarting ? "Restarting agent…" : "Starting agent…";
+    }
     if (conn === "error") return "Error";
     if (permissions.length > 0) {
       return permissions.length === 1
@@ -485,7 +604,7 @@ export default function App() {
     if (conn === "busy") return "Working…";
     if (conn === "online") return "Connected";
     return "Idle";
-  }, [conn, permissions.length]);
+  }, [conn, permissions.length, restarting]);
 
   const platform =
     info?.platform ||
@@ -501,10 +620,63 @@ export default function App() {
         ? "platform-win"
         : "platform-linux";
 
-  const onOpenSettings = useCallback(() => setSettingsOpen(true), []);
+  const onOpenSettings = useCallback(
+    (section?: "mcp" | "plugins" | "skills") => {
+      setSettingsSection(section || null);
+      setSettingsOpen(true);
+    },
+    [],
+  );
   const onComposerError = useCallback((message: string) => {
     setError(message);
   }, []);
+
+  const settingsDialog = (
+    <SettingsDialog
+      open={settingsOpen}
+      onClose={() => {
+        setSettingsOpen(false);
+        setSettingsSection(null);
+      }}
+      theme={theme}
+      privacyMode={privacyMode}
+      codingDataOptIn={codingDataOptIn}
+      codingDataNote={codingDataNote}
+      permissionMode={permissionMode}
+      allowOutsideProject={allowOutsideProject}
+      sandboxTerminal={sandboxTerminal}
+      sandboxStatus={sandboxStatus}
+      debugLogging={debugLogging}
+      debugLogPath={debugLogPath}
+      allowPrerelease={allowPrerelease}
+      onSetTheme={(t) => void setAppTheme(t)}
+      onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
+      onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
+      onSetPermissionMode={(m) => void applyPermissionMode(m)}
+      onToggleAllowOutside={() => void toggleAllowOutside()}
+      onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
+      onSetDebugLogging={(next) => void applyDebugLogging(next)}
+      onSetAllowPrerelease={(next) => void applyAllowPrerelease(next)}
+      onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
+      onRestartAgent={() => {
+        setSettingsOpen(false);
+        setSettingsSection(null);
+        void restartAgent();
+      }}
+      onRestartAfterWrite={async () => {
+        if (project) await restartAgent();
+        await refreshBackbone(project || undefined);
+      }}
+      restarting={isOpening}
+      offerRestart={offerAgentRestart}
+      grokBinary={info?.grokBinary || auth?.binary || ""}
+      hasProject={Boolean(project)}
+      skills={backbone?.skills || []}
+      skillsError={backbone && !backbone.ok ? backbone.error : null}
+      skillsLoading={signedIn && backbone == null}
+      focusSection={settingsSection}
+    />
+  );
 
   if (!project) {
     return (
@@ -533,7 +705,10 @@ export default function App() {
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
           onOpenProject={(cwd) => void openProject(cwd)}
+          onOpenSettingsSection={onOpenSettings}
+          platform={platform}
         />
+        {settingsDialog}
       </PrivacyProvider>
     );
   }
@@ -557,32 +732,10 @@ export default function App() {
           onOpenProject={(cwd) => void openProject(cwd, { mode: "continue" })}
           onOpenSession={(opts) => void openSession(opts)}
           onLogout={() => void handleLogout()}
+          onOpenSettingsSection={onOpenSettings}
         />
 
-        <SettingsDialog
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          theme={theme}
-          privacyMode={privacyMode}
-          codingDataOptIn={codingDataOptIn}
-          codingDataNote={codingDataNote}
-          permissionMode={permissionMode}
-          allowOutsideProject={allowOutsideProject}
-          sandboxTerminal={sandboxTerminal}
-          sandboxStatus={sandboxStatus}
-          debugLogging={debugLogging}
-          debugLogPath={debugLogPath}
-          allowPrerelease={allowPrerelease}
-          onSetTheme={(t) => void setAppTheme(t)}
-          onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
-          onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
-          onSetPermissionMode={(m) => void applyPermissionMode(m)}
-          onToggleAllowOutside={() => void toggleAllowOutside()}
-          onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
-          onSetDebugLogging={(next) => void applyDebugLogging(next)}
-          onSetAllowPrerelease={(next) => void applyAllowPrerelease(next)}
-          onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
-        />
+        {settingsDialog}
 
         <main className="main">
           <ChatTopbar
@@ -592,12 +745,16 @@ export default function App() {
             isOpening={isOpening}
             modelId={modelId}
             modelName={modelName}
+            pendingModelId={pendingModelId}
+            modelSelectEpoch={modelSelectEpoch}
+            availableModels={availableModels}
             permissionMode={permissionMode}
             reasoningEffort={reasoningEffort}
             allowOutsideProject={allowOutsideProject}
             sandboxTerminal={sandboxTerminal}
             privacyMode={privacyMode}
             backgroundTasks={backgroundTasks}
+            onModel={(id) => void applyModel(id)}
             onPermissionMode={(m) => void applyPermissionMode(m)}
             onReasoningEffort={(e) => void applyReasoningEffort(e)}
             onOpenSettings={onOpenSettings}
@@ -611,11 +768,15 @@ export default function App() {
             <div className="loading-banner loading-banner-inline" role="status">
               <Spinner size={16} />
               <div>
-                <strong>Starting agent…</strong>
+                <strong>
+                  {restarting ? "Restarting agent…" : "Starting agent…"}
+                </strong>
                 <span>
-                  {openingLabel
-                    ? `Opening ${openingLabel}`
-                    : "Connecting to Grok backbone"}
+                  {restarting
+                    ? "Reconnecting to Grok backbone"
+                    : openingLabel
+                      ? `Opening ${openingLabel}`
+                      : "Connecting to Grok backbone"}
                 </span>
               </div>
             </div>

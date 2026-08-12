@@ -25,9 +25,10 @@ and download **one** file:
 | **Windows** | `…-Windows-Setup.exe` | Double-click → install |
 | **Mac (M1/M2/M3/M4)** | `…-Mac-AppleSilicon.dmg` | Open DMG → drag app to **Applications** → then see Mac note below |
 | **Mac (Intel)** | `…-Mac-Intel.dmg` | Same as above |
+| **Linux (x64)** | `…-Linux-x64.AppImage` | `chmod +x` then run |
 | **Source code** | GitHub **Source code (zip)** | Only if you want to build from source |
 
-**Team install:** use Setup.exe or a DMG only. Files named `latest.yml`, `latest-mac.yml`, Mac `.zip`, or blockmap are for **in-app auto-update** (not hand install). Skip AppImage/portable.
+**Team install:** use Setup.exe, a DMG, or the Linux AppImage. Files named `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, Mac `.zip`, or blockmap are for **in-app auto-update** (not hand install).
 
 Also install the **Grok Build CLI** (`grok`) — this app is only the GUI.
 
@@ -76,7 +77,7 @@ This project is **not** a reimplementation of the agent, models, or tools. It is
 └────────────────────────────┘
 ```
 
-Runs on **Windows, macOS, and Linux** (Electron). Team installers currently ship for **Windows + macOS** from Releases; Linux is source/`npm run dist` for now. You need the Grok Build CLI installed; day-to-day login can be done entirely in the app.
+Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Windows, macOS, and Linux** from Releases. You need the Grok Build CLI installed; day-to-day login can be done entirely in the app.
 
 ## Features
 
@@ -84,19 +85,22 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers currently ship
 |------|--------|
 | In-app browser sign-in / sign-out | Done |
 | Optional API key for this session | Done |
-| Skills & MCP **inherited** from `~/.grok` (same as CLI) | Done — invoke in chat; **edit in CLI** |
+| Skills, plugins & MCP **inherited** from `~/.grok` (same as CLI) | Done — invoke skills in chat; **list/toggle in Settings** |
 | Project rules (`AGENTS.md`, etc.) via open folder | Done — agent uses project as cwd (same as CLI) |
 | Open project + recent folders | Done |
 | Streaming messages, thoughts, plans, tool cards | Done |
 | Tool permission approvals + always-approve | Done |
 | Cancel + mid-turn queue / send-now | Done |
 | Slash menu (skills + local `/new`) | Done |
-| Simple file list peek | Basic |
-| Diff review pane | Planned |
+| Simple file list peek | Done — in-app peek + Changes tab |
+| Diff review pane | Done — ACP diffs + git Changes |
 | Resume CLI sessions with history | Done (same `~/.grok/sessions`) |
 | Multi-session tabs | Basic (sidebar chat list) |
-| Settings UI (model / MCP / skills editor) | **Planned** — configure under `~/.grok` for now |
-| Native installers | **Windows + macOS Done** — [Releases](https://github.com/liaan/grok-desktop/releases); Linux via source / `npm run dist` |
+| Settings UI (MCP list / add / toggle) | **Done** — via `grok mcp` (never edits `config.toml` in-app) |
+| Settings UI (plugins list / enable / disable / install-from-git) | **Done** — via `grok plugin` (never edits `config.toml` in-app) |
+| Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
+| Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
+| Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
 
 ## Requirements
 
@@ -114,9 +118,9 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 |--------|--------------|-------------------------|
 | Auth | Sign in / out in app | — |
 | Session API key | Optional (applies on next agent start) | `XAI_API_KEY` env |
-| **Skills** (runtime) | Invoke via chat or `/skill-name` slash menu | Install / edit under `~/.grok` |
-| **MCP servers** | Used automatically if configured | Define in `~/.grok` / `config.toml` |
-| **Plugins** | Inherited by agent (little GUI summary) | Install / manage in CLI |
+| **Skills** (runtime) | Settings list + invoke via `/skill-name` slash menu | Install / edit under `~/.grok` (no in-app editor) |
+| **MCP servers** | Settings → MCP (list / add / toggle / test) | Still stored in `~/.grok` / project `.grok` via `grok mcp` |
+| **Plugins** | Settings → Plugins (list / enable / disable / install from git URL) | Marketplace browse still CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
 | Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | Agent `session/set_mode` + `_meta.yoloMode` / `permissionMode` on session start |
@@ -124,7 +128,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Project-root safety** | On by default (Settings: “Allow outside project” off) | Open project + **linked git worktrees** of that repo are allowed; turn on only for unrelated host paths. Independent of terminal sandbox. |
 | **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |
 
-**After changing** MCP, skills, or plugins in `~/.grok`, **re-open the project** (or New chat after restart) so a new agent process picks up config. The welcome “N skills · M MCP” strip is a `grok inspect` summary, not a live settings editor.
+**After changing** MCP or plugins in Settings, Desktop restarts the agent automatically. Skills added under `~/.grok/skills` still need **Restart agent** (or re-open the project) so a new process picks them up. The welcome “N skills · M MCP · P plugins” strip is a `grok inspect` summary.
 
 Optional environment variables:
 
