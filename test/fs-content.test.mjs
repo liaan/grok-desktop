@@ -10,8 +10,10 @@ import {
   isLikelyBinary,
   mimeFromExtension,
   readFileForAcp,
+  readFileForEdit,
   readFileForPeek,
   sniffImageMime,
+  writeFileForEdit,
 } from "../electron/fs-content.mjs";
 import { expandUserPath } from "../electron/path-safety.mjs";
 
@@ -100,6 +102,69 @@ test("readFileForPeek caps bytes and refuses binary from a prefix", async () => 
     try {
       fs.unlinkSync(text);
       fs.unlinkSync(bin);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("readFileForEdit does not append a truncation marker", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "notes.txt");
+  fs.writeFileSync(file, "hello world");
+  try {
+    const r = await readFileForEdit(file);
+    assert.equal(r.binary, false);
+    assert.equal(r.truncated, false);
+    assert.equal(r.text, "hello world");
+    const capped = await readFileForEdit(file, { cap: 5 });
+    assert.equal(capped.truncated, true);
+    assert.equal(capped.text, "hello");
+    assert.ok(!capped.text.includes("truncated"));
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("readFileForEdit flags binary without throwing", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "x.bin");
+  fs.writeFileSync(file, Buffer.from([0x00, 0x01, 0x02]));
+  try {
+    const r = await readFileForEdit(file);
+    assert.equal(r.binary, true);
+    assert.equal(r.text, "");
+  } finally {
+    try {
+      fs.unlinkSync(file);
+      fs.rmdirSync(dir);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+test("writeFileForEdit overwrites text and refuses binary", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-edit-"));
+  const file = path.join(dir, "a.ts");
+  fs.writeFileSync(file, "old");
+  try {
+    await writeFileForEdit(file, "export const n = 1;\n");
+    assert.equal(fs.readFileSync(file, "utf8"), "export const n = 1;\n");
+    await assert.rejects(
+      () => writeFileForEdit(file, "a\u0000b"),
+      /binary/i,
+    );
+    assert.equal(fs.readFileSync(file, "utf8"), "export const n = 1;\n");
+  } finally {
+    try {
+      fs.unlinkSync(file);
       fs.rmdirSync(dir);
     } catch {
       /* ignore */

@@ -48,8 +48,13 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getGitStatus: (cwd) => ipcRenderer.invoke("git:status", cwd),
   getGitDiff: (path, opts) => ipcRenderer.invoke("git:diff", path, opts || {}),
   readFile: (path) => ipcRenderer.invoke("fs:read-file", path),
+  writeFile: (path, content) =>
+    ipcRenderer.invoke("fs:write-file", path, content),
   listDir: (path) => ipcRenderer.invoke("fs:list-dir", path),
-  openPath: (path) => ipcRenderer.invoke("shell:open-path", path),
+  openPath: (path) => ipcRenderer.invoke("shell:open-editor", path),
+  openInEditor: (path) => ipcRenderer.invoke("shell:open-editor", path),
+  listEditors: () => ipcRenderer.invoke("editor:list"),
+  setExternalEditor: (id) => ipcRenderer.invoke("app:set-external-editor", id),
   showItem: (path) => ipcRenderer.invoke("shell:show-item", path),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
 

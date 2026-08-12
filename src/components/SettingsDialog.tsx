@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  EditorListResult,
   GrokEngineInfo,
   GrokUpdateCheck,
   McpServerInfo,
@@ -10,9 +11,80 @@ import {
   type PermissionMode,
 } from "../lib/permission-mode";
 
+type SettingsPageId =
+  | "general"
+  | "engine"
+  | "agent"
+  | "coding-data"
+  | "mcp"
+  | "plugins"
+  | "skills"
+  | "updates"
+  | "diagnostics";
+
+type SettingsNavItem = {
+  id: SettingsPageId;
+  label: string;
+};
+
+type SettingsNavGroup = {
+  label: string;
+  items: SettingsNavItem[];
+};
+
+const SETTINGS_NAV: SettingsNavGroup[] = [
+  {
+    label: "App",
+    items: [
+      { id: "general", label: "General" },
+      { id: "engine", label: "Engine" },
+    ],
+  },
+  {
+    label: "Agent",
+    items: [
+      { id: "agent", label: "Safety" },
+      { id: "coding-data", label: "Coding data" },
+    ],
+  },
+  {
+    label: "Extensions",
+    items: [
+      { id: "mcp", label: "MCP" },
+      { id: "plugins", label: "Plugins" },
+      { id: "skills", label: "Skills" },
+    ],
+  },
+  {
+    label: "Advanced",
+    items: [
+      { id: "updates", label: "Updates" },
+      { id: "diagnostics", label: "Diagnostics" },
+    ],
+  },
+];
+
+const PAGE_TITLES: Record<SettingsPageId, string> = {
+  general: "General",
+  engine: "Engine",
+  agent: "Safety",
+  "coding-data": "Coding data",
+  mcp: "MCP servers",
+  plugins: "Plugins",
+  skills: "Skills",
+  updates: "Updates",
+  diagnostics: "Diagnostics",
+};
+
+function pageFromFocus(
+  focus: "mcp" | "plugins" | "skills" | null | undefined,
+): SettingsPageId {
+  if (focus === "mcp" || focus === "plugins" || focus === "skills") return focus;
+  return "general";
+}
+
 /**
- * App settings modal — appearance + agent safety.
- * Keeps the sidebar footer free of checkbox clutter.
+ * Full-screen settings: nav tree on the left, one page on the right.
  */
 export function SettingsDialog({
   open,
@@ -88,9 +160,19 @@ export function SettingsDialog({
   focusSection?: "mcp" | "plugins" | "skills" | null;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [page, setPage] = useState<SettingsPageId>("general");
   const [engine, setEngine] = useState<GrokEngineInfo | null>(null);
   const [engineBusy, setEngineBusy] = useState(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [editors, setEditors] = useState<EditorListResult | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setPage("general");
+      return;
+    }
+    setPage(pageFromFocus(focusSection));
+  }, [open, focusSection]);
 
   useEffect(() => {
     if (!open) return;
@@ -98,6 +180,9 @@ export function SettingsDialog({
     setUpdateNote(null);
     void window.grokDesktop.getGrokEngine().then((info) => {
       if (!cancelled) setEngine(info);
+    });
+    void window.grokDesktop.listEditors().then((list) => {
+      if (!cancelled) setEditors(list);
     });
     return () => {
       cancelled = true;
@@ -122,34 +207,53 @@ export function SettingsDialog({
 
   return (
     <div
-      className="modal-backdrop"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="settings-page"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
     >
-      <div
-        className="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-      >
-        <div className="modal-header">
-          <h2 id="settings-title">Settings</h2>
-          <button
-            ref={closeRef}
-            type="button"
-            className="btn ghost btn-sm"
-            onClick={onClose}
-            aria-label="Close settings"
-          >
-            ✕
-          </button>
-        </div>
+      <div className="settings-page-header">
+        <h2 id="settings-title">Settings</h2>
+        <button
+          ref={closeRef}
+          type="button"
+          className="btn ghost btn-sm"
+          onClick={onClose}
+          aria-label="Close settings"
+        >
+          Done
+        </button>
+      </div>
 
-        <div className="modal-body">
+      <div className="settings-page-body">
+        <nav className="settings-nav" aria-label="Settings">
+          {SETTINGS_NAV.map((group) => (
+            <div className="settings-nav-group" key={group.label}>
+              <div className="settings-nav-heading">{group.label}</div>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={page === item.id ? "page" : undefined}
+                  className={
+                    page === item.id
+                      ? "settings-nav-item active"
+                      : "settings-nav-item"
+                  }
+                  onClick={() => setPage(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="settings-content">
+          <div className="settings-content-inner">
+            <h3 className="settings-page-title">{PAGE_TITLES[page]}</h3>
+          {page === "engine" ? (
           <section className="settings-section">
-            <h3>Engine</h3>
             <div className="settings-row settings-row-stack">
               <div className="settings-row-text">
                 <span className="settings-label">Grok CLI</span>
@@ -235,8 +339,27 @@ export function SettingsDialog({
                 {engineBusy ? "Working…" : "Check for CLI updates"}
               </button>
             </div>
+            <div className="settings-row">
+              <div className="settings-row-text">
+                <span className="settings-label">Restart agent</span>
+                <span className="settings-desc">
+                  Respawn the Grok process and resume this chat. Needed after
+                  CLI updates or ~/.grok skill changes.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={restarting}
+                onClick={() => onRestartAgent()}
+              >
+                {restarting ? "Restarting…" : "Restart agent"}
+              </button>
+            </div>
           </section>
+          ) : null}
 
+          {page === "skills" ? (
           <SkillsSettingsPanel
             open={open}
             skills={skills || []}
@@ -244,14 +367,18 @@ export function SettingsDialog({
             loading={Boolean(skillsLoading)}
             focus={focusSection === "skills"}
           />
+          ) : null}
 
+          {page === "plugins" ? (
           <PluginsSettingsPanel
             open={open}
             restarting={Boolean(restarting)}
             focus={focusSection === "plugins"}
             onRestartAfterWrite={onRestartAfterWrite}
           />
+          ) : null}
 
+          {page === "mcp" ? (
           <McpSettingsPanel
             open={open}
             restarting={Boolean(restarting)}
@@ -259,9 +386,10 @@ export function SettingsDialog({
             focus={focusSection === "mcp"}
             onRestartAfterWrite={onRestartAfterWrite}
           />
+          ) : null}
 
+          {page === "general" ? (
           <section className="settings-section">
-            <h3>Appearance</h3>
             <label className="settings-row">
               <div className="settings-row-text">
                 <span className="settings-label">Theme</span>
@@ -302,10 +430,46 @@ export function SettingsDialog({
                 onChange={(e) => onSetPrivacyMode(e.target.checked)}
               />
             </label>
-          </section>
 
+            <label className="settings-row settings-row-stack">
+              <div className="settings-row-text">
+                <span className="settings-label">External editor</span>
+                <span className="settings-desc">
+                  Files and Changes open here — not the browser default for
+                  HTML or Markdown. Auto picks Cursor, VS Code, Zed, then a
+                  system text editor.
+                </span>
+              </div>
+              <select
+                className="settings-select"
+                value={editors?.preferred || "auto"}
+                disabled={!editors}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  void window.grokDesktop.setExternalEditor(id).then((list) => {
+                    setEditors(list);
+                  });
+                }}
+              >
+                <option value="auto">
+                  Auto
+                  {editors?.resolvedLabel
+                    ? ` (${editors.resolvedLabel})`
+                    : ""}
+                </option>
+                {(editors?.editors || []).map((ed) => (
+                  <option key={ed.id} value={ed.id} disabled={!ed.available}>
+                    {ed.label}
+                    {ed.available ? "" : " — not found"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+          ) : null}
+
+          {page === "coding-data" ? (
           <section className="settings-section">
-            <h3>Coding data, retention, and training</h3>
             <div className="settings-row settings-row-stack">
               <div className="settings-row-text">
                 <span className="settings-label">Share coding data</span>
@@ -373,9 +537,10 @@ export function SettingsDialog({
               </button>
             </div>
           </section>
+          ) : null}
 
+          {page === "agent" ? (
           <section className="settings-section">
-            <h3>Agent safety</h3>
 
             <label className="settings-row settings-row-stack">
               <div className="settings-row-text">
@@ -433,9 +598,10 @@ export function SettingsDialog({
               />
             </label>
           </section>
+          ) : null}
 
+          {page === "updates" ? (
           <section className="settings-section">
-            <h3>Updates</h3>
             <label className="settings-row">
               <div className="settings-row-text">
                 <span className="settings-label">Preview updates</span>
@@ -455,9 +621,10 @@ export function SettingsDialog({
               />
             </label>
           </section>
+          ) : null}
 
+          {page === "diagnostics" ? (
           <section className="settings-section">
-            <h3>Diagnostics</h3>
             <label className="settings-row">
               <div className="settings-row-text">
                 <span className="settings-label">Debug logging</span>
@@ -492,12 +659,8 @@ export function SettingsDialog({
               </button>
             </div>
           </section>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn primary" onClick={onClose}>
-            Done
-          </button>
+          ) : null}
+          </div>
         </div>
       </div>
     </div>

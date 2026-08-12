@@ -57,7 +57,12 @@ import {
   setCodingDataOptIn,
 } from "./coding-data.mjs";
 import { assertPathInProject } from "./path-safety.mjs";
-import { readFileForPeek } from "./fs-content.mjs";
+import { readFileForEdit, writeFileForEdit } from "./fs-content.mjs";
+import {
+  listEditors,
+  normalizeExternalEditor,
+  openInEditor,
+} from "./open-editor.mjs";
 import {
   APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
@@ -132,6 +137,12 @@ function loadState() {
        * (vX.Y.Z-beta.N). Default off — team installers stay on stable.
        */
       allowPrerelease: false,
+      /**
+       * External editor for Files / Changes.
+       * auto | cursor | code | code-insiders | zed | windsurf | subl | codium
+       * | textedit | notepad
+       */
+      externalEditor: "auto",
       lastProject: null,
       ...raw,
     };
@@ -145,6 +156,7 @@ function loadState() {
     merged.reasoningEffort = normalizeReasoningEffort(merged.reasoningEffort);
     merged.debugLogging = Boolean(merged.debugLogging);
     merged.allowPrerelease = Boolean(merged.allowPrerelease);
+    merged.externalEditor = normalizeExternalEditor(merged.externalEditor);
     return merged;
   } catch {
     return {
@@ -156,6 +168,7 @@ function loadState() {
       privacyMode: false,
       debugLogging: false,
       allowPrerelease: false,
+      externalEditor: "auto",
       lastProject: null,
       recentProjects: [],
     };
@@ -552,6 +565,7 @@ function registerIpc() {
       debugLogging: isDebugLogging() || Boolean(state.debugLogging),
       debugLogPath: getDebugLogPath(),
       allowPrerelease: Boolean(state.allowPrerelease),
+      externalEditor: normalizeExternalEditor(state.externalEditor),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -1039,7 +1053,15 @@ function registerIpc() {
     const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
     const safe = assertPathInProject(root, filePath);
-    return readFileForPeek(safe);
+    return readFileForEdit(safe);
+  });
+
+  ipcMain.handle("fs:write-file", async (e, filePath, content) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
+    if (!root) throw new Error("No project open");
+    const safe = assertPathInProject(root, filePath);
+    await writeFileForEdit(safe, content);
+    return { ok: true };
   });
 
   ipcMain.handle("fs:list-dir", async (e, dirPath) => {
@@ -1069,11 +1091,56 @@ function registerIpc() {
       });
   });
 
+  ipcMain.handle("editor:list", async () => {
+    const preferred = normalizeExternalEditor(loadState().externalEditor);
+    const editors = listEditors();
+    const resolved =
+      editors.find((ed) => ed.id === preferred && ed.available) ||
+      editors.find((ed) => ed.available && !ed.lastResort) ||
+      editors.find((ed) => ed.available) ||
+      null;
+    return {
+      preferred,
+      resolved: resolved ? resolved.id : null,
+      resolvedLabel: resolved ? resolved.label : null,
+      editors,
+    };
+  });
+
+  ipcMain.handle("app:set-external-editor", async (_e, value) => {
+    const state = loadState();
+    state.externalEditor = normalizeExternalEditor(value);
+    saveState(state);
+    const editors = listEditors();
+    const resolved =
+      editors.find((ed) => ed.id === state.externalEditor && ed.available) ||
+      editors.find((ed) => ed.available && !ed.lastResort) ||
+      editors.find((ed) => ed.available) ||
+      null;
+    return {
+      preferred: state.externalEditor,
+      resolved: resolved ? resolved.id : null,
+      resolvedLabel: resolved ? resolved.label : null,
+      editors,
+    };
+  });
+
   // Renderer shell helpers are always project-scoped (ignore allowOutsideProject).
+  // Open in a real editor — never Launch Services / the default browser.
   ipcMain.handle("shell:open-path", async (e, target) => {
     const root = sessionFromEvent(e)?.agent?.cwd;
     if (!root) throw new Error("No project open");
-    return shell.openPath(assertPathInProject(root, target));
+    const safe = assertPathInProject(root, target);
+    const preference = normalizeExternalEditor(loadState().externalEditor);
+    return openInEditor(safe, { preference });
+  });
+
+  ipcMain.handle("shell:open-editor", async (e, target) => {
+    const root = sessionFromEvent(e)?.agent?.cwd;
+    if (!root) throw new Error("No project open");
+    const safe = assertPathInProject(root, target);
+    const preference = normalizeExternalEditor(loadState().externalEditor);
+    return openInEditor(safe, { preference });
   });
 
   ipcMain.handle("shell:show-item", async (e, target) => {

@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   basen,
   isLexicallyUnder,
@@ -28,6 +36,13 @@ type PanelTab = "files" | "changes";
 type PeekState =
   | { kind: "file"; path: string; absPath: string }
   | { kind: "diff"; path: string; absPath: string; staged: boolean };
+type CtxMenu = {
+  x: number;
+  y: number;
+  path: string;
+  absPath: string;
+  isDir: boolean;
+};
 
 const PEEK_CHAR_CAP = 200_000;
 
@@ -38,6 +53,63 @@ function joinProjectPath(root: string, rel: string): string {
   if (p.startsWith("/") || /^[A-Za-z]:/.test(p)) return rel;
   const sep = root.includes("\\") ? "\\" : "/";
   return `${r}${sep}${p.replace(/\//g, sep)}`;
+}
+
+function FileRowActions({
+  absPath,
+  name,
+  editorLabel,
+  copied,
+  onEdit,
+  onCopy,
+}: {
+  absPath: string;
+  name: string;
+  editorLabel: string;
+  copied: boolean;
+  onEdit: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="file-actions">
+      <button
+        type="button"
+        className="btn ghost btn-sm file-action"
+        title={`Open in ${editorLabel}`}
+        aria-label={`Open ${name} in ${editorLabel}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="btn ghost btn-sm file-action"
+        title="Copy path"
+        aria-label={`Copy path of ${name}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onCopy();
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <button
+        type="button"
+        className="btn ghost btn-sm file-reveal"
+        title="Show in folder"
+        aria-label={`Show ${name} in folder`}
+        onClick={(e) => {
+          e.stopPropagation();
+          void window.grokDesktop.showItem(absPath);
+        }}
+      >
+        ↗
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -71,11 +143,22 @@ export const SidePanel = memo(function SidePanel({
   const [peekText, setPeekText] = useState<string | null>(null);
   const [peekError, setPeekError] = useState<string | null>(null);
   const [peekLoading, setPeekLoading] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [savedText, setSavedText] = useState<string | null>(null);
+  const [peekBinary, setPeekBinary] = useState(false);
+  const [peekTruncated, setPeekTruncated] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  const [editorLabel, setEditorLabel] = useState("editor");
   /** Monotonic id so out-of-order listDir results are ignored. */
   const loadSeq = useRef(0);
   const changesSeq = useRef(0);
   const peekSeq = useRef(0);
   const prevRunning = useRef(0);
+  const copiedTimer = useRef<number | null>(null);
 
   const loadDir = useCallback(async (dir: string) => {
     const seq = ++loadSeq.current;
@@ -112,9 +195,80 @@ export const SidePanel = memo(function SidePanel({
     }
   }, []);
 
-  const openPeek = useCallback((next: PeekState) => {
-    setPeek(next);
+  const dirty =
+    peek?.kind === "file" &&
+    !peekBinary &&
+    !peekTruncated &&
+    savedText != null &&
+    draft !== savedText;
+
+  const canEditFile =
+    peek?.kind === "file" &&
+    !peekBinary &&
+    !peekTruncated &&
+    !peekLoading &&
+    !peekError;
+
+  const confirmLeave = useCallback(() => {
+    if (!dirty) return true;
+    return window.confirm("Discard unsaved edits?");
+  }, [dirty]);
+
+  const openPeek = useCallback(
+    (next: PeekState) => {
+      if (!confirmLeave()) return;
+      setSaveError(null);
+      setOpenError(null);
+      setPeek(next);
+    },
+    [confirmLeave],
+  );
+
+  const closePeek = useCallback(() => {
+    if (!confirmLeave()) return;
+    setPeek(null);
+    setSaveError(null);
+    setOpenError(null);
+  }, [confirmLeave]);
+
+  const copyPath = useCallback(async (absPath: string) => {
+    try {
+      await navigator.clipboard.writeText(absPath);
+      setCopiedKey(absPath);
+      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => {
+        setCopiedKey(null);
+        copiedTimer.current = null;
+      }, 1400);
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  const openEditor = useCallback(async (absPath: string) => {
+    setOpenError(null);
+    try {
+      await window.grokDesktop.openInEditor(absPath);
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const savePeek = useCallback(async () => {
+    if (!peek || peek.kind !== "file" || !canEditFile) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await window.grokDesktop.writeFile(peek.absPath, draft);
+      setSavedText(draft);
+      setPeekText(draft);
+      if (project) void loadChanges(project);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [peek, canEditFile, draft, project, loadChanges]);
 
   useEffect(() => {
     // Invalidate in-flight loads when project changes
@@ -126,6 +280,13 @@ export const SidePanel = memo(function SidePanel({
     setPeekText(null);
     setPeekError(null);
     setPeekLoading(false);
+    setDraft("");
+    setSavedText(null);
+    setPeekBinary(false);
+    setPeekTruncated(false);
+    setSaveError(null);
+    setOpenError(null);
+    setCtxMenu(null);
     setChanges([]);
     setChangesError(null);
     setChangesLoading(false);
@@ -162,22 +323,63 @@ export const SidePanel = memo(function SidePanel({
   }, [project, loadChanges]);
 
   useEffect(() => {
+    const refreshEditors = () => {
+      void window.grokDesktop.listEditors().then((r) => {
+        setEditorLabel(r.resolvedLabel || "editor");
+      });
+    };
+    refreshEditors();
+    window.addEventListener("focus", refreshEditors);
+    return () => {
+      window.removeEventListener("focus", refreshEditors);
+      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [ctxMenu]);
+
+  useEffect(() => {
     if (!peek || !project) {
       setPeekText(null);
       setPeekError(null);
       setPeekLoading(false);
+      setDraft("");
+      setSavedText(null);
+      setPeekBinary(false);
+      setPeekTruncated(false);
       return;
     }
     const seq = ++peekSeq.current;
     setPeekLoading(true);
     setPeekError(null);
     setPeekText(null);
+    setDraft("");
+    setSavedText(null);
+    setPeekBinary(false);
+    setPeekTruncated(false);
+    setSaveError(null);
     const run = async () => {
       try {
         if (peek.kind === "file") {
-          const text = await window.grokDesktop.readFile(peek.absPath);
+          const res = await window.grokDesktop.readFile(peek.absPath);
           if (seq !== peekSeq.current) return;
-          setPeekText(text);
+          setPeekText(res.text);
+          setDraft(res.text);
+          setSavedText(res.text);
+          setPeekBinary(res.binary);
+          setPeekTruncated(res.truncated);
         } else {
           const res = await window.grokDesktop.getGitDiff(peek.path, {
             staged: peek.staged,
@@ -247,11 +449,33 @@ export const SidePanel = memo(function SidePanel({
     }
     return peekText;
   }, [peekText]);
-  const peekIsBinary = Boolean(peekText && peekText.includes("\u0000"));
+  const peekIsBinary = peekBinary || Boolean(peekText && peekText.includes("\u0000"));
+
+  const openFileMenu = (
+    e: ReactMouseEvent,
+    info: { path: string; absPath: string; isDir: boolean },
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pad = 8;
+    const w = 200;
+    const h = 160;
+    setCtxMenu({
+      ...info,
+      x: Math.min(e.clientX, window.innerWidth - w - pad),
+      y: Math.min(e.clientY, window.innerHeight - h - pad),
+    });
+  };
 
   const selectFile = (file: FileEntry) => {
     if (file.isDirectory) {
       void loadDir(file.path);
+      return;
+    }
+    if (
+      peek?.kind === "file" &&
+      normalizePathKey(peek.absPath) === normalizePathKey(file.path)
+    ) {
       return;
     }
     openPeek({ kind: "file", path: file.path, absPath: file.path });
@@ -281,6 +505,8 @@ export const SidePanel = memo(function SidePanel({
           aria-selected={tab === "files"}
           className={tab === "files" ? "active" : ""}
           onClick={() => {
+            if (tab === "files") return;
+            if (!confirmLeave()) return;
             setTab("files");
             setPeek(null);
           }}
@@ -293,6 +519,11 @@ export const SidePanel = memo(function SidePanel({
           aria-selected={tab === "changes"}
           className={tab === "changes" ? "active" : ""}
           onClick={() => {
+            if (tab === "changes") {
+              if (project) void loadChanges(project);
+              return;
+            }
+            if (!confirmLeave()) return;
             setTab("changes");
             setPeek(null);
             if (project) void loadChanges(project);
@@ -330,6 +561,14 @@ export const SidePanel = memo(function SidePanel({
                 ) : null}
                 <span className="file-browser-label">{pathLabel}</span>
               </div>
+              <p className="file-browser-hint">
+                Click to edit here. Double-click opens in {editorLabel}.
+              </p>
+              {openError && tab === "files" ? (
+                <p style={{ color: "var(--danger, #f87171)", fontSize: 12 }}>
+                  {openError}
+                </p>
+              ) : null}
               {filesLoading && files.length === 0 ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   Loading…
@@ -354,6 +593,13 @@ export const SidePanel = memo(function SidePanel({
                   <div
                     key={f.path}
                     className={`file-row ${f.isDirectory ? "is-dir" : "is-file"}${selected ? " is-selected" : ""}`}
+                    onContextMenu={(e) =>
+                      openFileMenu(e, {
+                        path: f.path,
+                        absPath: f.path,
+                        isDir: f.isDirectory,
+                      })
+                    }
                   >
                     <button
                       type="button"
@@ -361,32 +607,38 @@ export const SidePanel = memo(function SidePanel({
                       title={
                         f.isDirectory
                           ? `Open folder: ${redact(f.path)}`
-                          : `Peek: ${redact(f.path)}`
+                          : `Edit: ${redact(f.path)}`
                       }
                       onClick={() => selectFile(f)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        void openEditor(f.path);
+                      }}
                     >
                       <span className="file-item-icon" aria-hidden>
                         {f.isDirectory ? "📁" : "📄"}
                       </span>
                       <span className="file-item-name">{f.name}</span>
                     </button>
-                    {!f.isDirectory ? (
-                      <button
-                        type="button"
-                        className="btn ghost btn-sm file-reveal"
-                        title="Show in folder"
-                        aria-label={`Show ${f.name} in folder`}
-                        onClick={() => void window.grokDesktop.showItem(f.path)}
-                      >
-                        ↗
-                      </button>
-                    ) : null}
+                    <FileRowActions
+                      absPath={f.path}
+                      name={f.name}
+                      editorLabel={editorLabel}
+                      copied={copiedKey === f.path}
+                      onEdit={() => void openEditor(f.path)}
+                      onCopy={() => void copyPath(f.path)}
+                    />
                   </div>
                 );
               })}
             </>
           ) : (
             <>
+              {openError && tab === "changes" ? (
+                <p style={{ color: "var(--danger, #f87171)", fontSize: 12 }}>
+                  {openError}
+                </p>
+              ) : null}
               {changesLoading && changes.length === 0 ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   Loading…
@@ -408,16 +660,28 @@ export const SidePanel = memo(function SidePanel({
                   normalizePathKey(peek.path) === normalizePathKey(entry.path);
                 const badge =
                   entry.status === "?" ? "?" : entry.status || "M";
+                const abs = joinProjectPath(project, entry.path);
                 return (
                   <div
                     key={`${entry.index}${entry.worktree}:${entry.path}`}
                     className={`file-row is-file${selected ? " is-selected" : ""}`}
+                    onContextMenu={(e) =>
+                      openFileMenu(e, {
+                        path: entry.path,
+                        absPath: abs,
+                        isDir: false,
+                      })
+                    }
                   >
                     <button
                       type="button"
                       className="file-item file-item-file"
                       title={redact(entry.path)}
                       onClick={() => selectChange(entry)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        void openEditor(abs);
+                      }}
                     >
                       <span
                         className={`change-badge change-badge-${badge === "?" ? "untracked" : badge}`}
@@ -437,19 +701,14 @@ export const SidePanel = memo(function SidePanel({
                       </span>
                       <span className="file-item-name">{entry.path}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="btn ghost btn-sm file-reveal"
-                      title="Show in folder"
-                      aria-label={`Show ${entry.path} in folder`}
-                      onClick={() =>
-                        void window.grokDesktop.showItem(
-                          joinProjectPath(project, entry.path),
-                        )
-                      }
-                    >
-                      ↗
-                    </button>
+                    <FileRowActions
+                      absPath={abs}
+                      name={entry.path}
+                      editorLabel={editorLabel}
+                      copied={copiedKey === abs}
+                      onEdit={() => void openEditor(abs)}
+                      onCopy={() => void copyPath(abs)}
+                    />
                   </div>
                 );
               })}
@@ -463,15 +722,35 @@ export const SidePanel = memo(function SidePanel({
                 className="file-peek-title"
                 title={redact(peek.path)}
               >
+                {dirty ? "• " : ""}
                 {basen(peek.path)}
               </span>
+              {canEditFile ? (
+                <button
+                  type="button"
+                  className="btn ghost btn-sm"
+                  title="Save (⌘S)"
+                  disabled={!dirty || saving}
+                  onClick={() => void savePeek()}
+                >
+                  {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn ghost btn-sm"
-                title="Open in editor"
-                onClick={() => void window.grokDesktop.openPath(peek.absPath)}
+                title={`Open in ${editorLabel}`}
+                onClick={() => void openEditor(peek.absPath)}
               >
-                Open in editor
+                {editorLabel}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                title="Copy path"
+                onClick={() => void copyPath(peek.absPath)}
+              >
+                {copiedKey === peek.absPath ? "Copied" : "Copy"}
               </button>
               <button
                 type="button"
@@ -485,13 +764,16 @@ export const SidePanel = memo(function SidePanel({
               <button
                 type="button"
                 className="btn ghost btn-sm"
-                title="Close peek"
-                aria-label="Close peek"
-                onClick={() => setPeek(null)}
+                title="Close"
+                aria-label="Close"
+                onClick={() => closePeek()}
               >
                 ×
               </button>
             </div>
+            {saveError || openError ? (
+              <p className="file-peek-error">{saveError || openError}</p>
+            ) : null}
             <div className="file-peek-body">
               {peekLoading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
@@ -509,8 +791,31 @@ export const SidePanel = memo(function SidePanel({
                 </p>
               ) : peekIsBinary || peekError === "Binary file" ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                  Binary file.
+                  Binary file — open it in {editorLabel} instead.
                 </p>
+              ) : peekTruncated ? (
+                <>
+                  <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                    File is too large to edit here. Open it in {editorLabel}.
+                  </p>
+                  {peekFileText != null ? (
+                    <pre className="file-peek-text">{redact(peekFileText)}</pre>
+                  ) : null}
+                </>
+              ) : canEditFile ? (
+                <textarea
+                  className="file-peek-editor"
+                  value={draft}
+                  spellCheck={false}
+                  aria-label={`Edit ${basen(peek.path)}`}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                      e.preventDefault();
+                      void savePeek();
+                    }
+                  }}
+                />
               ) : peekFileText != null ? (
                 <pre className="file-peek-text">{redact(peekFileText)}</pre>
               ) : null}
@@ -593,6 +898,45 @@ export const SidePanel = memo(function SidePanel({
           </div>
         ) : null}
       </div>
+      {ctxMenu ? (
+        <div
+          className="file-ctx-menu"
+          role="menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void openEditor(ctxMenu.absPath);
+              setCtxMenu(null);
+            }}
+          >
+            Open in {editorLabel}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void copyPath(ctxMenu.absPath);
+              setCtxMenu(null);
+            }}
+          >
+            Copy path
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void window.grokDesktop.showItem(ctxMenu.absPath);
+              setCtxMenu(null);
+            }}
+          >
+            Show in folder
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 });

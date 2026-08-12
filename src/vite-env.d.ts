@@ -336,10 +336,37 @@ export type AppInfo = {
    * (vX.Y.Z-beta.N). Default off.
    */
   allowPrerelease: boolean;
+  /**
+   * External editor for Files / Changes.
+   * auto | cursor | code | code-insiders | zed | windsurf | subl | codium
+   * | textedit | notepad
+   */
+  externalEditor: string;
   recentProjects: string[];
   lastProject: string | null;
   home: string;
   auth: AuthStatus;
+};
+
+export type ExternalEditorInfo = {
+  id: string;
+  label: string;
+  available: boolean;
+  lastResort: boolean;
+};
+
+export type EditorListResult = {
+  preferred: string;
+  resolved: string | null;
+  resolvedLabel: string | null;
+  editors: ExternalEditorInfo[];
+};
+
+export type FileReadResult = {
+  text: string;
+  binary: boolean;
+  truncated: boolean;
+  size: number;
 };
 
 declare global {
@@ -436,11 +463,22 @@ declare global {
         path: string,
         opts?: { staged?: boolean },
       ) => Promise<{ path: string; staged: boolean; diff: string | null }>;
-      readFile: (path: string) => Promise<string>;
+      readFile: (path: string) => Promise<FileReadResult>;
+      writeFile: (
+        path: string,
+        content: string,
+      ) => Promise<{ ok: true }>;
       listDir: (
         path: string,
       ) => Promise<Array<{ name: string; isDirectory: boolean; path: string }>>;
-      openPath: (path: string) => Promise<string>;
+      openPath: (
+        path: string,
+      ) => Promise<{ ok: boolean; editor?: string; label?: string }>;
+      openInEditor: (
+        path: string,
+      ) => Promise<{ ok: boolean; editor?: string; label?: string }>;
+      listEditors: () => Promise<EditorListResult>;
+      setExternalEditor: (id: string) => Promise<EditorListResult>;
       showItem: (path: string) => Promise<void>;
       openExternal: (url: string) => Promise<boolean>;
       getAuthStatus: () => Promise<AuthStatus>;

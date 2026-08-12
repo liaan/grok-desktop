@@ -85,6 +85,70 @@ export function isLikelyBinary(buf) {
 /** Renderer file peek: never slurp more than this. */
 export const PEEK_READ_CAP = 256 * 1024;
 
+/** In-panel edit: refuse files larger than this (open them in an external editor). */
+export const EDIT_READ_CAP = 1_000_000;
+
+/** Renderer write cap — matches a generous in-panel edit. */
+export const EDIT_WRITE_CAP = 2 * 1024 * 1024;
+
+/**
+ * Read a project file for the side-panel editor.
+ * Does not append a truncation marker (that would be saved back).
+ * @param {string} filePath Absolute path (already resolved)
+ * @param {{ cap?: number }} [opts]
+ * @returns {Promise<{ text: string, binary: boolean, truncated: boolean, size: number }>}
+ */
+export async function readFileForEdit(filePath, opts = {}) {
+  const cap =
+    Number.isFinite(opts.cap) && opts.cap >= 0
+      ? Math.floor(opts.cap)
+      : EDIT_READ_CAP;
+  const st = await fs.promises.stat(filePath);
+  if (!st.isFile()) {
+    throw new Error("Not a file");
+  }
+  const toRead = Math.min(st.size, cap);
+  const fh = await fs.promises.open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(toRead);
+    const { bytesRead } = await fh.read(buf, 0, toRead, 0);
+    const slice = buf.subarray(0, bytesRead);
+    if (isLikelyBinary(slice)) {
+      return { text: "", binary: true, truncated: false, size: st.size };
+    }
+    return {
+      text: slice.toString("utf8"),
+      binary: false,
+      truncated: st.size > cap,
+      size: st.size,
+    };
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * Write UTF-8 text from the side-panel editor. Project gate lives in the IPC
+ * handler — this only refuses binary / oversized payloads.
+ * @param {string} filePath Absolute path (already resolved)
+ * @param {string} content
+ */
+export async function writeFileForEdit(filePath, content) {
+  const text = content == null ? "" : String(content);
+  if (text.includes("\u0000")) {
+    throw new Error("Refusing to write binary content");
+  }
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > EDIT_WRITE_CAP) {
+    throw new Error("File too large to save here — open it in an editor");
+  }
+  const st = await fs.promises.stat(filePath);
+  if (!st.isFile()) {
+    throw new Error("Not a file");
+  }
+  await fs.promises.writeFile(filePath, text, "utf8");
+}
+
 /**
  * Project-scoped peek for the side panel. Stats first, reads at most `cap`
  * bytes, and refuses binaries after a prefix sniff (does not load the rest).

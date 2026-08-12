@@ -1982,6 +1982,13 @@ button {
   font-family: var(--mono);
 }
 
+.file-browser-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
 .file-row {
   display: flex;
   align-items: center;
@@ -2040,16 +2047,34 @@ button {
   color: var(--text);
 }
 
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-action,
 .file-reveal {
   flex: 0 0 auto;
-  opacity: 0.45;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
-.file-row.is-file:hover .file-reveal {
+.file-row:hover .file-actions,
+.file-row.is-selected .file-actions,
+.file-row:focus-within .file-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+
+.file-row:hover .file-action,
+.file-row:hover .file-reveal,
+.file-row.is-selected .file-action,
+.file-row.is-selected .file-reveal {
   color: var(--text);
 }
 
@@ -2091,9 +2116,9 @@ button {
 }
 
 .file-peek {
-  flex: 1 1 45%;
-  min-height: 140px;
-  max-height: 55%;
+  flex: 1 1 50%;
+  min-height: 180px;
+  max-height: 62%;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
@@ -2103,6 +2128,7 @@ button {
 .file-peek-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-soft);
@@ -2121,11 +2147,66 @@ button {
   font-family: var(--mono);
 }
 
+.file-peek-error {
+  margin: 0;
+  padding: 4px 8px 0;
+  font-size: 12px;
+  color: var(--danger, #f87171);
+}
+
 .file-peek-body {
   flex: 1;
   overflow: auto;
   min-height: 0;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-peek-editor {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.file-ctx-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.file-ctx-menu button {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.file-ctx-menu button:hover {
+  background: var(--bg-soft);
 }
 
 .file-peek-text {
@@ -2553,6 +2634,161 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* Full-screen settings (2-column page). Other dialogs still use .modal-*. */
+.settings-page {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  animation: modal-fade 0.12s ease;
+}
+
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+
+.settings-page-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.settings-page-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.settings-nav {
+  overflow: auto;
+  padding: 10px 8px 24px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--panel-bg);
+}
+
+.settings-nav-group + .settings-nav-group {
+  margin-top: 10px;
+}
+
+.settings-nav-heading {
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-soft);
+}
+
+.settings-nav-item.active {
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.settings-content {
+  overflow: auto;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.settings-content-inner {
+  max-width: 720px;
+  padding: 28px 36px 56px;
+}
+
+.settings-page-title {
+  margin: 0 0 20px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--heading-2);
+}
+
+.settings-page .settings-section {
+  padding: 0;
+  border-bottom: none;
+}
+
+.settings-page .settings-section > h3 {
+  display: none;
+}
+
+.settings-page .settings-row {
+  padding: 14px 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-page .settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-page .settings-lead {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 720px) {
+  .settings-page-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .settings-nav {
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    padding: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+  }
+
+  .settings-nav-group {
+    display: contents;
+  }
+
+  .settings-nav-heading {
+    display: none;
+  }
+
+  .settings-nav-item {
+    width: auto;
+    padding: 6px 10px;
+  }
+
+  .settings-content-inner {
+    padding: 20px 16px 40px;
+  }
 }
 
 /* Settings modal */
