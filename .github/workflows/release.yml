@@ -182,24 +182,37 @@ jobs:
           echo "=== Release files ==="
           ls -la
 
-      # Retry: Windows runners often drop the connection mid-upload ("other side closed").
+      # Official action is Node 24. Retry once — Windows still flakes on upload.
       - name: Upload installers
-        uses: Wandalen/wretry.action@v3.8.0
+        id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v6
         with:
-          action: actions/upload-artifact@v6
-          attempt_limit: 5
-          attempt_delay: 20000
-          with: |
-            name: grok-desktop-${{ matrix.label }}
-            path: |
-              release/*.exe
-              release/*.dmg
-              release/*.zip
-              release/*.AppImage
-              release/latest*.yml
-              release/*.blockmap
-            if-no-files-found: error
-            retention-days: 14
+          name: grok-desktop-${{ matrix.label }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/latest*.yml
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload installers (retry)
+        if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: grok-desktop-${{ matrix.label }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/latest*.yml
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
 
   publish-release:
     name: Publish GitHub Release
@@ -210,18 +223,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Retry: flaky GitHub artifact CDN ("other side closed") is common and is
-      # *not* fixed by downgrading to download-artifact@v4 (that reintroduces
-      # Node 20 deprecation). Keep @v6 + retries.
+      # Official action is Node 24. Retry once on flaky artifact CDN.
       - name: Download installers
-        uses: Wandalen/wretry.action@v3.8.0
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v6
         with:
-          action: actions/download-artifact@v6
-          attempt_limit: 5
-          attempt_delay: 20000
-          with: |
-            path: dist-installers
-            merge-multiple: true
+          path: dist-installers
+          merge-multiple: true
+
+      - name: Download installers (retry)
+        if: steps.download.outcome == 'failure'
+        uses: actions/download-artifact@v6
+        with:
+          path: dist-installers
+          merge-multiple: true
 
       - name: List files
         run: find dist-installers -type f | sort
