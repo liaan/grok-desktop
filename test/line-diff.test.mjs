@@ -135,6 +135,21 @@ test("computeLineDiff: caps huge inputs", () => {
   assert.ok(hunks.length <= DIFF_HUNK_CAP);
 });
 
+test("computeLineDiff: char-capped sides do not get a fake EOF marker", () => {
+  // Few long lines: hits DIFF_CHAR_CAP, stays under DIFF_LINE_CAP.
+  const line = "x".repeat(800);
+  const oldText = Array.from({ length: 40 }, () => line).join("\n");
+  const newText = oldText.replace("x".repeat(10), "y".repeat(10));
+  assert.ok(oldText.length > DIFF_CHAR_CAP);
+  assert.ok(oldText.split("\n").length <= DIFF_LINE_CAP);
+  const { hunks, truncated } = computeLineDiff(oldText, newText);
+  assert.equal(truncated, true);
+  const marks = hunks.flatMap((h) =>
+    h.lines.filter((l) => l.text === NO_NEWLINE_MARK),
+  );
+  assert.equal(marks.length, 0);
+});
+
 test("computeLineDiff: missing trailing newline is a visible change", () => {
   const { hunks, truncated } = computeLineDiff("hello", "hello\n");
   assert.equal(truncated, false);

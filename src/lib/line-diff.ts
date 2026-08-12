@@ -66,8 +66,8 @@ function capSide(text: string | null | undefined): {
   if (lines.length > DIFF_LINE_CAP) {
     lines = lines.slice(0, DIFF_LINE_CAP);
     truncated = true;
-  } else if (s !== "" && !s.endsWith("\n")) {
-    // Only when the whole side is intact — a cap slice is not the real EOF.
+  } else if (!truncated && s !== "" && !s.endsWith("\n")) {
+    // Intact side only — a char/line cap slice is not the real EOF.
     lines = [...lines, NO_NEWLINE_MARK];
   }
   return { lines, truncated };
