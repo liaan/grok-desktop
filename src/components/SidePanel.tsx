@@ -9,6 +9,7 @@ import {
 import type { BackgroundTask } from "../lib/background-tasks";
 import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
+import { stripAnsi } from "../lib/tool-display";
 
 type FileEntry = { name: string; isDirectory: boolean; path: string };
 
@@ -260,7 +261,9 @@ export const SidePanel = memo(function SidePanel({
                   <pre className="task-cmd">{redact(t.command)}</pre>
                 ) : null}
                 {t.outputSnippet ? (
-                  <pre className="task-out">{redact(t.outputSnippet)}</pre>
+                  <pre className="task-out">
+                    {redact(stripAnsi(t.outputSnippet))}
+                  </pre>
                 ) : null}
                 {t.exitCode != null ? (
                   <div className="task-meta">exit {t.exitCode}</div>

@@ -69,6 +69,14 @@ function applyNonInteractiveToolEnv(env) {
     PAGER: "cat",
     GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
     GPG_TTY: "",
+    // Prefer plain stdout for tools that honor these (pytest, chalk, cargo, …).
+    // UI also strips ANSI; this reduces noise at the source.
+    NO_COLOR: "1",
+    FORCE_COLOR: "0",
+    CLICOLOR: "0",
+    CLICOLOR_FORCE: "0",
+    PY_COLORS: "0",
+    TERM: "dumb",
   };
   for (const [k, v] of Object.entries(defaults)) {
     if (env[k] == null || env[k] === "") env[k] = v;

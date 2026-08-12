@@ -34,6 +34,27 @@ const OUTPUT_CAP = 24_000; // ~24 KiB — keep React timeline light
 const PATH_KEYS = ["path", "target_file", "file_path"] as const;
 const BODY_KEYS = ["contents", "content"] as const;
 
+/**
+ * Strip ANSI / VT escape sequences so tool stdout is readable in plain <pre>.
+ * Without this, ESC bytes render as □ boxes (e.g. pytest green "passed" → □[32m).
+ *
+ * Covers CSI (colors/styles), OSC (titles), and common single-char ESC forms.
+ */
+export function stripAnsi(input: string): string {
+  if (!input) return input;
+  return (
+    input
+      // CSI: ESC [ ... final byte  (colors, cursor, erase, …)
+      .replace(/\u001B\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "")
+      // OSC: ESC ] … BEL | ST
+      .replace(/\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/g, "")
+      // Charset selects: ESC ( B, ESC ) 0, …
+      .replace(/\u001B[()][0-2AB]/g, "")
+      // Any leftover ESC (broken/partial sequences)
+      .replace(/\u001B/g, "")
+  );
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
@@ -297,6 +318,8 @@ export function formatToolDisplay(item: {
     output = "";
   }
 
+  // Plain <pre> cannot render VT colors — strip so "101 passed" is readable.
+  if (output) output = stripAnsi(output);
   if (output) output = truncate(output, OUTPUT_CAP);
 
   return {
