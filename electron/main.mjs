@@ -747,6 +747,20 @@ function registerIpc() {
     return result;
   });
 
+  ipcMain.handle("agent:set-model", async (e, modelId) => {
+    const agent = sessionFromEvent(e)?.agent;
+    if (!agent?.setModel) {
+      return {
+        modelId: null,
+        modelName: null,
+        availableModels: [],
+        agentSynced: false,
+        error: "No live agent",
+      };
+    }
+    return agent.setModel(modelId);
+  });
+
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {
     const state = loadState();
     state.allowOutsideProject = Boolean(value);

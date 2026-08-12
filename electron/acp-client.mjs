@@ -55,6 +55,35 @@ const LOAD_TIMEOUT_MS = 90_000;
 const EXT_EXIT_PLAN = "x.ai/exit_plan_mode";
 const EXT_ASK_USER = "x.ai/ask_user_question";
 
+/** @param {any} entry */
+function modelEntryName(entry) {
+  const name =
+    entry?.name ||
+    entry?.title ||
+    entry?.displayName ||
+    entry?._meta?.name ||
+    null;
+  return name ? String(name) : null;
+}
+
+/**
+ * Deduped { modelId, name } list for the topbar picker.
+ * @param {any[]} list
+ * @returns {{ modelId: string, name: string }[]}
+ */
+function snapshotAvailableModels(list) {
+  const seen = new Set();
+  /** @type {{ modelId: string, name: string }[]} */
+  const out = [];
+  for (const m of list || []) {
+    const modelId = String(m?.modelId || "").trim();
+    if (!modelId || seen.has(modelId)) continue;
+    seen.add(modelId);
+    out.push({ modelId, name: modelEntryName(m) || modelId });
+  }
+  return out;
+}
+
 export class GrokAcpClient extends EventEmitter {
   constructor({
     cwd,
@@ -107,6 +136,11 @@ export class GrokAcpClient extends EventEmitter {
     this.currentModelId = null;
     /** Human-readable name for the current model when the agent provides one. */
     this.currentModelName = null;
+    /**
+     * Models advertised on session/new|load (`models.availableModels`).
+     * @type {{ modelId: string, name: string }[]}
+     */
+    this.availableModels = [];
     /**
      * Effort levels advertised by the current model (ids). Empty when unknown.
      * @type {string[]}
@@ -304,16 +338,12 @@ export class GrokAcpClient extends EventEmitter {
     const list = Array.isArray(models?.availableModels)
       ? models.availableModels
       : [];
+    this.availableModels = snapshotAvailableModels(list);
     const entry =
       list.find((m) => String(m?.modelId || "") === this.currentModelId) ||
       list[0];
-    const name =
-      entry?.name ||
-      entry?.title ||
-      entry?.displayName ||
-      entry?._meta?.name ||
-      null;
-    this.currentModelName = name ? String(name) : null;
+    const name = modelEntryName(entry);
+    this.currentModelName = name || null;
     const efforts = entry?._meta?.reasoningEfforts;
     if (Array.isArray(efforts)) {
       this.availableReasoningEfforts = efforts
@@ -329,6 +359,15 @@ export class GrokAcpClient extends EventEmitter {
     if (live && !this.reasoningEffort) {
       this.reasoningEffort = normalizeReasoningEffort(live);
     }
+  }
+
+  /** Snapshot sent on open / set-model so the topbar can render a picker. */
+  _modelsPublic() {
+    return {
+      modelId: this.currentModelId || null,
+      modelName: this.currentModelName || null,
+      availableModels: this.availableModels.slice(),
+    };
   }
 
   /**
@@ -379,8 +418,7 @@ export class GrokAcpClient extends EventEmitter {
       cwd: this.cwd,
       grokBinary: this.grokPath,
       resumed: false,
-      modelId: this.currentModelId,
-      modelName: this.currentModelName,
+      ...this._modelsPublic(),
     });
     return this.sessionId;
   }
@@ -423,8 +461,7 @@ export class GrokAcpClient extends EventEmitter {
       cwd: this.cwd,
       grokBinary: this.grokPath,
       resumed: true,
-      modelId: this.currentModelId,
-      modelName: this.currentModelName,
+      ...this._modelsPublic(),
     });
     return this.sessionId;
   }
@@ -913,6 +950,63 @@ export class GrokAcpClient extends EventEmitter {
         effort: this.reasoningEffort,
         agentSynced: false,
         error,
+      };
+    }
+  }
+
+  /**
+   * Switch the live session model without respawning.
+   * Passes current reasoning effort so Effort is not reset.
+   *
+   * @param {string} modelId
+   * @returns {Promise<{
+   *   modelId: string | null,
+   *   modelName: string | null,
+   *   availableModels: { modelId: string, name: string }[],
+   *   agentSynced: boolean,
+   *   error?: string,
+   * }>}
+   */
+  async setModel(modelId) {
+    const nextId = String(modelId || "").trim();
+
+    if (!nextId) {
+      return {
+        ...this._modelsPublic(),
+        agentSynced: false,
+        error: "modelId required",
+      };
+    }
+    if (nextId === this.currentModelId) {
+      return { ...this._modelsPublic(), agentSynced: true };
+    }
+    if (!this.sessionId || !this.ready || !this.proc) {
+      return {
+        ...this._modelsPublic(),
+        agentSynced: false,
+        error: "Agent is not ready",
+      };
+    }
+
+    try {
+      await this.request(
+        "session/set_model",
+        {
+          sessionId: this.sessionId,
+          modelId: nextId,
+          _meta: { reasoningEffort: this.reasoningEffort },
+        },
+        { timeoutMs: 15_000 },
+      );
+      this.currentModelId = nextId;
+      const entry = this.availableModels.find((m) => m.modelId === nextId);
+      this.currentModelName = entry?.name || nextId;
+      return { ...this._modelsPublic(), agentSynced: true };
+    } catch (err) {
+      return {
+        ...this._modelsPublic(),
+        agentSynced: false,
+        error: err?.message || String(err),
       };
     }
   }

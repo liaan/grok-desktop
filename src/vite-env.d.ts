@@ -148,6 +148,11 @@ export type SessionSummary = {
   modelId: string | null;
 };
 
+export type AvailableModel = {
+  modelId: string;
+  name: string;
+};
+
 export type OpenProjectResult = {
   cwd: string;
   sessionId: string;
@@ -157,6 +162,8 @@ export type OpenProjectResult = {
   modelId?: string | null;
   /** Optional display name from the agent model list */
   modelName?: string | null;
+  /** Models advertised on session/new|load — empty when the agent omits them */
+  availableModels?: AvailableModel[];
   history?: TimelineItem[];
   /** Background commands/subagents restored from updates.jsonl */
   backgroundTasks?: Array<{
@@ -283,6 +290,13 @@ declare global {
         value: "low" | "medium" | "high" | "xhigh",
       ) => Promise<{
         effort: "low" | "medium" | "high" | "xhigh";
+        agentSynced: boolean;
+        error?: string;
+      }>;
+      setModel: (modelId: string) => Promise<{
+        modelId: string | null;
+        modelName: string | null;
+        availableModels: AvailableModel[];
         agentSynced: boolean;
         error?: string;
       }>;

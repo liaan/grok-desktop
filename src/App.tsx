@@ -40,6 +40,7 @@ import { useStickToBottom } from "./hooks/useStickToBottom";
 import type {
   AppInfo,
   AuthStatus,
+  AvailableModel,
   BackboneSummary,
   SessionSummary,
   TimelineItem,
@@ -57,6 +58,7 @@ export default function App() {
   /** Live session model from ACP (session/new|load). */
   const [modelId, setModelId] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [conn, setConn] = useState<ConnState>("idle");
   const [openingLabel, setOpeningLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -230,6 +232,7 @@ export default function App() {
       setSessions,
       setModelId,
       setModelName,
+      setAvailableModels,
       setConn,
       setOpeningLabel,
       setError,
@@ -291,8 +294,42 @@ export default function App() {
     if (!sessionId) {
       setModelId(null);
       setModelName(null);
+      setAvailableModels([]);
     }
   }, [sessionId]);
+
+  const applyModel = useCallback(
+    async (nextId: string) => {
+      if (!nextId || nextId === modelId) return;
+      try {
+        const result = await window.grokDesktop.setModel(nextId);
+        if (result.agentSynced === false) {
+          setError(
+            result.error
+              ? `Could not switch model (${result.error}).`
+              : "Could not switch model.",
+          );
+          return;
+        }
+        setModelId(result.modelId || nextId);
+        setModelName(result.modelName || null);
+        if (Array.isArray(result.availableModels)) {
+          setAvailableModels(result.availableModels);
+        }
+        setError(null);
+        const label = result.modelName
+          ? result.modelId && result.modelName !== result.modelId
+            ? `${result.modelName} (${result.modelId})`
+            : result.modelName
+          : result.modelId || nextId;
+        appendSystem(`Model: ${label}`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Failed to set model: ${msg}`);
+      }
+    },
+    [modelId, appendSystem],
+  );
 
   const leaveProject = useCallback(async () => {
     try {
@@ -305,6 +342,7 @@ export default function App() {
     setSessions([]);
     setModelId(null);
     setModelName(null);
+    setAvailableModels([]);
     setItems([]);
     setConn("idle");
     setError(null);
@@ -586,12 +624,14 @@ export default function App() {
             isOpening={isOpening}
             modelId={modelId}
             modelName={modelName}
+            availableModels={availableModels}
             permissionMode={permissionMode}
             reasoningEffort={reasoningEffort}
             allowOutsideProject={allowOutsideProject}
             sandboxTerminal={sandboxTerminal}
             privacyMode={privacyMode}
             backgroundTasks={backgroundTasks}
+            onModel={(id) => void applyModel(id)}
             onPermissionMode={(m) => void applyPermissionMode(m)}
             onReasoningEffort={(e) => void applyReasoningEffort(e)}
             onOpenSettings={onOpenSettings}

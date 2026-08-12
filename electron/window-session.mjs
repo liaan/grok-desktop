@@ -727,6 +727,9 @@ export async function openSessionOnWindow(ws, opts) {
     resumed: Boolean(resumeSessionId) && !forceNew,
     modelId: client.currentModelId || null,
     modelName: client.currentModelName || null,
+    availableModels: Array.isArray(client.availableModels)
+      ? client.availableModels.slice()
+      : [],
     history,
     backgroundTasks,
     usage,

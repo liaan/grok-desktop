@@ -10,6 +10,7 @@ import { uid } from "../lib/timeline";
 import type {
   AppInfo,
   AuthStatus,
+  AvailableModel,
   BackboneSummary,
   SessionSummary,
   TimelineItem,
@@ -45,6 +46,7 @@ export function useProjectSession(opts: {
   setSessions: Dispatch<SetStateAction<SessionSummary[]>>;
   setModelId: Dispatch<SetStateAction<string | null>>;
   setModelName: Dispatch<SetStateAction<string | null>>;
+  setAvailableModels: Dispatch<SetStateAction<AvailableModel[]>>;
   setConn: Dispatch<SetStateAction<ConnState>>;
   setOpeningLabel: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
@@ -75,6 +77,7 @@ export function useProjectSession(opts: {
     setSessions,
     setModelId,
     setModelName,
+    setAvailableModels,
     setConn,
     setOpeningLabel,
     setError,
@@ -100,6 +103,7 @@ export function useProjectSession(opts: {
       setSessions(res.sessions || []);
       setModelId(res.modelId || null);
       setModelName(res.modelName || null);
+      setAvailableModels(res.availableModels || []);
       clearSessionScoped();
       // While openingRef is true, live usage is ignored — disk replace is safe.
       hydrateBackgroundTasks(res.backgroundTasks || []);
@@ -185,6 +189,7 @@ export function useProjectSession(opts: {
       setSessions,
       setModelId,
       setModelName,
+      setAvailableModels,
     ],
   );
 

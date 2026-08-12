@@ -1,10 +1,11 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { BackgroundTask } from "../lib/background-tasks";
 import type { ConnState } from "../lib/conn";
 import type { PermissionMode } from "../lib/permission-mode";
 import type { ReasoningEffort } from "../lib/reasoning-effort";
 import { basen } from "../lib/path-utils";
 import { usePrivacy } from "../lib/privacy-context";
+import type { AvailableModel } from "../vite-env";
 import { ElevatedSafetyChips } from "./ElevatedSafetyChips";
 import { Spinner } from "./BrandMark";
 
@@ -15,12 +16,14 @@ export const ChatTopbar = memo(function ChatTopbar({
   isOpening,
   modelId,
   modelName,
+  availableModels = [],
   permissionMode,
   reasoningEffort,
   allowOutsideProject,
   sandboxTerminal,
   privacyMode,
   backgroundTasks,
+  onModel,
   onPermissionMode,
   onReasoningEffort,
   onOpenSettings,
@@ -32,12 +35,14 @@ export const ChatTopbar = memo(function ChatTopbar({
   isOpening: boolean;
   modelId?: string | null;
   modelName?: string | null;
+  availableModels?: AvailableModel[];
   permissionMode: PermissionMode;
   reasoningEffort: ReasoningEffort;
   allowOutsideProject: boolean;
   sandboxTerminal: boolean;
   privacyMode: boolean;
   backgroundTasks: BackgroundTask[];
+  onModel?: (modelId: string) => void;
   onPermissionMode: (m: PermissionMode) => void;
   onReasoningEffort: (e: ReasoningEffort) => void;
   onOpenSettings: () => void;
@@ -51,6 +56,14 @@ export const ChatTopbar = memo(function ChatTopbar({
       ? `${modelName} (${modelId})`
       : modelId
     : modelName || undefined;
+  const modelOptions = useMemo(() => {
+    const list = availableModels.slice();
+    if (modelId && !list.some((m) => m.modelId === modelId)) {
+      list.unshift({ modelId, name: modelName || modelId });
+    }
+    return list;
+  }, [availableModels, modelId, modelName]);
+  const canPickModel = Boolean(onModel) && modelOptions.length > 1;
 
   return (
     <div className="topbar">
@@ -68,7 +81,26 @@ export const ChatTopbar = memo(function ChatTopbar({
         />
       </div>
       <div className="topbar-actions row">
-        {modelLabel ? (
+        {canPickModel ? (
+          <label
+            className="perm-mode-topbar"
+            title={modelTitle || "Session model"}
+          >
+            <span className="perm-mode-topbar-label">Model</span>
+            <select
+              className="perm-mode-select"
+              value={modelId || ""}
+              aria-label="Session model"
+              onChange={(e) => onModel?.(e.target.value)}
+            >
+              {modelOptions.map((m) => (
+                <option key={m.modelId} value={m.modelId}>
+                  {m.name || m.modelId}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : modelLabel ? (
           <span
             className="model-topbar"
             title={modelTitle}
