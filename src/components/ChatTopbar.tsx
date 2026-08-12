@@ -16,6 +16,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   isOpening,
   modelId,
   modelName,
+  pendingModelId = null,
+  modelSelectEpoch = 0,
   availableModels = [],
   permissionMode,
   reasoningEffort,
@@ -35,6 +37,9 @@ export const ChatTopbar = memo(function ChatTopbar({
   isOpening: boolean;
   modelId?: string | null;
   modelName?: string | null;
+  /** In-flight pick — drives the controlled value so the menu does not snap back mid-RPC. */
+  pendingModelId?: string | null;
+  modelSelectEpoch?: number;
   availableModels?: AvailableModel[];
   permissionMode: PermissionMode;
   reasoningEffort: ReasoningEffort;
@@ -56,13 +61,18 @@ export const ChatTopbar = memo(function ChatTopbar({
       ? `${modelName} (${modelId})`
       : modelId
     : modelName || undefined;
+  const selectModelId = pendingModelId || modelId || "";
   const modelOptions = useMemo(() => {
     const list = availableModels.slice();
-    if (modelId && !list.some((m) => m.modelId === modelId)) {
-      list.unshift({ modelId, name: modelName || modelId });
-    }
+    const ensure = (id: string | null | undefined, name?: string | null) => {
+      if (id && !list.some((m) => m.modelId === id)) {
+        list.unshift({ modelId: id, name: name || id });
+      }
+    };
+    ensure(modelId, modelName);
+    ensure(pendingModelId);
     return list;
-  }, [availableModels, modelId, modelName]);
+  }, [availableModels, modelId, modelName, pendingModelId]);
   const canPickModel = Boolean(onModel) && modelOptions.length > 1;
 
   return (
@@ -89,7 +99,9 @@ export const ChatTopbar = memo(function ChatTopbar({
             <span className="perm-mode-topbar-label">Model</span>
             <select
               className="perm-mode-select"
-              value={modelId || ""}
+              key={`${modelId || "none"}:${modelSelectEpoch}`}
+              value={selectModelId}
+              disabled={Boolean(pendingModelId)}
               aria-label="Session model"
               onChange={(e) => onModel?.(e.target.value)}
             >

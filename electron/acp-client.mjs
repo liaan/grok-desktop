@@ -67,7 +67,7 @@ function modelEntryName(entry) {
 }
 
 /**
- * Deduped { modelId, name } list for the topbar picker.
+ * Deduped `{ modelId, name }` list for IPC / open-session results.
  * @param {any[]} list
  * @returns {{ modelId: string, name: string }[]}
  */
@@ -361,7 +361,7 @@ export class GrokAcpClient extends EventEmitter {
     }
   }
 
-  /** Snapshot sent on open / set-model so the topbar can render a picker. */
+  /** Snapshot of session model state for IPC / open-session results. */
   _modelsPublic() {
     return {
       modelId: this.currentModelId || null,

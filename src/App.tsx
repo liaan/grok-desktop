@@ -59,6 +59,10 @@ export default function App() {
   const [modelId, setModelId] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
+  /** Optimistic pick while session/set_model is in flight. */
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
+  /** Bumped on failed switch so the native <select> remounts onto the previous id. */
+  const [modelSelectEpoch, setModelSelectEpoch] = useState(0);
   const [conn, setConn] = useState<ConnState>("idle");
   const [openingLabel, setOpeningLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +84,9 @@ export default function App() {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(false);
   const openingRef = useRef(false);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const modelApplyLock = useRef(false);
 
   const appendSystem = useCallback((text: string) => {
     setItems((prev) => [
@@ -296,14 +303,21 @@ export default function App() {
       setModelName(null);
       setAvailableModels([]);
     }
+    setPendingModelId(null);
   }, [sessionId]);
 
   const applyModel = useCallback(
     async (nextId: string) => {
-      if (!nextId || nextId === modelId) return;
+      if (!nextId || nextId === modelId || modelApplyLock.current) return;
+      const sessionAtStart = sessionIdRef.current;
+      modelApplyLock.current = true;
+      setPendingModelId(nextId);
       try {
         const result = await window.grokDesktop.setModel(nextId);
+        if (sessionAtStart !== sessionIdRef.current) return;
         if (result.agentSynced === false) {
+          setPendingModelId(null);
+          setModelSelectEpoch((n) => n + 1);
           setError(
             result.error
               ? `Could not switch model (${result.error}).`
@@ -316,6 +330,7 @@ export default function App() {
         if (Array.isArray(result.availableModels)) {
           setAvailableModels(result.availableModels);
         }
+        setPendingModelId(null);
         setError(null);
         const label = result.modelName
           ? result.modelId && result.modelName !== result.modelId
@@ -324,8 +339,13 @@ export default function App() {
           : result.modelId || nextId;
         appendSystem(`Model: ${label}`);
       } catch (e: unknown) {
+        if (sessionAtStart !== sessionIdRef.current) return;
+        setPendingModelId(null);
+        setModelSelectEpoch((n) => n + 1);
         const msg = e instanceof Error ? e.message : String(e);
         setError(`Failed to set model: ${msg}`);
+      } finally {
+        modelApplyLock.current = false;
       }
     },
     [modelId, appendSystem],
@@ -624,6 +644,8 @@ export default function App() {
             isOpening={isOpening}
             modelId={modelId}
             modelName={modelName}
+            pendingModelId={pendingModelId}
+            modelSelectEpoch={modelSelectEpoch}
             availableModels={availableModels}
             permissionMode={permissionMode}
             reasoningEffort={reasoningEffort}
