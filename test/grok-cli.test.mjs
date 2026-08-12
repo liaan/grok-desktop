@@ -288,6 +288,34 @@ test("mcpServersFromData maps grok mcp list --json fixture and strips secrets", 
   assert.equal(dumped.includes("supersecret"), false);
 });
 
+test("listMcpServers result never includes raw data/stdout or env secrets", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-mcp-"));
+  const bin = path.join(dir, "grok");
+  fs.writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.includes("mcp list")) {
+  console.log(${JSON.stringify(JSON.stringify(MCP_LIST_FIXTURE))});
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  const res = await listMcpServers({ bin, timeoutMs: 8000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, "list");
+  assert.equal(res.servers.length, 3);
+  assert.equal("data" in res, false);
+  assert.equal("stdout" in res, false);
+  assert.deepEqual(res.servers[2].envKeys, ["API_KEY"]);
+  const dumped = JSON.stringify(res);
+  assert.equal(dumped.includes("SECRET_TOKEN"), false);
+  assert.equal(dumped.includes("supersecret"), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("mapMcpServerRow is defensive on inspect-shaped and unknown fields", () => {
   const inspectRow = mapMcpServerRow({
     name: "probe-stdio",
@@ -337,5 +365,35 @@ process.exit(2);
   assert.equal(res.ok, true);
   assert.equal(res.source, "inspect");
   assert.equal(res.servers[0]?.name, "from-inspect");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("listMcpServers falls back to inspect when list JSON is unparseable", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-mcp-"));
+  const bin = path.join(dir, "grok");
+  fs.writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.includes("mcp list")) {
+  console.log("not json");
+  process.exit(0);
+}
+if (args.includes("inspect")) {
+  console.log(JSON.stringify({
+    mcpServers: [{ name: "from-inspect", transport: "stdio" }],
+  }));
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  const res = await listMcpServers({ bin, timeoutMs: 8000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, "inspect");
+  assert.equal(res.servers[0]?.name, "from-inspect");
+  assert.equal("data" in res, false);
+  assert.equal("stdout" in res, false);
   fs.rmSync(dir, { recursive: true, force: true });
 });

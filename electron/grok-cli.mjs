@@ -600,6 +600,23 @@ export function mcpAddArgv(spec = {}) {
 }
 
 /**
+ * Sanitized list payload for mcp:list IPC. Never includes raw grok data/stdout
+ * (those can hold env/header secret values).
+ * @param {boolean} ok
+ * @param {ReturnType<typeof mcpServersFromData>} servers
+ * @param {"list" | "inspect"} source
+ * @param {string | null} [error]
+ */
+function mcpListResult(ok, servers, source, error = null) {
+  return {
+    ok: Boolean(ok),
+    servers,
+    source,
+    error: ok ? null : error || "Failed to list MCP servers",
+  };
+}
+
+/**
  * `grok mcp list --json`. Falls back to `grok inspect --json` mcpServers
  * when list is empty or unparseable (older CLI / plugin-only servers).
  * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
@@ -614,12 +631,7 @@ export async function listMcpServers(opts = {}) {
   const listed = await runGrok(mcpListArgv(), runOpts);
   let servers = listed.ok ? mcpServersFromData(listed.data) : [];
   if (servers.length > 0) {
-    return {
-      ...listed,
-      ok: true,
-      servers,
-      source: "list",
-    };
+    return mcpListResult(true, servers, "list");
   }
 
   const inspected = await runGrok(["inspect", "--json"], runOpts);
@@ -628,29 +640,19 @@ export async function listMcpServers(opts = {}) {
       inspected.data?.mcpServers ?? inspected.data,
     );
     if (fromInspect.length > 0 || listed.ok) {
-      return {
-        ...inspected,
-        ok: true,
-        servers: fromInspect,
-        source: "inspect",
-        error: null,
-      };
+      return mcpListResult(true, fromInspect, "inspect");
     }
   }
 
   if (!listed.ok) {
-    return {
-      ...listed,
-      servers: [],
-      source: "list",
-    };
+    return mcpListResult(
+      false,
+      [],
+      "list",
+      listed.error || "Failed to list MCP servers",
+    );
   }
-  return {
-    ...listed,
-    ok: true,
-    servers: [],
-    source: "list",
-  };
+  return mcpListResult(true, [], "list");
 }
 
 /**

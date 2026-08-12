@@ -633,7 +633,10 @@ export default function App() {
         setSettingsSection(null);
         void restartAgent();
       }}
-      onRestartAfterMcpWrite={() => restartAgent()}
+      onRestartAfterMcpWrite={async () => {
+        if (project) await restartAgent();
+        await refreshBackbone(project || undefined);
+      }}
       restarting={isOpening}
       offerRestart={offerAgentRestart}
       grokBinary={info?.grokBinary || auth?.binary || ""}

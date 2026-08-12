@@ -65,7 +65,7 @@ export function SettingsDialog({
   onSetDebugLogging: (next: boolean) => void;
   onOpenDebugLog: () => void;
   onRestartAgent: () => void;
-  /** Restart without closing Settings (MCP writes). */
+  /** After MCP writes: restart agent if a project is open, always refresh backbone. */
   onRestartAfterMcpWrite?: () => Promise<void> | void;
   restarting?: boolean;
   /** Highlight restart after coding-data (or other spawn-bound) changes. */
@@ -543,7 +543,7 @@ function McpSettingsPanel({
       return;
     }
     setNote(null);
-    if (hasProject && onRestartAfterWrite) {
+    if (onRestartAfterWrite) {
       await onRestartAfterWrite();
     }
     await reload();
