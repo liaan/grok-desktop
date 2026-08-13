@@ -20,6 +20,8 @@ export const SidePanel = memo(function SidePanel({
   backgroundTasks,
   sessionMode,
   onDirtyChange,
+  collapsed,
+  onToggleCollapsed,
   inert: shellInert,
 }: {
   project: string | null;
@@ -27,6 +29,8 @@ export const SidePanel = memo(function SidePanel({
   /** e.g. "plan" when plan mode is active */
   sessionMode: string | null;
   onDirtyChange?: (dirty: boolean) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   inert?: boolean;
 }) {
   const { redact } = usePrivacy();
@@ -131,8 +135,32 @@ export const SidePanel = memo(function SidePanel({
   };
 
   return (
-    <aside className="panel" inert={shellInert || undefined}>
+    <aside
+      className={"panel" + (collapsed ? " panel--collapsed" : "")}
+      inert={shellInert || undefined}
+    >
       <div className="panel-tabs" role="tablist" aria-label="Side panel">
+        <button
+          type="button"
+          className="col-toggle"
+          title={collapsed ? "Expand files panel" : "Collapse files panel"}
+          aria-label={collapsed ? "Expand files panel" : "Collapse files panel"}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? "‹" : "›"}
+        </button>
+        {collapsed ? (
+          running > 0 ? (
+            <span
+              className="rail-badge"
+              title={`${running} running task${running === 1 ? "" : "s"}`}
+            >
+              {running}
+            </span>
+          ) : null
+        ) : (
+          <>
         <button
           type="button"
           role="tab"
@@ -165,7 +193,11 @@ export const SidePanel = memo(function SidePanel({
         >
           {changesLabel}
         </button>
+          </>
+        )}
       </div>
+      {collapsed ? null : (
+      <>
       <div className="panel-main">
         <div className="panel-body">
           {sessionMode === "plan" ? (
@@ -292,6 +324,8 @@ export const SidePanel = memo(function SidePanel({
           </div>
         ) : null}
       </div>
+      </>
+      )}
     </aside>
   );
 });

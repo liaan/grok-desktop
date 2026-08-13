@@ -15,8 +15,10 @@ import { AskUserDialog } from "./components/AskUserDialog";
 import { ApprovalsDock } from "./components/ApprovalsDock";
 import { AppSidebar } from "./components/AppSidebar";
 import { ChatTopbar } from "./components/ChatTopbar";
+import { ColumnResizeHandle } from "./components/ColumnResizeHandle";
 import { WelcomeView } from "./components/WelcomeView";
 import { Composer } from "./components/Composer";
+import { useColumnLayout } from "./hooks/useColumnLayout";
 import {
   DESKTOP_COMMANDS,
   mergeCommands,
@@ -618,6 +620,8 @@ export default function App() {
     setError(message);
   }, []);
 
+  const columns = useColumnLayout();
+
   const overlayOpen = Boolean(planApproval || userQuestion);
 
   const settingsDialog = (
@@ -709,29 +713,52 @@ export default function App() {
 
   return (
     <PrivacyProvider privacyMode={privacyMode} home={homeDir}>
-      <div className={`app ${platformClass}`.trim()}>
-        <AppSidebar
-          infoVersion={info?.version}
-          grokBinary={info?.grokBinary}
-          auth={auth}
-          backbone={backbone}
-          project={project}
-          sessionId={sessionId}
-          sessions={sessions}
-          recentProjects={info?.recentProjects || []}
-          conn={conn}
-          isOpening={isOpening}
-          authBusy={authBusy}
-          onPickProject={() => void pickProject()}
-          onOpenProject={(cwd) => {
-            if (!confirmDiscardFiles()) return;
-            void openProject(cwd, { mode: "continue" });
-          }}
-          onOpenSession={(opts) => void openSession(opts)}
-          onLogout={() => void handleLogout()}
-          onOpenSettingsSection={onOpenSettings}
-          inert={settingsOpen}
-        />
+      <div
+        className={
+          `app ${platformClass}` +
+          (columns.sidebarCollapsed ? " app--sidebar-collapsed" : "") +
+          (columns.panelCollapsed ? " app--panel-collapsed" : "") +
+          (columns.resizing ? " app--resizing" : "")
+        }
+        style={columns.cssVars}
+      >
+        <div className="app-col app-col--sidebar">
+          <AppSidebar
+            infoVersion={info?.version}
+            grokBinary={info?.grokBinary}
+            auth={auth}
+            backbone={backbone}
+            project={project}
+            sessionId={sessionId}
+            sessions={sessions}
+            recentProjects={info?.recentProjects || []}
+            conn={conn}
+            isOpening={isOpening}
+            authBusy={authBusy}
+            collapsed={columns.sidebarCollapsed}
+            onToggleCollapsed={columns.toggleSidebar}
+            onPickProject={() => void pickProject()}
+            onOpenProject={(cwd) => {
+              if (!confirmDiscardFiles()) return;
+              void openProject(cwd, { mode: "continue" });
+            }}
+            onOpenSession={(opts) => void openSession(opts)}
+            onLogout={() => void handleLogout()}
+            onOpenSettingsSection={onOpenSettings}
+            inert={settingsOpen}
+          />
+          <ColumnResizeHandle
+            side="sidebar"
+            collapsed={columns.sidebarCollapsed}
+            width={columns.sidebarPx}
+            min={columns.sidebarMin}
+            max={columns.sidebarMax}
+            onPointerDown={columns.onSidebarResizeDown}
+            onPointerMove={columns.onResizePointerMove}
+            onPointerUp={columns.endResizeDrag}
+            onDoubleClick={columns.resetSidebar}
+          />
+        </div>
 
         <main className="main" inert={settingsOpen || undefined}>
           <ChatTopbar
@@ -838,13 +865,29 @@ export default function App() {
           />
         </main>
 
-        <SidePanel
-          project={project}
-          backgroundTasks={backgroundTasks}
-          sessionMode={sessionMode}
-          onDirtyChange={setFilesDirty}
-          inert={settingsOpen}
-        />
+        <div className="app-col app-col--panel">
+          <ColumnResizeHandle
+            side="panel"
+            collapsed={columns.panelCollapsed}
+            width={columns.panelPx}
+            min={columns.panelMin}
+            max={columns.panelMax}
+            onPointerDown={columns.onPanelResizeDown}
+            onPointerMove={columns.onResizePointerMove}
+            onPointerUp={columns.endResizeDrag}
+            onDoubleClick={columns.resetPanel}
+          />
+          <SidePanel
+            project={project}
+            backgroundTasks={backgroundTasks}
+            sessionMode={sessionMode}
+            onDirtyChange={setFilesDirty}
+            inert={settingsOpen}
+            collapsed={columns.panelCollapsed}
+            onToggleCollapsed={columns.togglePanel}
+          />
+        </div>
+      </div>
 
         {settingsDialog}
 
@@ -856,7 +899,6 @@ export default function App() {
           request={userQuestion}
           onRespond={(reqId, decision) => void onUserQuestion(reqId, decision)}
         />
-      </div>
     </PrivacyProvider>
   );
 }

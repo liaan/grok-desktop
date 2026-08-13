@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
+import { attachContextMenu } from "./context-menu.mjs";
 import {
   cancelLogin,
   getAuthStatus,
@@ -471,6 +472,7 @@ function createWindow() {
   const win = new BrowserWindow(winOpts);
   // Session owns page-title guard + empty-shell title.
   createWindowSession(win);
+  attachContextMenu(win);
 
   // Cmd+` / Ctrl+Tab: cycle shells even if the menu accelerator is swallowed.
   win.webContents.on("before-input-event", (event, input) => {

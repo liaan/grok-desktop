@@ -23,6 +23,8 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenSession,
   onLogout,
   onOpenSettingsSection,
+  collapsed,
+  onToggleCollapsed,
   inert: shellInert,
 }: {
   infoVersion?: string;
@@ -41,21 +43,51 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenSession: (opts: { mode: "new" | "resume"; sessionId?: string }) => void;
   onLogout: () => void;
   onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   inert?: boolean;
 }) {
   const { redact } = usePrivacy();
   const busyGate = isOpening || conn === "busy";
 
   return (
-    <aside className="sidebar" inert={shellInert || undefined}>
+    <aside
+      className={"sidebar" + (collapsed ? " sidebar--collapsed" : "")}
+      inert={shellInert || undefined}
+    >
       <div className="brand">
-        <BrandMark size={32} />
-        <div className="brand-text">
-          <h1>Grok Desktop</h1>
-          <p>xAI · Grok Build GUI</p>
-        </div>
+        {collapsed ? (
+          <button
+            type="button"
+            className="brand-mark-btn"
+            title="Expand sidebar"
+            onClick={onToggleCollapsed}
+          >
+            <BrandMark size={28} />
+          </button>
+        ) : (
+          <BrandMark size={32} />
+        )}
+        {!collapsed ? (
+          <div className="brand-text">
+            <h1>Grok Desktop</h1>
+            <p>xAI · Grok Build GUI</p>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="col-toggle"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? "›" : "‹"}
+        </button>
       </div>
 
+      {collapsed ? null : (
+      <>
       <div className="sidebar-section">
         <button
           className="btn primary block"
@@ -205,6 +237,8 @@ export const AppSidebar = memo(function AppSidebar({
           Binary: {redact(grokBinary)}
         </div>
       </div>
+      </>
+      )}
     </aside>
   );
 });

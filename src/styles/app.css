@@ -115,12 +115,27 @@ button {
 
 .app {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr) var(--panel-width, 340px);
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   width: 100%;
   max-width: 100%;
   overflow: hidden;
+}
+
+.app-col {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app--resizing,
+.app--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .app.no-project {
@@ -171,18 +186,18 @@ button {
   align-items: flex-end;
 }
 
-/* Sidebar — pinned width; middle section scrolls so it never “disappears” */
+/* Sidebar — width comes from the app grid column */
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
-  min-width: 280px;
-  max-width: 280px;
-  width: 280px;
+  min-width: 0;
+  width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  flex: 1;
 }
 
 .sidebar-scroll {
@@ -252,9 +267,130 @@ button {
 .sidebar .btn,
 .sidebar .recent-item,
 .sidebar input,
-.sidebar label {
+.sidebar label,
+.col-toggle,
+.brand-mark-btn {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.brand-mark-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+}
+
+.brand-mark-btn:hover {
+  filter: brightness(1.08);
+}
+
+.col-toggle {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+}
+
+.col-toggle:hover {
+  color: var(--text);
+  background: var(--btn-hover-bg);
+  border-color: var(--border);
+}
+
+.sidebar .brand > .col-toggle {
+  margin-left: auto;
+}
+
+.sidebar--collapsed .brand {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.sidebar--collapsed .brand > .col-toggle {
+  margin-left: 0;
+}
+
+.panel--collapsed .panel-tabs {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.rail-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.col-resize--sidebar {
+  right: -4px;
+}
+
+.col-resize--panel {
+  left: -4px;
+}
+
+.col-resize-grip {
+  width: 3px;
+  height: 36px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 0.12s ease, height 0.12s ease;
+}
+
+.col-resize:hover,
+.col-resize:focus-visible {
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.col-resize:hover .col-resize-grip,
+.app--resizing .col-resize-grip {
+  height: 56px;
+  background: var(--accent);
+  opacity: 0.85;
 }
 
 .sidebar-section {
@@ -1702,6 +1838,7 @@ button {
 .composer textarea {
   width: 100%;
   min-height: 72px;
+  user-select: text;
   /* Height is driven by the drag handle (inline style); no tiny browser grip. */
   max-height: none;
   resize: none;
@@ -1794,7 +1931,7 @@ button {
   vertical-align: middle;
 }
 
-/* Right panel (Files | Changes + Tasks dock) */
+/* Right panel (Files | Changes + Tasks dock) — width from app grid */
 .panel {
   border-left: 1px solid var(--border);
   background: var(--panel-bg);
@@ -1802,8 +1939,10 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
+  flex: 1;
 }
 
 /* Match main .topbar height so the three columns share one header band */
@@ -1829,6 +1968,7 @@ button {
 .panel-tabs {
   display: flex;
   align-items: stretch;
+  gap: 4px;
   min-height: 56px;
   border-bottom: 1px solid var(--border-soft);
   flex-shrink: 0;
@@ -1845,6 +1985,14 @@ button {
   border-bottom: 2px solid transparent;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.panel-tabs .col-toggle {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0 6px;
+  border-bottom: none;
+  padding: 0;
 }
 
 .panel-tabs button.active {
@@ -3332,14 +3480,6 @@ button {
 
 @media (max-width: 1100px) {
   .app {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
-  .sidebar {
-    min-width: 240px;
-    max-width: 240px;
-    width: 240px;
-  }
-  .panel {
-    display: none;
+    grid-template-columns: var(--sidebar-width, 240px) minmax(0, 1fr) var(--panel-width, 260px);
   }
 }
