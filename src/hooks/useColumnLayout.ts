@@ -205,7 +205,7 @@ export function useColumnLayout() {
   );
 
   const onResizePointerMove = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
+    (e: ReactPointerEvent<HTMLDivElement> | PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== e.pointerId) return;
       if (drag.side === "sidebar") {
@@ -218,20 +218,37 @@ export function useColumnLayout() {
   );
 
   const endResizeDrag = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
+    (e: ReactPointerEvent<HTMLDivElement> | PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== e.pointerId) return;
       dragRef.current = null;
       setResizing(null);
       persistNow();
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        /* already released */
+      const target = e.target;
+      if (target && "releasePointerCapture" in target) {
+        try {
+          (target as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+          /* already released */
+        }
       }
     },
     [persistNow],
   );
+
+  useEffect(() => {
+    if (!resizing) return;
+    const move = (e: PointerEvent) => onResizePointerMove(e);
+    const up = (e: PointerEvent) => endResizeDrag(e);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [resizing, onResizePointerMove, endResizeDrag]);
 
   const resetSidebar = useCallback(() => {
     setSidebarCollapsed(false);

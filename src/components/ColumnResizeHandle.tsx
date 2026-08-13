@@ -36,14 +36,17 @@ export function ColumnResizeHandle({
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={width}
-      title="Drag to resize · double-click to reset"
+      title="Drag to resize · double-click to reset width"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onDoubleClick={onDoubleClick}
     >
-      <span className="col-resize-grip" aria-hidden />
+      <span className="col-resize-grip" aria-hidden>
+        <span />
+        <span />
+      </span>
     </div>
   );
 }

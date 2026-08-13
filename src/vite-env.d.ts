@@ -176,6 +176,33 @@ export type McpWriteResult = {
   error?: string | null;
 };
 
+export type McpDoctorCheck = {
+  label: string;
+  passed: boolean;
+  detail: string | null;
+};
+
+export type McpDoctorServer = {
+  name: string;
+  transport: string | null;
+  target: string | null;
+  source: string | null;
+  healthy: boolean;
+  checks: McpDoctorCheck[];
+  tools: string[];
+  toolCount: number | null;
+};
+
+export type McpDoctorResult = {
+  ok: boolean;
+  healthyCount: number;
+  failingCount: number;
+  servers: McpDoctorServer[];
+  stdout?: string;
+  stderr?: string;
+  error?: string | null;
+};
+
 /** Sanitized plugin row from `grok plugin list --json` (no component inventory). */
 export type PluginInfo = {
   name: string;
@@ -512,7 +539,7 @@ declare global {
         name: string,
         opts?: { scope?: "user" | "project" },
       ) => Promise<McpWriteResult>;
-      doctorMcp: (name?: string) => Promise<McpWriteResult>;
+      doctorMcp: (name?: string) => Promise<McpDoctorResult>;
       listPlugins: () => Promise<PluginListResult>;
       enablePlugin: (name: string) => Promise<PluginWriteResult>;
       disablePlugin: (name: string) => Promise<PluginWriteResult>;

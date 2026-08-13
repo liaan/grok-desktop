@@ -4,11 +4,11 @@ export const COLUMN_LAYOUT_KEY = "grok-desktop-column-layout";
 
 export const SIDEBAR_WIDTH_DEFAULT = 280;
 export const SIDEBAR_WIDTH_MIN = 200;
-export const SIDEBAR_WIDTH_MAX = 480;
+export const SIDEBAR_WIDTH_MAX = 720;
 
 export const PANEL_WIDTH_DEFAULT = 340;
-export const PANEL_WIDTH_MIN = 220;
-export const PANEL_WIDTH_MAX = 560;
+export const PANEL_WIDTH_MIN = 180;
+export const PANEL_WIDTH_MAX = 960;
 
 /** Rail width when a column is collapsed (Windows / Linux). */
 export const COLUMN_COLLAPSED_WIDTH = 48;
@@ -26,7 +26,7 @@ function isMacUi(): boolean {
 }
 
 /** Keep this much for the center chat column while resizing. */
-export const MAIN_COLUMN_MIN = 360;
+export const MAIN_COLUMN_MIN = 240;
 
 /** Drag this far inside min width to snap-collapse. */
 export const COLUMN_COLLAPSE_SLACK = 36;

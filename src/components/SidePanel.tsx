@@ -4,6 +4,7 @@ import type { BackgroundTask } from "../lib/background-tasks";
 import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
 import { stripAnsi } from "../lib/tool-display";
+import { ColToggle } from "./ColToggle";
 import { FileBrowser, useProjectFiles } from "./files/FileBrowser";
 import { FilePeek } from "./files/FilePeek";
 import { useFileDocument } from "./files/useFileDocument";
@@ -140,16 +141,13 @@ export const SidePanel = memo(function SidePanel({
       inert={shellInert || undefined}
     >
       <div className="panel-tabs" role="tablist" aria-label="Side panel">
-        <button
-          type="button"
-          className="col-toggle"
-          title={collapsed ? "Expand files panel" : "Collapse files panel"}
-          aria-label={collapsed ? "Expand files panel" : "Collapse files panel"}
-          aria-expanded={!collapsed}
+        <ColToggle
+          collapsed={collapsed}
+          expandToward="left"
+          labelExpand="Expand files panel"
+          labelCollapse="Collapse files panel"
           onClick={onToggleCollapsed}
-        >
-          {collapsed ? "‹" : "›"}
-        </button>
+        />
         {collapsed ? (
           running > 0 ? (
             <span

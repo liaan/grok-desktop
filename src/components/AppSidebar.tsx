@@ -5,6 +5,7 @@ import { basen } from "../lib/path-utils";
 import { formatSessionWhen } from "../lib/time";
 import { usePrivacy } from "../lib/privacy-context";
 import { BrandMark, Spinner } from "./BrandMark";
+import { ColToggle } from "./ColToggle";
 
 export const AppSidebar = memo(function AppSidebar({
   infoVersion,
@@ -57,33 +58,39 @@ export const AppSidebar = memo(function AppSidebar({
     >
       <div className="brand">
         {collapsed ? (
-          <button
-            type="button"
-            className="brand-mark-btn"
-            title="Expand sidebar"
-            onClick={onToggleCollapsed}
-          >
-            <BrandMark size={28} />
-          </button>
+          <>
+            <ColToggle
+              collapsed={collapsed}
+              expandToward="right"
+              labelExpand="Expand sidebar"
+              labelCollapse="Collapse sidebar"
+              onClick={onToggleCollapsed}
+            />
+            <button
+              type="button"
+              className="brand-mark-btn"
+              title="Expand sidebar"
+              onClick={onToggleCollapsed}
+            >
+              <BrandMark size={28} />
+            </button>
+          </>
         ) : (
-          <BrandMark size={32} />
+          <>
+            <BrandMark size={32} />
+            <div className="brand-text">
+              <h1>Grok Desktop</h1>
+              <p>xAI · Grok Build GUI</p>
+            </div>
+            <ColToggle
+              collapsed={collapsed}
+              expandToward="right"
+              labelExpand="Expand sidebar"
+              labelCollapse="Collapse sidebar"
+              onClick={onToggleCollapsed}
+            />
+          </>
         )}
-        {!collapsed ? (
-          <div className="brand-text">
-            <h1>Grok Desktop</h1>
-            <p>xAI · Grok Build GUI</p>
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="col-toggle"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapsed}
-        >
-          {collapsed ? "›" : "‹"}
-        </button>
       </div>
 
       {collapsed ? null : (

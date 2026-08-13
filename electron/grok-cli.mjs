@@ -467,11 +467,203 @@ export function mcpRemoveArgv(name, opts = {}) {
  * @param {unknown} [name]
  */
 export function mcpDoctorArgv(name) {
-  const argv = ["mcp", "doctor"];
+  const argv = ["mcp", "doctor", "--json"];
   if (name != null && String(name).trim()) {
     argv.push(assertMcpName(name));
   }
   return argv;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+function doctorSourceLabel(raw) {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    const o = /** @type {Record<string, unknown>} */ (raw);
+    if (o.type === "plugin" && o.plugin_name) {
+      return `plugin: ${String(o.plugin_name)}`;
+    }
+    if (o.path) return String(o.path);
+    if (o.type) return String(o.type);
+  }
+  return null;
+}
+
+/**
+ * Tool names from a doctor server row. Never copies descriptions or schemas.
+ * @param {Record<string, unknown>} server
+ * @returns {string[]}
+ */
+function doctorToolNames(server) {
+  const buckets = [
+    server.tools,
+    server.tool_names,
+    server.toolNames,
+    server.discovered_tools,
+    server.discoveredTools,
+  ];
+  /** @type {string[]} */
+  const out = [];
+  const seen = new Set();
+  for (const raw of buckets) {
+    if (!Array.isArray(raw)) continue;
+    for (const item of raw) {
+      let name = "";
+      if (typeof item === "string") name = item.trim();
+      else if (item && typeof item === "object") {
+        const rec = /** @type {Record<string, unknown>} */ (item);
+        name = String(rec.name ?? rec.id ?? rec.tool ?? "").trim();
+      }
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {{ label: string, passed: boolean, detail: string | null }}
+ */
+function mapDoctorCheck(raw) {
+  if (!raw || typeof raw !== "object") {
+    return { label: "", passed: false, detail: null };
+  }
+  const o = /** @type {Record<string, unknown>} */ (raw);
+  const label = String(o.label ?? o.name ?? o.check ?? "").trim();
+  const passed = o.passed === true || o.ok === true || o.status === "ok";
+  const detail =
+    o.detail == null || o.detail === "" ? null : String(o.detail);
+  return { label, passed, detail };
+}
+
+/**
+ * @param {string} label
+ * @param {string | null} detail
+ * @returns {number | null}
+ */
+function toolCountFromCheck(label, detail) {
+  const text = `${label} ${detail || ""}`;
+  const match = text.match(/(\d+)\s+tools?\s+discovered/i);
+  if (match) return Number(match[1]);
+  return null;
+}
+
+/**
+ * Comma / newline tool lists sometimes land in the "N tools discovered" detail.
+ * @param {string | null} detail
+ * @returns {string[]}
+ */
+function toolNamesFromDetail(detail) {
+  if (!detail) return [];
+  if (!/[,;\n]/.test(detail)) return [];
+  return detail
+    .split(/[,;\n]+/)
+    .map((part) => part.trim())
+    .filter((part) => /^[A-Za-z0-9][A-Za-z0-9_./:-]*$/.test(part));
+}
+
+/**
+ * Map one `grok mcp doctor --json` server. No env/header values.
+ * @param {unknown} raw
+ */
+export function mapMcpDoctorServer(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {
+      name: "",
+      transport: null,
+      target: null,
+      source: null,
+      healthy: false,
+      checks: [],
+      tools: [],
+      toolCount: null,
+    };
+  }
+  const o = /** @type {Record<string, unknown>} */ (raw);
+  const name = String(o.name || o.id || "").trim();
+  const checks = Array.isArray(o.checks)
+    ? o.checks.map(mapDoctorCheck).filter((c) => c.label)
+    : [];
+  let tools = doctorToolNames(o);
+  if (tools.length === 0) {
+    for (const check of checks) {
+      const fromDetail = toolNamesFromDetail(check.detail);
+      if (fromDetail.length) {
+        tools = fromDetail;
+        break;
+      }
+    }
+  }
+  let toolCount = null;
+  if (typeof o.tool_count === "number") toolCount = o.tool_count;
+  else if (typeof o.toolCount === "number") toolCount = o.toolCount;
+  if (toolCount == null) {
+    for (const check of checks) {
+      const n = toolCountFromCheck(check.label, check.detail);
+      if (n != null) {
+        toolCount = n;
+        break;
+      }
+    }
+  }
+  if (toolCount == null && tools.length) toolCount = tools.length;
+
+  const transport =
+    o.transport == null || o.transport === ""
+      ? null
+      : String(o.transport).toLowerCase();
+  const target =
+    o.target == null || o.target === ""
+      ? o.url == null || o.url === ""
+        ? null
+        : String(o.url)
+      : String(o.target);
+
+  return {
+    name,
+    transport,
+    target,
+    source: doctorSourceLabel(o.source),
+    healthy: o.healthy === true,
+    checks,
+    tools,
+    toolCount,
+  };
+}
+
+/**
+ * Sanitized `grok mcp doctor --json` payload for Settings Test.
+ * @param {unknown} data
+ */
+export function mcpDoctorFromData(data) {
+  if (!data || typeof data !== "object") {
+    return { healthyCount: 0, failingCount: 0, servers: [] };
+  }
+  const o = /** @type {Record<string, unknown>} */ (data);
+  const rows = Array.isArray(o.servers)
+    ? o.servers
+    : Array.isArray(data)
+      ? data
+      : [];
+  const servers = rows.map(mapMcpDoctorServer).filter((s) => Boolean(s.name));
+  const healthyCount =
+    typeof o.healthy_count === "number"
+      ? o.healthy_count
+      : typeof o.healthyCount === "number"
+        ? o.healthyCount
+        : servers.filter((s) => s.healthy).length;
+  const failingCount =
+    typeof o.failing_count === "number"
+      ? o.failing_count
+      : typeof o.failingCount === "number"
+        ? o.failingCount
+        : servers.filter((s) => !s.healthy).length;
+  return { healthyCount, failingCount, servers };
 }
 
 /**
@@ -705,16 +897,28 @@ export async function removeMcpServer(name, opts = {}) {
 }
 
 /**
- * `grok mcp doctor [name]` — human stdout for the Settings Test action.
+ * `grok mcp doctor --json [name]` — structured report for Settings Test.
+ * Never forwards raw grok `data` (keep env/header secrets off IPC).
  * @param {unknown} [name]
  * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
  */
 export async function doctorMcp(name, opts = {}) {
-  return runGrok(mcpDoctorArgv(name), {
+  const result = await runGrok(mcpDoctorArgv(name), {
     cwd: opts.cwd,
     timeoutMs: opts.timeoutMs ?? 60_000,
+    json: true,
     bin: opts.bin,
   });
+  const report = mcpDoctorFromData(result.data);
+  return {
+    ok: result.ok,
+    healthyCount: report.healthyCount,
+    failingCount: report.failingCount,
+    servers: report.servers,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    error: result.error,
+  };
 }
 
 /** Plugin names: kebab-case or scoped `<scope>/<hash>/<name>` from `grok plugin list`. */

@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.0.0-beta.10",
+  "version": "1.0.0-beta.11",
   "description": "Desktop GUI for the Grok Build coding agent (Electron + ACP)",
   "main": "electron/main.mjs",
   "type": "module",

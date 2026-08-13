@@ -77,20 +77,14 @@ export const ChatTopbar = memo(function ChatTopbar({
 
   return (
     <div className="topbar">
-      <div className="topbar-project">
-        <div className="topbar-title">{basen(project)}</div>
-        <div className="cwd" title={redact(project)}>
-          {redact(project)}
+      <div className="topbar-main">
+        <div className="topbar-project">
+          <div className="topbar-title">{basen(project)}</div>
+          <div className="cwd" title={redact(project)}>
+            {redact(project)}
+          </div>
         </div>
-        <ElevatedSafetyChips
-          sandboxTerminal={sandboxTerminal}
-          allowOutsideProject={allowOutsideProject}
-          permissionMode={permissionMode}
-          privacyMode={privacyMode}
-          onOpenSettings={onOpenSettings}
-        />
-      </div>
-      <div className="topbar-actions row">
+        <div className="topbar-actions row">
         {canPickModel ? (
           <label
             className="perm-mode-topbar"
@@ -190,7 +184,15 @@ export const ChatTopbar = memo(function ChatTopbar({
             Stop
           </button>
         )}
+        </div>
       </div>
+      <ElevatedSafetyChips
+        sandboxTerminal={sandboxTerminal}
+        allowOutsideProject={allowOutsideProject}
+        permissionMode={permissionMode}
+        privacyMode={privacyMode}
+        onOpenSettings={onOpenSettings}
+      />
     </div>
   );
 });

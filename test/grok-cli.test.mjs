@@ -19,6 +19,7 @@ import {
   mcpAddArgv,
   mcpDisableArgv,
   mcpDoctorArgv,
+  mcpDoctorFromData,
   mcpEnableArgv,
   mcpListArgv,
   mcpRemoveArgv,
@@ -184,8 +185,13 @@ test("mcp argv builders match CLI grok mcp add/enable/disable/remove/doctor", ()
     "--scope",
     "project",
   ]);
-  assert.deepEqual(mcpDoctorArgv(), ["mcp", "doctor"]);
-  assert.deepEqual(mcpDoctorArgv("github"), ["mcp", "doctor", "github"]);
+  assert.deepEqual(mcpDoctorArgv(), ["mcp", "doctor", "--json"]);
+  assert.deepEqual(mcpDoctorArgv("github"), [
+    "mcp",
+    "doctor",
+    "--json",
+    "github",
+  ]);
 
   assert.deepEqual(
     mcpAddArgv({
@@ -295,6 +301,84 @@ test("mcpServersFromData maps grok mcp list --json fixture and strips secrets", 
   const dumped = JSON.stringify(mapped);
   assert.equal(dumped.includes("SECRET_TOKEN"), false);
   assert.equal(dumped.includes("supersecret"), false);
+});
+
+/** Probed from `grok mcp doctor --json figma` on Grok 1.0.3. */
+const MCP_DOCTOR_FIXTURE = {
+  sources: [
+    { path: "~/.grok/config.toml", status: { status: "found", server_count: 1 } },
+  ],
+  servers: [
+    {
+      name: "figma",
+      transport: "http",
+      target: "https://mcp.figma.com/mcp",
+      source: "plugin: figma",
+      checks: [
+        { label: "server started", passed: true, detail: "1.9s" },
+        { label: "handshake OK", passed: true, detail: "protocol 2025-11-25" },
+        { label: "32 tools discovered", passed: true, detail: "" },
+      ],
+      healthy: true,
+    },
+    {
+      name: "broken",
+      transport: "stdio",
+      target: "/usr/bin/false",
+      source: { type: "configToml", path: "/tmp/config.toml" },
+      checks: [{ label: "server started", passed: false, detail: "timeout" }],
+      healthy: false,
+    },
+  ],
+  healthy_count: 1,
+  failing_count: 1,
+};
+
+test("mcpDoctorFromData maps grok mcp doctor --json and extracts tool count", () => {
+  const report = mcpDoctorFromData(MCP_DOCTOR_FIXTURE);
+  assert.equal(report.healthyCount, 1);
+  assert.equal(report.failingCount, 1);
+  assert.equal(report.servers.length, 2);
+  assert.deepEqual(report.servers[0], {
+    name: "figma",
+    transport: "http",
+    target: "https://mcp.figma.com/mcp",
+    source: "plugin: figma",
+    healthy: true,
+    checks: [
+      { label: "server started", passed: true, detail: "1.9s" },
+      { label: "handshake OK", passed: true, detail: "protocol 2025-11-25" },
+      { label: "32 tools discovered", passed: true, detail: null },
+    ],
+    tools: [],
+    toolCount: 32,
+  });
+  assert.equal(report.servers[1].healthy, false);
+  assert.equal(report.servers[1].source, "/tmp/config.toml");
+});
+
+test("mcpDoctorFromData lists tool names when the CLI includes them", () => {
+  const report = mcpDoctorFromData({
+    servers: [
+      {
+        name: "github",
+        healthy: true,
+        tools: [
+          { name: "create_issue", description: "secret schema" },
+          "list_pull_requests",
+        ],
+        checks: [{ label: "2 tools discovered", passed: true, detail: "" }],
+      },
+    ],
+    healthy_count: 1,
+    failing_count: 0,
+  });
+  assert.deepEqual(report.servers[0].tools, [
+    "create_issue",
+    "list_pull_requests",
+  ]);
+  assert.equal(report.servers[0].toolCount, 2);
+  assert.equal(JSON.stringify(report).includes("secret schema"), false);
 });
 
 test("listMcpServers result never includes raw data/stdout or env secrets", async () => {
