@@ -48,7 +48,11 @@ export function PlanApprovalDialog({
     : null;
 
   return (
-    <div className="modal-backdrop plan-approval-backdrop" role="presentation">
+    <div
+      className="modal-backdrop plan-approval-backdrop"
+      role="presentation"
+      data-modal-layer="overlay"
+    >
       <div
         className="modal-dialog plan-approval-dialog"
         role="dialog"

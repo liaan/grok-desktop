@@ -37,6 +37,7 @@ import { useAgentSafety } from "./hooks/useAgentSafety";
 import { useProjectSession } from "./hooks/useProjectSession";
 import { usePromptDelivery } from "./hooks/usePromptDelivery";
 import { useStickToBottom } from "./hooks/useStickToBottom";
+import { useUnsavedGuard } from "./hooks/useUnsavedGuard";
 import type {
   AppInfo,
   AuthStatus,
@@ -77,7 +78,7 @@ export default function App() {
   const [allowPrerelease, setAllowPrerelease] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
-  const [filesDirty, setFilesDirty] = useState(false);
+  const { setFilesDirty, confirmDiscardFiles } = useUnsavedGuard();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     "mcp" | "plugins" | "skills" | null
@@ -279,27 +280,6 @@ export default function App() {
       onMissingBinary,
     });
 
-  const confirmDiscardFiles = useCallback(() => {
-    if (!filesDirty) return true;
-    return window.confirm("Discard unsaved edits?");
-  }, [filesDirty]);
-
-  const openProjectGuarded = useCallback(
-    async (
-      cwd: string,
-      opts?: { mode?: "continue" | "new" | "resume"; sessionId?: string },
-    ) => {
-      if (!confirmDiscardFiles()) return;
-      await openProject(cwd, opts);
-    },
-    [confirmDiscardFiles, openProject],
-  );
-
-  const leaveProjectGuarded = useCallback(async () => {
-    if (!confirmDiscardFiles()) return;
-    await leaveProject();
-  }, [confirmDiscardFiles, leaveProject]);
-
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
       if (!signedIn) setError("Sign in to Grok first.");
@@ -426,9 +406,9 @@ export default function App() {
   );
 
   const handleLogout = async () => {
+    if (!confirmDiscardFiles()) return;
     setAuthBusy(true);
     try {
-      if (!confirmDiscardFiles()) return;
       await leaveProject();
       const res = await window.grokDesktop.logout();
       if (res.status) setAuth(res.status);
@@ -638,6 +618,8 @@ export default function App() {
     setError(message);
   }, []);
 
+  const overlayOpen = Boolean(planApproval || userQuestion);
+
   const settingsDialog = (
     <SettingsDialog
       open={settingsOpen}
@@ -645,6 +627,7 @@ export default function App() {
         setSettingsOpen(false);
         setSettingsSection(null);
       }}
+      inert={overlayOpen}
       theme={theme}
       privacyMode={privacyMode}
       codingDataOptIn={codingDataOptIn}
@@ -711,9 +694,13 @@ export default function App() {
           onLogout={() => void handleLogout()}
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}
-          onOpenProject={(cwd) => void openProjectGuarded(cwd)}
+          onOpenProject={(cwd) => {
+            if (!confirmDiscardFiles()) return;
+            void openProject(cwd);
+          }}
           onOpenSettingsSection={onOpenSettings}
           platform={platform}
+          inert={settingsOpen}
         />
         {settingsDialog}
       </PrivacyProvider>
@@ -736,15 +723,17 @@ export default function App() {
           isOpening={isOpening}
           authBusy={authBusy}
           onPickProject={() => void pickProject()}
-          onOpenProject={(cwd) => void openProjectGuarded(cwd, { mode: "continue" })}
+          onOpenProject={(cwd) => {
+            if (!confirmDiscardFiles()) return;
+            void openProject(cwd, { mode: "continue" });
+          }}
           onOpenSession={(opts) => void openSession(opts)}
           onLogout={() => void handleLogout()}
           onOpenSettingsSection={onOpenSettings}
+          inert={settingsOpen}
         />
 
-        {settingsDialog}
-
-        <main className="main">
+        <main className="main" inert={settingsOpen || undefined}>
           <ChatTopbar
             project={project}
             conn={conn}
@@ -798,7 +787,8 @@ export default function App() {
                   type="button"
                   style={{ marginLeft: 12 }}
                   onClick={() => {
-                    void leaveProjectGuarded();
+                    if (!confirmDiscardFiles()) return;
+                    void leaveProject();
                   }}
                 >
                   Sign in again
@@ -853,7 +843,10 @@ export default function App() {
           backgroundTasks={backgroundTasks}
           sessionMode={sessionMode}
           onDirtyChange={setFilesDirty}
+          inert={settingsOpen}
         />
+
+        {settingsDialog}
 
         <PlanApprovalDialog
           request={planApproval}

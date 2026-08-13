@@ -192,17 +192,7 @@ function pathDirs(env, platform) {
 }
 
 /**
- * @param {string} name
- * @param {{
- *   platform?: string,
- *   env?: Record<string, string | undefined>,
- *   exists?: (p: string) => boolean,
- * }} [opts]
- * @returns {string | null}
- */
-/**
- * Every PATH hit for `name` (one per directory). Callers must keep scanning
- * after rejecting a foreign editor's shim.
+ * Every PATH hit for `name` (one per directory).
  * @param {string} name
  * @param {{
  *   platform?: string,
@@ -260,47 +250,6 @@ function darwinAppPath(appName, home, exists) {
 }
 
 /**
- * Extra dirs so Dock-launched Electron still finds `code` / `cursor`.
- * @param {string} platform
- * @param {string} home
- * @param {Record<string, string | undefined>} env
- * @returns {string[]}
- */
-function editorSearchDirs(platform, home, env) {
-  if (platform === "win32") {
-    const local = env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-    return [
-      path.join(local, "Programs", "cursor", "resources", "app", "bin"),
-      path.join(local, "Programs", "Microsoft VS Code", "bin"),
-      path.join(local, "Programs", "Microsoft VS Code Insiders", "bin"),
-      path.join(local, "Programs", "Windsurf", "resources", "app", "bin"),
-    ];
-  }
-  return [
-    path.join(home, ".local", "bin"),
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/Applications/Cursor.app/Contents/Resources/app/bin",
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin",
-    "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin",
-    "/Applications/Zed.app/Contents/MacOS",
-    "/Applications/Windsurf.app/Contents/Resources/app/bin",
-    "/Applications/Sublime Text.app/Contents/SharedSupport/bin",
-    "/Applications/VSCodium.app/Contents/Resources/app/bin",
-    path.join(home, "Applications", "Cursor.app", "Contents", "Resources", "app", "bin"),
-    path.join(
-      home,
-      "Applications",
-      "Visual Studio Code.app",
-      "Contents",
-      "Resources",
-      "app",
-      "bin",
-    ),
-  ];
-}
-
-/**
  * @param {{
  *   platform?: string,
  *   env?: Record<string, string | undefined>,
@@ -311,24 +260,10 @@ function editorSearchDirs(platform, home, env) {
 function resolveCtx(opts = {}) {
   const platform = opts.platform || process.platform;
   const home = opts.home || os.homedir();
-  const baseEnv = opts.env || buildGrokEnv();
-  const extra = editorSearchDirs(platform, home, baseEnv);
-  const sep = platform === "win32" ? ";" : ":";
-  const current = baseEnv.PATH || baseEnv.Path || "";
-  const parts = [...extra, ...current.split(sep).filter(Boolean)];
-  const seen = new Set();
-  const pathValue = parts
-    .filter((p) => {
-      if (!p || seen.has(p)) return false;
-      seen.add(p);
-      return true;
-    })
-    .join(sep);
-  const env = { ...baseEnv, PATH: pathValue, Path: pathValue };
   return {
     platform,
     home,
-    env,
+    env: opts.env || buildGrokEnv(),
     exists: opts.exists || defaultExists,
   };
 }
@@ -353,32 +288,6 @@ function pathHasFolder(posixLower, folder) {
   return (
     posixLower.includes(`/${folder}/`) || posixLower.endsWith(`/${folder}`)
   );
-}
-
-/**
- * Cursor / Windsurf / VSCodium ship a `code` shim. A PATH hit inside another
- * editor's install must not count as VS Code (or vice versa).
- * @param {string} found
- * @param {EditorPreset} preset
- */
-function binBelongsToOtherEditor(found, preset) {
-  const lower = String(found).replace(/\\/g, "/").toLowerCase();
-  for (const other of PRESETS) {
-    if (other.id === preset.id) continue;
-    for (const app of other.darwinApps) {
-      if (lower.includes(`/${app.toLowerCase()}.app/`)) return true;
-    }
-    /** @type {Set<string>} */
-    const folders = new Set();
-    for (const rel of other.winRel) {
-      const folder = winInstallFolder(rel);
-      if (folder) folders.add(folder);
-    }
-    for (const folder of folders) {
-      if (pathHasFolder(lower, folder)) return true;
-    }
-  }
-  return false;
 }
 
 const SYSTEM_BIN_DIRS = new Set([
@@ -408,10 +317,46 @@ function binHasForeignSibling(found, preset, ctx) {
   return extras.some((n) => ctx.exists(path.join(path.dirname(found), n)));
 }
 
-function binOwnedByPreset(found, preset, ctx) {
-  if (binBelongsToOtherEditor(found, preset)) return false;
-  if (binHasForeignSibling(found, preset, ctx)) return false;
-  return true;
+/**
+ * When the real fs is available, follow symlinks so a `~/.local/bin/code`
+ * that points at Cursor.app is rejected as VS Code.
+ * @param {string} found
+ * @param {ReturnType<typeof resolveCtx>} ctx
+ */
+function resolveLocatedBin(found, ctx) {
+  if (ctx.exists !== defaultExists) return found;
+  try {
+    return fs.realpathSync(found);
+  } catch {
+    return found;
+  }
+}
+
+/**
+ * PATH last-resort: reject a hit that lives inside another preset's install
+ * (Cursor.app `code` shim, Programs/cursor `code.cmd`). Generic dirs like
+ * `/usr/bin` are not an install folder.
+ * @param {string} found
+ * @param {EditorPreset} preset
+ */
+function binInOtherEditorInstall(found, preset) {
+  const lower = String(found).replace(/\\/g, "/").toLowerCase();
+  for (const other of PRESETS) {
+    if (other.id === preset.id) continue;
+    for (const app of other.darwinApps) {
+      if (lower.includes(`/${app.toLowerCase()}.app/`)) return true;
+    }
+    /** @type {Set<string>} */
+    const folders = new Set();
+    for (const rel of other.winRel) {
+      const folder = winInstallFolder(rel);
+      if (folder) folders.add(folder);
+    }
+    for (const folder of folders) {
+      if (pathHasFolder(lower, folder)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -477,9 +422,10 @@ function locatePreset(preset, ctx) {
 
   for (const bin of preset.bins) {
     for (const found of whichBinAll(bin, { platform, env, exists })) {
-      if (binOwnedByPreset(found, preset, ctx)) {
-        return { kind: "cli", path: found };
-      }
+      const resolved = resolveLocatedBin(found, ctx);
+      if (binInOtherEditorInstall(resolved, preset)) continue;
+      if (binHasForeignSibling(found, preset, ctx)) continue;
+      return { kind: "cli", path: found };
     }
   }
 

@@ -28,6 +28,7 @@ export function WelcomeView({
   onOpenProject,
   onOpenSettingsSection,
   platform,
+  inert: shellInert,
 }: {
   platformClass: string;
   isOpening: boolean;
@@ -50,9 +51,13 @@ export function WelcomeView({
   onOpenProject: (cwd: string) => void;
   onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
   platform?: string;
+  inert?: boolean;
 }) {
   return (
-    <div className={`app no-project ${platformClass}`.trim()}>
+    <div
+      className={`app no-project ${platformClass}`.trim()}
+      inert={shellInert || undefined}
+    >
       <div className="titlebar-drag welcome-drag" aria-hidden />
       <div className="welcome">
         <div className={`welcome-card ${isOpening ? "is-loading" : ""}`}>

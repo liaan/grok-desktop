@@ -324,50 +324,39 @@ test("resolvePreferredEditor auto is null on linux with nothing installed", () =
   assert.equal(resolved, null);
 });
 
-test("PATH walk skips Cursor shim then finds later VS Code", () => {
-  const cursorCode = "/home/dev/.local/bin/code";
-  const cursorBin = "/home/dev/.local/bin/cursor";
+test("PATH walk skips other-editor install then finds later VS Code", () => {
+  const cursorCli =
+    "/Applications/Cursor.app/Contents/Resources/app/bin/cursor";
+  const cursorCode =
+    "/Applications/Cursor.app/Contents/Resources/app/bin/code";
   const realCode = "/usr/bin/code";
-  const exists = existsSet([cursorCode, cursorBin, realCode]);
+  const exists = existsSet([
+    "/Applications/Cursor.app",
+    cursorCli,
+    cursorCode,
+    realCode,
+  ]);
   const listed = listEditors({
-    platform: "linux",
-    home: "/home/dev",
-    env: { PATH: "/home/dev/.local/bin:/usr/bin" },
+    platform: "darwin",
+    home: "/Users/dev",
+    env: {
+      PATH: "/Applications/Cursor.app/Contents/Resources/app/bin:/usr/bin",
+    },
     exists,
   });
   assert.equal(listed.find((e) => e.id === "code")?.available, true);
   const plan = planOpenInEditor(HTML, {
     preference: "code",
-    platform: "linux",
-    home: "/home/dev",
-    env: { PATH: "/home/dev/.local/bin:/usr/bin" },
+    platform: "darwin",
+    home: "/Users/dev",
+    env: {
+      PATH: "/Applications/Cursor.app/Contents/Resources/app/bin:/usr/bin",
+    },
     exists,
   });
   assert.equal(plan.ok, true);
   assert.equal(plan.editor, "code");
   assert.equal(plan.cmd, realCode);
-});
-
-test("linux /usr/bin/code next to /usr/bin/cursor are both available", () => {
-  const exists = existsSet(["/usr/bin/code", "/usr/bin/cursor"]);
-  const listed = listEditors({
-    platform: "linux",
-    home: "/home/dev",
-    env: { PATH: "/usr/bin" },
-    exists,
-  });
-  assert.equal(listed.find((e) => e.id === "code")?.available, true);
-  assert.equal(listed.find((e) => e.id === "cursor")?.available, true);
-  const plan = planOpenInEditor(HTML, {
-    preference: "code",
-    platform: "linux",
-    home: "/home/dev",
-    env: { PATH: "/usr/bin" },
-    exists,
-  });
-  assert.equal(plan.ok, true);
-  assert.equal(plan.editor, "code");
-  assert.equal(plan.cmd, "/usr/bin/code");
 });
 
 test("linux ~/.local/bin/code next to cursor is not VS Code", () => {
@@ -397,6 +386,60 @@ test("linux ~/.local/bin/code next to cursor is not VS Code", () => {
   });
   assert.equal(asAuto.ok, true);
   assert.equal(asAuto.editor, "cursor");
+});
+
+test("linux /usr/bin/code next to /usr/bin/cursor are both available", () => {
+  const exists = existsSet(["/usr/bin/code", "/usr/bin/cursor"]);
+  const listed = listEditors({
+    platform: "linux",
+    home: "/home/dev",
+    env: { PATH: "/usr/bin" },
+    exists,
+  });
+  assert.equal(listed.find((e) => e.id === "code")?.available, true);
+  assert.equal(listed.find((e) => e.id === "cursor")?.available, true);
+  const plan = planOpenInEditor(HTML, {
+    preference: "code",
+    platform: "linux",
+    home: "/home/dev",
+    env: { PATH: "/usr/bin" },
+    exists,
+  });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.editor, "code");
+  assert.equal(plan.cmd, "/usr/bin/code");
+});
+
+test("PATH code inside Cursor.app is not Visual Studio Code", () => {
+  const cursorCli =
+    "/Applications/Cursor.app/Contents/Resources/app/bin/cursor";
+  const cursorCode =
+    "/Applications/Cursor.app/Contents/Resources/app/bin/code";
+  const exists = existsSet([
+    "/Applications/Cursor.app",
+    cursorCli,
+    cursorCode,
+  ]);
+  const listed = listEditors({
+    platform: "darwin",
+    home: "/Users/dev",
+    env: {
+      PATH: "/Applications/Cursor.app/Contents/Resources/app/bin:/usr/bin",
+    },
+    exists,
+  });
+  assert.equal(listed.find((e) => e.id === "cursor")?.available, true);
+  assert.equal(listed.find((e) => e.id === "code")?.available, false);
+  const asCode = planOpenInEditor(HTML, {
+    preference: "code",
+    platform: "darwin",
+    home: "/Users/dev",
+    env: {
+      PATH: "/Applications/Cursor.app/Contents/Resources/app/bin:/usr/bin",
+    },
+    exists,
+  });
+  assert.equal(asCode.ok, false);
 });
 
 test("win32 Program Files VS Code is found beside user-level Cursor", () => {
@@ -481,6 +524,52 @@ test("win32 Cursor-only does not advertise or launch VS Code", () => {
   assert.equal(asAuto.editor, "cursor");
   assert.equal(asAuto.cmd, cursorExe);
   assert.notEqual(asAuto.shell, true);
+});
+
+test("planOpenInEditor rejects empty path", () => {
+  const plan = planOpenInEditor("  ", {
+    platform: "linux",
+    home: "/home/dev",
+    env: { PATH: "/usr/bin" },
+    exists: () => false,
+  });
+  assert.equal(plan.ok, false);
+  assert.match(plan.error, /No file path/i);
+});
+
+test("openInEditor rejects when no editor is installed", async () => {
+  await assert.rejects(
+    () =>
+      openInEditor(HTML, {
+        platform: "linux",
+        home: "/home/dev",
+        env: { PATH: "/usr/bin" },
+        exists: () => false,
+      }),
+    /No code editor found/i,
+  );
+});
+
+test("openInEditor rejects when spawn fails", async () => {
+  await assert.rejects(
+    () =>
+      openInEditor(HTML, {
+        platform: "linux",
+        home: "/home/dev",
+        env: { PATH: "/usr/bin" },
+        exists: (p) => p === "/usr/bin/code",
+        spawn: () => {
+          const err = new Error("ENOENT");
+          return {
+            once(ev, cb) {
+              if (ev === "error") queueMicrotask(() => cb(err));
+            },
+            unref() {},
+          };
+        },
+      }),
+    /ENOENT/,
+  );
 });
 
 test("openInEditor spawn for .cmd uses quoted cmd.exe /c call", async () => {

@@ -79,7 +79,7 @@ export function AskUserDialog({
   };
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop" role="presentation" data-modal-layer="overlay">
       <div
         className="modal-dialog ask-user-dialog"
         role="dialog"

@@ -23,6 +23,7 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenSession,
   onLogout,
   onOpenSettingsSection,
+  inert: shellInert,
 }: {
   infoVersion?: string;
   grokBinary?: string | null;
@@ -40,12 +41,13 @@ export const AppSidebar = memo(function AppSidebar({
   onOpenSession: (opts: { mode: "new" | "resume"; sessionId?: string }) => void;
   onLogout: () => void;
   onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
+  inert?: boolean;
 }) {
   const { redact } = usePrivacy();
   const busyGate = isOpening || conn === "busy";
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" inert={shellInert || undefined}>
       <div className="brand">
         <BrandMark size={32} />
         <div className="brand-text">
