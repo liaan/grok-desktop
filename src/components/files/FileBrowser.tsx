@@ -391,7 +391,20 @@ export function FileBrowser({
               selectedRelPath != null &&
               normalizePathKey(selectedRelPath) ===
                 normalizePathKey(entry.path);
-            const badge = entry.status === "?" ? "?" : entry.status || "M";
+            const badge =
+              entry.untracked || entry.status === "?"
+                ? "U"
+                : entry.status || "M";
+            const badgeLabel =
+              badge === "U"
+                ? "Untracked"
+                : badge === "D"
+                  ? "Deleted"
+                  : badge === "A"
+                    ? "Added"
+                    : badge === "R"
+                      ? "Renamed"
+                      : "Modified";
             const abs = joinProjectPath(project, entry.path);
             return (
               <div
@@ -415,18 +428,9 @@ export function FileBrowser({
                   }}
                 >
                   <span
-                    className={`change-badge change-badge-${badge === "?" ? "untracked" : badge}`}
-                    aria-label={
-                      entry.untracked
-                        ? "Untracked"
-                        : badge === "D"
-                          ? "Deleted"
-                          : badge === "A"
-                            ? "Added"
-                            : badge === "R"
-                              ? "Renamed"
-                              : "Modified"
-                    }
+                    className={`change-badge change-badge-${badge === "U" ? "untracked" : badge}`}
+                    title={badgeLabel}
+                    aria-label={badgeLabel}
                   >
                     {badge}
                   </span>
