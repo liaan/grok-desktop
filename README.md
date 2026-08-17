@@ -12,7 +12,7 @@ Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding a
   <img src="docs/screenshots/approvals.png" alt="Tool permission approvals panel" width="440" />
 </p>
 
-<p align="center"><sub>Chat + slash skills · browser sign-in · tool approvals with readable input</sub></p>
+<p align="center"><sub>Day theme · browser sign-in with URL + paste · tool approvals</sub></p>
 
 ## Install for the team (no npm)
 

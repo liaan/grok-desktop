@@ -5,16 +5,17 @@
   <title>Grok Desktop — approvals</title>
   <style>
     :root {
-      --bg: #0c0c0f;
-      --bg-elevated: #14141a;
-      --bg-soft: #1a1a22;
-      --border: #2a2a35;
-      --border-soft: #22222c;
-      --text: #f2f2f5;
-      --text-muted: #9a9aab;
-      --accent: #a78bfa;
-      --success: #34d399;
-      --warn: #fbbf24;
+      color-scheme: light;
+      --bg: #f3f3f7;
+      --bg-elevated: #ffffff;
+      --bg-soft: #e8e8ef;
+      --border: #d4d4e0;
+      --border-soft: #e2e2ec;
+      --text: #14141c;
+      --text-muted: #5a5a6e;
+      --accent: #7c3aed;
+      --success: #059669;
+      --warn: #d97706;
       --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
       --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
     }
@@ -22,7 +23,9 @@
     body {
       margin: 0;
       font-family: var(--font);
-      background: #050508;
+      background:
+        radial-gradient(ellipse 70% 50% at 30% -10%, rgba(251, 191, 36, 0.18), transparent 50%),
+        linear-gradient(180deg, #e8e4f0 0%, #d8dee8 100%);
       color: var(--text);
       display: flex;
       align-items: center;
@@ -35,8 +38,8 @@
       height: 680px;
       border-radius: 14px;
       overflow: hidden;
-      border: 1px solid #2e2e3a;
-      box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 80px rgba(251, 191, 36, 0.08);
+      border: 1px solid #c8c8d6;
+      box-shadow: 0 30px 80px rgba(40, 40, 70, 0.16);
       display: grid;
       grid-template-columns: 1fr 320px;
       background: var(--bg);
@@ -49,14 +52,11 @@
       justify-content: space-between;
       align-items: flex-start;
       gap: 12px;
+      background: #fafafc;
     }
-    .topbar-title { font-size: 15px; font-weight: 650; color: var(--text); }
+    .topbar-title { font-size: 15px; font-weight: 650; }
     .cwd { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
-    .topbar-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
     .field {
       display: flex;
       align-items: center;
@@ -66,7 +66,7 @@
     }
     .field select {
       appearance: none;
-      background: var(--bg-soft);
+      background: #fff;
       border: 1px solid var(--border);
       color: var(--text);
       border-radius: 8px;
@@ -81,17 +81,12 @@
       font-size: 12px;
       padding: 4px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(251, 191, 36, 0.3);
-      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(217, 119, 6, 0.3);
+      background: rgba(217, 119, 6, 0.08);
     }
     .busy .dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--warn);
-      animation: pulse 1.2s ease infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.35; }
     }
     .timeline { flex: 1; padding: 20px 22px 12px; display: flex; flex-direction: column; gap: 12px; }
     .msg {
@@ -99,18 +94,18 @@
       border-radius: 14px;
       padding: 12px 14px;
       border: 1px solid var(--border-soft);
-      background: #15151c;
+      background: #fff;
     }
     .msg.user {
       align-self: flex-end;
-      background: #1e293b;
-      border-color: #334155;
+      background: #e8eef8;
+      border-color: #c5d0e4;
     }
     .meta { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
     .body { font-size: 14px; line-height: 1.5; }
     .tool {
-      border: 1px solid #2e3a55;
-      background: #10131b;
+      border: 1px solid #c5d4ea;
+      background: #f0f4fa;
       border-radius: 12px;
       padding: 12px;
       max-width: 88%;
@@ -123,20 +118,18 @@
       font-family: var(--mono);
       font-size: 12px;
       color: var(--text-muted);
-      background: rgba(0,0,0,0.35);
+      background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
       white-space: pre-wrap;
     }
-    /* sticky approvals dock under timeline — matches ApprovalsDock */
     .approvals-dock {
       margin: 0 16px 12px;
-      border: 1px solid rgba(251, 191, 36, 0.4);
-      background: linear-gradient(180deg, rgba(251, 191, 36, 0.12), rgba(20, 16, 8, 0.9));
+      border: 1px solid rgba(217, 119, 6, 0.4);
+      background: linear-gradient(180deg, rgba(251, 191, 36, 0.16), #fff8eb);
       border-radius: 14px;
       padding: 12px 14px;
-      box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.35);
     }
     .approvals-dock-head {
       display: flex;
@@ -146,14 +139,10 @@
       margin-bottom: 10px;
     }
     .approvals-dock-head strong { font-size: 14px; }
-    .approvals-dock-hint {
-      font-size: 12px;
-      color: var(--text-muted);
-      flex: 1 1 200px;
-    }
+    .approvals-dock-hint { font-size: 12px; color: var(--text-muted); flex: 1 1 200px; }
     .approvals-dock-item {
-      border: 1px solid rgba(251, 191, 36, 0.25);
-      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(217, 119, 6, 0.25);
+      background: #fff;
       border-radius: 10px;
       padding: 10px 12px;
     }
@@ -174,14 +163,14 @@
       font-weight: 600;
     }
     .btn.danger {
-      background: rgba(248, 113, 113, 0.12);
-      border-color: rgba(248, 113, 113, 0.35);
-      color: #fecaca;
+      background: rgba(220, 38, 38, 0.08);
+      border-color: rgba(220, 38, 38, 0.3);
+      color: #b91c1c;
     }
     .btn.sm { padding: 6px 10px; font-size: 12px; }
     .panel {
       border-left: 1px solid var(--border);
-      background: #0f0f14;
+      background: #f7f7fb;
       display: flex;
       flex-direction: column;
     }
@@ -191,6 +180,7 @@
       padding: 0 8px;
       min-height: 52px;
       align-items: flex-end;
+      background: #fafafc;
     }
     .panel-tabs span {
       padding: 12px 14px;
@@ -205,8 +195,8 @@
     }
     .panel-body { padding: 14px; }
     .perm-card {
-      border: 1px solid rgba(251, 191, 36, 0.35);
-      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(217, 119, 6, 0.35);
+      background: rgba(251, 191, 36, 0.1);
       border-radius: 12px;
       padding: 14px;
     }
@@ -215,7 +205,7 @@
     .input {
       font-family: var(--mono);
       font-size: 12px;
-      background: rgba(0,0,0,0.35);
+      background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
@@ -223,12 +213,7 @@
       margin-bottom: 12px;
       white-space: pre-wrap;
     }
-    .hint {
-      margin-top: 14px;
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.4;
-    }
+    .hint { margin-top: 14px; font-size: 12px; color: var(--text-muted); line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -249,17 +234,17 @@
       <div class="timeline">
         <div class="msg user">
           <div class="meta">You</div>
-          <div class="body">Add Cmd+` window cycling and harden auto-update network errors.</div>
+          <div class="body">Finish the v1.0.1 login paste path and set SHELL to Git Bash on Windows.</div>
         </div>
         <div class="tool">
           <div class="tool-header">
             <span>search_replace</span>
             <span class="tool-status">pending</span>
           </div>
-          <div class="tool-subtitle">Edit electron/main.mjs</div>
-          <div class="tool-input">path: electron/main.mjs
-+ function cycleAppWindows(dir = 1) { … }
-+ before-input-event → Cmd+` / Ctrl+Tab</div>
+          <div class="tool-subtitle">Edit electron/auth.mjs</div>
+          <div class="tool-input">path: electron/auth.mjs
++ submitLoginInput → GET 127.0.0.1 callback
++ parseLoginProgress (URL + paste)</div>
         </div>
       </div>
       <div class="approvals-dock">
@@ -270,7 +255,7 @@
           </span>
         </div>
         <div class="approvals-dock-item">
-          <div class="approvals-dock-title">search_replace · edit electron/main.mjs</div>
+          <div class="approvals-dock-title">search_replace · edit electron/auth.mjs</div>
           <div class="approvals-dock-actions">
             <button class="btn primary sm">Allow once</button>
             <button class="btn sm">Allow always</button>
@@ -290,15 +275,15 @@
         <div class="perm-card">
           <h3>search_replace</h3>
           <div class="kind">edit · tool_call</div>
-          <div class="input">electron/main.mjs
-+ cycleAppWindows
-+ Cmd+` / Cmd+Shift+`</div>
+          <div class="input">electron/auth.mjs
++ loopback finish-code
++ paste field in AuthGate</div>
           <div class="approvals-dock-actions">
             <button class="btn primary sm">Allow once</button>
             <button class="btn sm">Reject</button>
           </div>
         </div>
-        <p class="hint">Bottom <strong>Approvals</strong> dock stays visible while tools run. Sidebar <strong>Perms</strong> = Ask / Auto / Always.</p>
+        <p class="hint">Bottom <strong>Approvals</strong> dock stays visible while tools run. Topbar <strong>Perms</strong> = Ask / Auto / Always.</p>
       </div>
     </aside>
   </div>

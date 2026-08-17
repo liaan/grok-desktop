@@ -8,15 +8,28 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const brave =
-  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
-const chrome =
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const browser = fs.existsSync(brave)
-  ? brave
-  : fs.existsSync(chrome)
-    ? chrome
-    : null;
+const local = process.env.LOCALAPPDATA || "";
+const pf = process.env["ProgramFiles"] || "C:\\Program Files";
+const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+const candidates = [
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+  path.join(pf86, "Google", "Chrome", "Application", "chrome.exe"),
+  path.join(pf, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+  path.join(pf, "Microsoft", "Edge", "Application", "msedge.exe"),
+  path.join(pf86, "Microsoft", "Edge", "Application", "msedge.exe"),
+  local
+    ? path.join(local, "Google", "Chrome", "Application", "chrome.exe")
+    : "",
+].filter(Boolean);
+const browser = candidates.find((p) => {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+});
 
 if (!browser) {
   console.error("No Brave/Chrome found for headless screenshots");
@@ -26,7 +39,7 @@ if (!browser) {
 const shots = [
   { html: "mock-main.html", out: "main.png", w: 1400, h: 900 },
   { html: "mock-approvals.html", out: "approvals.png", w: 1200, h: 800 },
-  { html: "mock-welcome.html", out: "welcome.png", w: 1100, h: 760 },
+  { html: "mock-welcome.html", out: "welcome.png", w: 1100, h: 860 },
 ];
 
 for (const s of shots) {

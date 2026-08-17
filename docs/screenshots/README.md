@@ -10,7 +10,7 @@ Product shots for the GitHub README (theme-matched HTML mocks of the real UI).
 
 ## Regenerate
 
-Requires Brave or Chrome on macOS:
+Requires Brave, Chrome, or Edge (macOS or Windows):
 
 ```bash
 node docs/screenshots/render.mjs

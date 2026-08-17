@@ -5,19 +5,18 @@
   <title>Grok Desktop — main</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #0c0c0f;
-      --bg-elevated: #14141a;
-      --bg-soft: #1a1a22;
-      --border: #2a2a35;
-      --border-soft: #22222c;
-      --text: #f2f2f5;
-      --text-muted: #9a9aab;
-      --accent: #a78bfa;
-      --accent-2: #60a5fa;
-      --success: #34d399;
-      --warn: #fbbf24;
-      --user-bubble: #1e293b;
+      color-scheme: light;
+      --bg: #f3f3f7;
+      --bg-elevated: #ffffff;
+      --bg-soft: #e8e8ef;
+      --border: #d4d4e0;
+      --border-soft: #e2e2ec;
+      --text: #14141c;
+      --text-muted: #5a5a6e;
+      --accent: #7c3aed;
+      --accent-2: #2563eb;
+      --success: #059669;
+      --user-bubble: #e8eef8;
       --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
       --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
     }
@@ -25,7 +24,9 @@
     body {
       margin: 0;
       font-family: var(--font);
-      background: #050508;
+      background:
+        radial-gradient(ellipse 80% 50% at 70% -10%, rgba(167, 139, 250, 0.22), transparent 50%),
+        linear-gradient(180deg, #e4e8f4 0%, #d5dde8 100%);
       color: var(--text);
       display: flex;
       align-items: center;
@@ -38,18 +39,15 @@
       height: 780px;
       border-radius: 14px;
       overflow: hidden;
-      border: 1px solid #2e2e3a;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.04),
-        0 40px 100px rgba(0,0,0,0.65),
-        0 0 80px rgba(124, 58, 237, 0.12);
+      border: 1px solid #c8c8d6;
+      box-shadow: 0 30px 80px rgba(40, 40, 70, 0.16), 0 0 0 1px rgba(255,255,255,0.7) inset;
       display: grid;
       grid-template-columns: 260px 1fr 300px;
       background: var(--bg);
     }
     .sidebar {
       border-right: 1px solid var(--border);
-      background: linear-gradient(180deg, #101016 0%, #0c0c0f 100%);
+      background: linear-gradient(180deg, #fafafc 0%, #f0f0f5 100%);
       display: flex;
       flex-direction: column;
     }
@@ -60,10 +58,7 @@
       padding: 16px;
       border-bottom: 1px solid var(--border-soft);
     }
-    .brand-mark {
-      border-radius: 9px;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 22px rgba(255,255,255,0.12);
-    }
+    .brand-mark { border-radius: 9px; box-shadow: 0 2px 8px rgba(20,20,40,0.12); }
     .brand h1 { margin: 0; font-size: 15px; font-weight: 650; }
     .brand p { margin: 3px 0 0; font-size: 11px; color: var(--text-muted); }
     .sec { padding: 12px; }
@@ -88,12 +83,11 @@
       border: none;
       background: none;
       padding: 0;
-      cursor: default;
     }
     .account {
       padding: 10px 12px;
       border-radius: 10px;
-      background: rgba(255,255,255,0.03);
+      background: #fff;
       border: 1px solid var(--border-soft);
     }
     .account .name { font-size: 13px; font-weight: 600; }
@@ -101,16 +95,13 @@
     .session {
       padding: 10px 12px;
       border-radius: 10px;
-      background: rgba(167, 139, 250, 0.12);
-      border: 1px solid rgba(167, 139, 250, 0.35);
+      background: rgba(124, 58, 237, 0.1);
+      border: 1px solid rgba(124, 58, 237, 0.28);
       margin-bottom: 6px;
     }
     .session .name { font-size: 13px; font-weight: 600; }
     .session .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-    .session.idle {
-      background: transparent;
-      border-color: transparent;
-    }
+    .session.idle { background: transparent; border-color: transparent; }
     .btn {
       border: 1px solid var(--border);
       background: var(--bg-soft);
@@ -130,16 +121,12 @@
       text-align: center;
     }
     .btn.sm { width: auto; padding: 6px 12px; margin: 0; }
-    .recent {
-      padding: 8px 10px;
-      border-radius: 8px;
-      margin-bottom: 4px;
-    }
+    .recent { padding: 8px 10px; border-radius: 8px; margin-bottom: 4px; }
     .recent .n { font-size: 13px; display: block; }
     .recent .p { font-size: 11px; color: var(--text-muted); }
     .recent.active {
-      background: rgba(167, 139, 250, 0.1);
-      border: 1px solid rgba(167, 139, 250, 0.25);
+      background: rgba(124, 58, 237, 0.08);
+      border: 1px solid rgba(124, 58, 237, 0.2);
     }
     .footer {
       margin-top: auto;
@@ -149,12 +136,7 @@
       color: var(--text-muted);
       line-height: 1.45;
     }
-    .main {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      background: var(--bg);
-    }
+    .main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
     .topbar {
       display: flex;
       align-items: flex-start;
@@ -163,18 +145,14 @@
       padding: 10px 16px;
       border-bottom: 1px solid var(--border-soft);
       min-height: 56px;
+      background: #fafafc;
     }
-    .topbar-project { min-width: 0; }
     .topbar-title { font-size: 15px; font-weight: 650; }
     .cwd {
       font-size: 11px;
       color: var(--text-muted);
       font-family: var(--mono);
       margin-top: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 360px;
     }
     .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
     .chip {
@@ -182,21 +160,16 @@
       font-weight: 600;
       padding: 2px 8px;
       border-radius: 999px;
-      border: 1px solid rgba(52, 211, 153, 0.35);
+      border: 1px solid rgba(5, 150, 105, 0.3);
       color: var(--success);
-      background: rgba(52, 211, 153, 0.08);
+      background: rgba(5, 150, 105, 0.08);
     }
     .chip.muted {
       border-color: var(--border);
       color: var(--text-muted);
-      background: rgba(255,255,255,0.03);
+      background: #fff;
     }
-    .topbar-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-    }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .field {
       display: flex;
       align-items: center;
@@ -206,7 +179,7 @@
     }
     .field select {
       appearance: none;
-      background: var(--bg-soft);
+      background: #fff;
       border: 1px solid var(--border);
       color: var(--text);
       border-radius: 8px;
@@ -221,13 +194,12 @@
       color: var(--success);
       padding: 4px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(52, 211, 153, 0.25);
-      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid rgba(5, 150, 105, 0.25);
+      background: #fff;
     }
     .status .dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--success);
-      box-shadow: 0 0 8px var(--success);
     }
     .timeline {
       flex: 1;
@@ -242,16 +214,16 @@
       border-radius: 14px;
       padding: 12px 14px;
       border: 1px solid var(--border-soft);
-      background: #15151c;
+      background: #fff;
     }
     .msg.user {
       align-self: flex-end;
       background: var(--user-bubble);
-      border-color: #334155;
+      border-color: #c5d0e4;
     }
     .msg.user-command {
-      border-color: rgba(167, 139, 250, 0.45);
-      background: linear-gradient(135deg, rgba(124, 58, 237, 0.14) 0%, var(--user-bubble) 55%);
+      border-color: rgba(124, 58, 237, 0.35);
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, var(--user-bubble) 55%);
     }
     .meta {
       display: flex;
@@ -260,9 +232,9 @@
       color: var(--text-muted);
       margin-bottom: 6px;
     }
-    .meta-role { font-weight: 600; color: #c4b5fd; }
-    .msg.user .meta-role { color: #93c5fd; }
-    .body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .meta-role { font-weight: 600; color: #6d28d9; }
+    .msg.user .meta-role { color: #1d4ed8; }
+    .body { font-size: 14px; line-height: 1.5; }
     .cmd-invocation { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .cmd-badge {
       font-size: 10px;
@@ -271,23 +243,22 @@
       letter-spacing: 0.05em;
       padding: 2px 7px;
       border-radius: 999px;
-      border: 1px solid rgba(96, 165, 250, 0.4);
+      border: 1px solid rgba(37, 99, 235, 0.35);
       color: var(--accent-2);
-      background: rgba(96, 165, 250, 0.1);
+      background: rgba(37, 99, 235, 0.08);
     }
     .cmd-name {
       font-family: var(--mono);
       font-size: 13px;
       font-weight: 650;
       color: var(--accent);
-      background: rgba(0,0,0,0.25);
+      background: rgba(20, 20, 40, 0.06);
       padding: 2px 8px;
       border-radius: 6px;
     }
-    .cmd-args { font-size: 14px; margin-top: 4px; }
     .tool {
-      border: 1px solid #2e3a55;
-      background: #10131b;
+      border: 1px solid #c5d4ea;
+      background: #f0f4fa;
       border-radius: 12px;
       padding: 10px 12px;
       max-width: 92%;
@@ -299,12 +270,7 @@
       font-size: 13px;
       font-weight: 600;
     }
-    .tool-status {
-      font-size: 11px;
-      color: var(--success);
-      font-weight: 500;
-      text-transform: lowercase;
-    }
+    .tool-status { font-size: 11px; color: var(--success); font-weight: 500; }
     .tool-input, .tool-output {
       margin: 8px 0 0;
       font-family: var(--mono);
@@ -314,27 +280,19 @@
       padding: 8px 10px;
       white-space: pre-wrap;
     }
-    .tool-input { color: var(--text-muted); background: rgba(0,0,0,0.35); }
-    .tool-output { color: var(--text); background: #0a0a0e; }
-    .composer {
-      border-top: 1px solid var(--border-soft);
-      padding: 12px 16px 10px;
-    }
+    .tool-input { color: var(--text-muted); background: #eef0f5; }
+    .tool-output { color: var(--text); background: #fff; }
+    .composer { border-top: 1px solid var(--border-soft); padding: 12px 16px 10px; background: #fafafc; }
     .composer-box {
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: var(--bg-elevated);
+      background: #fff;
       padding: 12px 14px;
       min-height: 64px;
       color: var(--text-muted);
       font-size: 14px;
     }
-    .composer-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 10px;
-    }
+    .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
     .status-bar {
       display: flex;
       justify-content: space-between;
@@ -342,12 +300,11 @@
       padding: 6px 16px 10px;
       font-size: 11px;
       color: var(--text-muted);
-      border-top: 1px solid transparent;
+      background: #fafafc;
     }
-    .status-bar .git { color: var(--text-muted); }
     .panel {
       border-left: 1px solid var(--border);
-      background: #0f0f14;
+      background: #f7f7fb;
       display: flex;
       flex-direction: column;
     }
@@ -357,6 +314,7 @@
       min-height: 52px;
       align-items: flex-end;
       padding: 0 8px;
+      background: #fafafc;
     }
     .panel-tabs span {
       padding: 12px 14px;
@@ -386,11 +344,11 @@
       font-size: 13px;
     }
     .file-row.dir { color: var(--text); font-weight: 650; }
-    .file-row.file { color: var(--text-muted); font-weight: 400; }
+    .file-row.file { color: var(--text-muted); }
     .tasks-dock {
       border-top: 1px solid var(--border-soft);
       padding: 10px 12px;
-      background: #0c0c12;
+      background: #fff;
     }
     .tasks-dock h3 {
       margin: 0 0 8px;
@@ -403,9 +361,8 @@
       font-size: 12px;
       padding: 8px;
       border-radius: 8px;
-      background: rgba(255,255,255,0.03);
+      background: #f3f3f7;
       border: 1px solid var(--border-soft);
-      margin-bottom: 6px;
     }
     .task .t { font-weight: 600; }
     .task .s { color: var(--success); font-size: 11px; margin-top: 2px; }
@@ -447,11 +404,11 @@
           <button class="linkish">+ New</button>
         </div>
         <div class="session">
-          <div class="name">Multi-window + shell packaging</div>
+          <div class="name">Browser login paste + SHELL</div>
           <div class="meta">Active · just now</div>
         </div>
         <div class="session idle">
-          <div class="name">Auto-update install path</div>
+          <div class="name">Ship v1.0.0 stable</div>
           <div class="meta">Yesterday</div>
         </div>
         <div class="session idle">
@@ -472,18 +429,19 @@
       </div>
       <div class="footer">
         <div>Session a3f8c2…</div>
-        <div>App v0.1.34 · grok CLI</div>
+        <div>App v1.0.1 · grok CLI</div>
       </div>
     </aside>
 
     <main class="main">
       <div class="topbar">
-        <div class="topbar-project">
+        <div>
           <div class="topbar-title">grok-desktop</div>
           <div class="cwd">~/Development/grok-desktop</div>
           <div class="chips">
             <span class="chip">Sandbox on</span>
             <span class="chip muted">Project-scoped</span>
+            <span class="chip muted">Git Bash</span>
           </div>
         </div>
         <div class="topbar-actions">
@@ -498,12 +456,12 @@
       </div>
       <div class="timeline">
         <div class="msg user user-command">
-          <div class="meta"><span class="meta-role">You · command</span><span>11:02</span></div>
+          <div class="meta"><span class="meta-role">You · command</span><span>08:22</span></div>
           <div class="cmd-invocation">
             <span class="cmd-badge">skill</span>
             <code class="cmd-name">/review</code>
           </div>
-          <div class="cmd-args">local — multi-window focus + Cmd+` cycle</div>
+          <div>local — paste-code login + Windows SHELL=bash</div>
         </div>
         <div class="tool">
           <div class="tool-header">
@@ -511,27 +469,25 @@
             <span class="tool-status">completed</span>
           </div>
           <div class="tool-input">git status --short</div>
-          <div class="tool-output">M  electron/main.mjs
-M  electron/auto-update.mjs
-M  electron/window-session.mjs</div>
+          <div class="tool-output">M  electron/auth.mjs
+M  electron/grok-home.mjs
+A  test/auth.test.mjs</div>
         </div>
         <div class="msg">
-          <div class="meta"><span class="meta-role">Grok</span><span>11:02</span></div>
-          <div class="body">Looks good. New Window stays focused, titles come from session state, and <strong>Cmd+`</strong> cycles shells on Mac (Cmd+Tab is still app switcher).
-
-Ship as <strong>v0.1.34</strong> — update checks also retry on flaky GitHub network errors.</div>
+          <div class="meta"><span class="meta-role">Grok</span><span>08:22</span></div>
+          <div class="body">Sign-in now shows the URL and a paste field; the finish-code hits the CLI loopback callback. On Windows, <strong>SHELL</strong> is Git Bash so tool commands match the sandbox.</div>
         </div>
       </div>
       <div class="composer">
-        <div class="composer-box">Message Grok…  (type / for skills · File → New Window for another project)</div>
+        <div class="composer-box">Message Grok…  (type / for skills)</div>
         <div class="composer-actions">
           <button class="btn sm">Cancel</button>
           <button class="btn primary sm">Send</button>
         </div>
       </div>
       <div class="status-bar">
-        <span>42.1k in · 8.4k out · $0.12</span>
-        <span class="git">⎇ master</span>
+        <span>38.2k in · 6.1k out · $0.09</span>
+        <span>⎇ master</span>
       </div>
     </main>
 

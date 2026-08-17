@@ -5,149 +5,188 @@
   <title>Grok Desktop — welcome</title>
   <style>
     :root {
-      --bg: #0c0c0f;
-      --border: #2a2a35;
-      --text: #f2f2f5;
-      --text-muted: #9a9aab;
-      --accent: #a78bfa;
+      color-scheme: light;
+      --bg: #f3f3f7;
+      --bg-elevated: #ffffff;
+      --bg-soft: #e8e8ef;
+      --border: #d4d4e0;
+      --text: #14141c;
+      --text-muted: #5a5a6e;
+      --accent: #7c3aed;
       --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: var(--font);
-      background: #050508;
+      background:
+        radial-gradient(ellipse 90% 60% at 50% -20%, rgba(167, 139, 250, 0.28), transparent 55%),
+        linear-gradient(180deg, #e8e4f4 0%, #dce4f0 45%, #cfd8e6 100%);
       color: var(--text);
       display: flex;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: 32px;
+      padding: 28px;
     }
     .window {
-      width: 960px;
-      height: 640px;
+      width: 980px;
+      height: 720px;
       border-radius: 14px;
       overflow: hidden;
-      border: 1px solid #2e2e3a;
-      box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 100px rgba(124, 58, 237, 0.15);
+      border: 1px solid #c8c8d6;
+      box-shadow: 0 30px 80px rgba(40, 40, 70, 0.18), 0 0 0 1px rgba(255,255,255,0.6) inset;
       background:
-        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.22), transparent 55%),
-        linear-gradient(180deg, #12121a 0%, #0c0c0f 100%);
+        radial-gradient(ellipse 80% 45% at 50% -8%, rgba(167, 139, 250, 0.18), transparent 55%),
+        linear-gradient(180deg, #fafafc 0%, #f3f3f7 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 48px;
-      text-align: center;
+      padding: 28px 40px 20px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-align: left;
+      margin-bottom: 8px;
     }
     .mark {
-      border-radius: 16px;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.12);
-      margin-bottom: 20px;
+      border-radius: 14px;
+      box-shadow: 0 0 0 1px rgba(20,20,28,0.08), 0 8px 24px rgba(20,20,40,0.12);
     }
-    h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .tagline {
+    .brand h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .brand p { margin: 3px 0 0; font-size: 12px; color: var(--text-muted); }
+    .lead {
       margin: 10px 0 0;
-      font-size: 15px;
+      font-size: 13px;
       color: var(--text-muted);
-      max-width: 460px;
+      max-width: 560px;
       line-height: 1.5;
+      text-align: center;
     }
-    .chips {
-      display: flex;
-      gap: 8px;
-      margin: 22px 0 28px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .chip {
-      font-size: 12px;
-      padding: 5px 10px;
-      border-radius: 999px;
+    .card {
+      width: 100%;
+      max-width: 560px;
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 14px;
       border: 1px solid var(--border);
-      background: rgba(255,255,255,0.03);
-      color: var(--text-muted);
+      background: var(--bg-elevated);
+      text-align: left;
+      box-shadow: 0 8px 24px rgba(20,20,40,0.06);
     }
-    .chip strong { color: var(--accent); font-weight: 600; }
+    .card h3 { margin: 0 0 6px; font-size: 16px; }
+    .card p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+    .muted { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .btn {
-      border: 1px solid #6d28d9;
-      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
-      color: white;
-      border-radius: 12px;
-      padding: 12px 28px;
-      font-size: 15px;
-      font-weight: 650;
-      box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
     }
-    .secondary {
-      margin-top: 14px;
+    .btn.primary {
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+      border-color: #6d28d9;
+      color: white;
+      font-weight: 650;
+    }
+    .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-top: 12px;
+    }
+    .url {
+      display: block;
+      margin-top: 6px;
+      font-size: 11px;
+      font-family: var(--mono);
+      background: #eef0f5;
+      border-radius: 8px;
+      padding: 8px 10px;
+      word-break: break-all;
+      color: #2a2a38;
+    }
+    .input {
+      width: 100%;
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px 12px;
       font-size: 13px;
       color: var(--text-muted);
     }
-    .secondary a { color: var(--accent); text-decoration: none; }
-    .flow {
-      margin-top: 40px;
-      display: flex;
-      gap: 12px;
-      align-items: center;
+    .checklist {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
       font-size: 12px;
       color: var(--text-muted);
+      display: grid;
+      gap: 4px;
     }
-    .flow .box {
-      border: 1px solid var(--border);
-      background: rgba(0,0,0,0.25);
-      border-radius: 10px;
-      padding: 10px 14px;
-      color: var(--text);
-      font-weight: 500;
-    }
-    .flow .arrow { opacity: 0.4; }
-    .ver {
-      margin-top: 28px;
-      font-size: 11px;
-      color: #666;
-    }
+    .checklist li::before { content: "✓ "; color: #059669; font-weight: 700; }
+    .ver { margin-top: auto; padding-top: 14px; font-size: 11px; color: #7a7a8c; }
   </style>
 </head>
 <body>
   <div class="window">
-    <svg class="mark" width="56" height="56" viewBox="0 0 32 32" fill="none">
-      <rect width="32" height="32" rx="7.5" fill="#0A0A0A"/>
-      <rect x="0.5" y="0.5" width="31" height="31" rx="7.25" stroke="#FFFFFF" stroke-opacity="0.14"/>
-      <circle cx="16" cy="16" r="10" stroke="#FFFFFF" stroke-opacity="0.22"/>
-      <path d="M16 6 A10 10 0 0 1 26 16" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1.35" stroke-linecap="round"/>
-      <path d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z" fill="#FFFFFF"/>
-      <circle cx="16" cy="15" r="1.55" fill="#0A0A0A"/>
-      <circle cx="16" cy="15" r="0.85" fill="#FFFFFF"/>
-      <circle cx="26" cy="16" r="1.15" fill="#FFFFFF"/>
-    </svg>
-    <h1>Grok Desktop</h1>
-    <p class="tagline">
-      GUI for the Grok Build coding agent — same skills, MCP, sessions, and
-      multi-window projects as the CLI, with tool approvals and sandboxing.
+    <div class="brand">
+      <svg class="mark" width="44" height="44" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="7.5" fill="#0A0A0A"/>
+        <rect x="0.5" y="0.5" width="31" height="31" rx="7.25" stroke="#FFFFFF" stroke-opacity="0.14"/>
+        <circle cx="16" cy="16" r="10" stroke="#FFFFFF" stroke-opacity="0.22"/>
+        <path d="M16 6 A10 10 0 0 1 26 16" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1.35" stroke-linecap="round"/>
+        <path d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z" fill="#FFFFFF"/>
+        <circle cx="16" cy="15" r="1.55" fill="#0A0A0A"/>
+        <circle cx="16" cy="15" r="0.85" fill="#FFFFFF"/>
+        <circle cx="26" cy="16" r="1.15" fill="#FFFFFF"/>
+      </svg>
+      <div>
+        <h1>Grok Desktop</h1>
+        <p>xAI · Desktop GUI · Grok Build backbone</p>
+      </div>
+    </div>
+    <p class="lead">
+      Graphical shell over the same agent as the CLI. Sign in once, then open a
+      project — skills, plugins, and MCP from <code>~/.grok</code> load automatically.
     </p>
-    <div class="chips">
-      <span class="chip"><strong>14</strong> skills</span>
-      <span class="chip"><strong>3</strong> MCP servers</span>
-      <span class="chip">CLI detected</span>
-      <span class="chip">Sandbox on</span>
+    <div class="card">
+      <h3>Sign in to Grok</h3>
+      <p>Uses the official Grok browser login (same credentials as the CLI).</p>
+      <p class="muted">Grok 1.0.3 · <code>~/.grok/bin/grok</code></p>
+      <div class="actions">
+        <button class="btn primary">Waiting for sign-in…</button>
+        <button class="btn">Cancel</button>
+        <button class="btn">Device code…</button>
+        <button class="btn">Refresh status</button>
+      </div>
+      <div class="label">Sign-in URL</div>
+      <code class="url">https://auth.x.ai/oauth2/auth?client_id=grok-build&amp;redirect_uri=http://127.0.0.1:8765/callback</code>
+      <div class="actions">
+        <button class="btn">Copy URL</button>
+        <button class="btn">Open in browser</button>
+      </div>
+      <div class="label">Paste finish-sign-in code</div>
+      <p class="muted">After you allow access, the browser may show a code. Paste it here.</p>
+      <div class="input">Paste the code from the browser</div>
+      <div class="actions">
+        <button class="btn primary" style="width:100%;text-align:center">Submit code</button>
+      </div>
     </div>
-    <button class="btn">Sign in with browser</button>
-    <p class="secondary">or use an API key · <a href="#">Install Grok CLI</a></p>
-    <div class="flow">
-      <span class="box">Sign in</span>
-      <span class="arrow">→</span>
-      <span class="box">Open project</span>
-      <span class="arrow">→</span>
-      <span class="box">Chat · tools · approvals</span>
-    </div>
-    <div class="ver">v0.1.34 · Windows + macOS installers</div>
+    <ul class="checklist">
+      <li>Browser sign-in — URL + paste if the window doesn’t open</li>
+      <li>Skills, plugins &amp; MCP from your existing ~/.grok setup</li>
+      <li>Streaming chat, thoughts, plans, tool approvals</li>
+    </ul>
+    <div class="ver">v1.0.1 · Windows + macOS + Linux</div>
   </div>
 </body>
 </html>
