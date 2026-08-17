@@ -11,10 +11,12 @@ export const ApprovalsDock = memo(function ApprovalsDock({
   permissions,
   onPermission,
   onAllowAll,
+  onAllowWritesThisSession,
 }: {
   permissions: PermissionRequest[];
   onPermission: (reqId: string, optionId: string | "cancelled") => void;
   onAllowAll: () => void;
+  onAllowWritesThisSession?: () => void;
 }) {
   if (permissions.length === 0) return null;
 
@@ -31,8 +33,8 @@ export const ApprovalsDock = memo(function ApprovalsDock({
             : `${permissions.length} approvals required`}
         </strong>
         <span className="approvals-dock-hint">
-          Auto mode still escalates some writes/edits — the agent is blocked
-          until you choose.
+          Reads and browsing are auto-allowed. This is an edit, post, or
+          changing command — the agent is blocked until you choose.
         </span>
         {permissions.length > 1 ? (
           <button
@@ -41,6 +43,16 @@ export const ApprovalsDock = memo(function ApprovalsDock({
             onClick={() => onAllowAll()}
           >
             Allow all once
+          </button>
+        ) : null}
+        {onAllowWritesThisSession ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            title="Auto-allow remaining edits, posts, and shells in this chat"
+            onClick={() => onAllowWritesThisSession()}
+          >
+            Allow writes this session
           </button>
         ) : null}
       </div>

@@ -135,11 +135,15 @@ export default function App() {
     planApproval,
     userQuestion,
     clearSessionScoped,
+    revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
     onPermission,
     onAllowAllPermissions,
+    allowWritesThisSession,
+    onAllowWritesThisSession,
+    onRevokeWritesThisSession,
     onPlanApproval,
     onUserQuestion,
   } = useAgentEvents({
@@ -263,6 +267,7 @@ export default function App() {
       promptQueueRef,
       sendNowRef,
       clearSessionScoped,
+      revokeWritesThisSession,
       hydrateBackgroundTasks,
       hydrateSessionUsage,
       syncPermissionsFromMain,
@@ -850,6 +855,10 @@ export default function App() {
             onReasoningEffort={(e) => void applyReasoningEffort(e)}
             onOpenSettings={onOpenSettings}
             onOpenPreview={() => void handleLocalCommand("preview")}
+            allowWritesThisSession={allowWritesThisSession}
+            onRevokeWritesThisSession={() =>
+              void onRevokeWritesThisSession()
+            }
             onStop={() => {
               setItems((prev) => finalizeOpenTools(prev, "cancelled"));
               void window.grokDesktop.cancel();
@@ -910,6 +919,7 @@ export default function App() {
               void onPermission(reqId, optionId)
             }
             onAllowAll={() => void onAllowAllPermissions()}
+            onAllowWritesThisSession={() => void onAllowWritesThisSession()}
           />
 
           <Composer

@@ -91,8 +91,7 @@ export function classifyOptionId(optionId, options) {
 
 /**
  * Pick an allow optionId for a single auto/once-style approval.
- * Prefers allow_once; only falls back to allow_always when preferOnce is false
- * (always-approve mode) or no once option exists and allowAlwaysOk is true.
+ * Prefers allow_once; allow_always only when allowAlwaysOk is true.
  *
  * @param {PermOption[] | null | undefined} options
  * @param {{ allowAlwaysOk?: boolean }} [opts]

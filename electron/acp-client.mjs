@@ -33,21 +33,17 @@ import {
   DEFAULT_REASONING_EFFORT,
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
-import {
-  cancelledPermissionResult,
-  pickAllowOptionId,
-  selectedPermissionResult,
-} from "../shared/permission-options.mjs";
+import { cancelledPermissionResult } from "../shared/permission-options.mjs";
 import {
   classifyInboundMessage,
   createOnceResponder,
-  createPermissionOneshot,
   isFsReadMethod,
   isFsWriteMethod,
   isPermissionMethod,
   isTerminalMethod,
   jsonRpcErrorCode,
 } from "../shared/acp-rpc.mjs";
+import { handleAcpPermissionRequest } from "./acp-protocol.mjs";
 import {
   handleAskUserQuestion,
   handleExitPlanMode,
@@ -128,7 +124,7 @@ export class GrokAcpClient extends EventEmitter {
     /**
      * Open agent→client permission oneshots (ACP request id → gate).
      * Cancel MUST settle each with outcome cancelled (spec).
-     * @type {Map<string, ReturnType<typeof createPermissionOneshot>>}
+     * @type {Map<any, { settle: (outcome: any) => boolean, wait: () => Promise<any> }>}
      */
     this._openPermissionGates = new Map();
     /** @type {ReturnType<typeof createOnceResponder> | null} */
@@ -152,6 +148,8 @@ export class GrokAcpClient extends EventEmitter {
      * @type {string[]}
      */
     this.availableReasoningEfforts = [];
+    /** Session-scoped: auto-allow remaining write/edit/post prompts. */
+    this.allowWritesThisSession = false;
     this.terminals = new AcpTerminalManager({
       defaultCwd: this.cwd,
       allowOutsideProject: this.allowOutsideProject,
@@ -437,6 +435,8 @@ export class GrokAcpClient extends EventEmitter {
       { timeoutMs: LOAD_TIMEOUT_MS },
     );
     this.sessionId = session.sessionId;
+    this.allowWritesThisSession = false;
+    this.emit("writes-session", false);
     this._rememberModels(session);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
@@ -480,6 +480,8 @@ export class GrokAcpClient extends EventEmitter {
 
     this.sessionId =
       result?.sessionId || result?._meta?.sessionId || sessionId;
+    this.allowWritesThisSession = false;
+    this.emit("writes-session", false);
     this._rememberModels(result);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
@@ -632,59 +634,31 @@ export class GrokAcpClient extends EventEmitter {
       }
 
       if (isPermissionMethod(method)) {
-        const toolName = String(
-          params?.toolCall?.title ||
-            params?.toolCall?._meta?.["x.ai/tool"]?.name ||
-            params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
-            "",
-        );
-        const allowId = pickAllowOptionId(params?.options, {
-          allowAlwaysOk: this.permissionMode === "always-approve",
+        await handleAcpPermissionRequest({
+          id,
+          params,
+          permissionMode: this.permissionMode,
+          allowWritesThisSession: this.allowWritesThisSession,
+          listenerCount: this.listenerCount("permission-request"),
+          gates: this._openPermissionGates,
+          respond: (rid, result, error) => this._respond(rid, result, error),
+          onPark: ({ params: p, oneshot, requestId }) => {
+            this.emit("permission-request", {
+              params: p,
+              requestId,
+              respond: (outcome) => {
+                oneshot.settle(outcome || cancelledPermissionResult());
+              },
+            });
+          },
+          onNoListener: (toolName) => {
+            console.error(
+              "[acp] session/request_permission with no listener — cancelling",
+              { id, toolName },
+            );
+            debugLog("acp", "permission-no-listener", { id, toolName });
+          },
         });
-
-        // exit_plan_mode: ACP permission is a formality; real UI is x.ai/exit_plan_mode
-        if (/exit_plan/i.test(toolName)) {
-          this._respond(
-            id,
-            selectedPermissionResult(
-              pickAllowOptionId(params?.options, { allowAlwaysOk: false }),
-            ),
-          );
-          return;
-        }
-
-        if (this.permissionMode === "always-approve") {
-          this._respond(id, selectedPermissionResult(allowId));
-          return;
-        }
-
-        // No main listener → never resolve (agent tools stay pending forever).
-        if (this.listenerCount("permission-request") === 0) {
-          console.error(
-            "[acp] session/request_permission with no listener — cancelling",
-            { id, toolName },
-          );
-          debugLog("acp", "permission-no-listener", { id, toolName });
-          this._respond(id, cancelledPermissionResult());
-          return;
-        }
-
-        // Oneshot wait for UI settle — exactly one respond(id) after settle.
-        const oneshot = createPermissionOneshot();
-        this._openPermissionGates.set(id, oneshot);
-        try {
-          this.emit("permission-request", {
-            params,
-            requestId: id,
-            respond: (outcome) => {
-              oneshot.settle(outcome || cancelledPermissionResult());
-            },
-          });
-          const decision = await oneshot.wait();
-          this._respond(id, decision ?? cancelledPermissionResult());
-        } finally {
-          this._openPermissionGates.delete(id);
-        }
         return;
       }
 
@@ -893,6 +867,16 @@ export class GrokAcpClient extends EventEmitter {
     // Do not clear once-responder here — in-flight fs may still need to answer.
     if (!this.sessionId) return;
     this.notify("session/cancel", { sessionId: this.sessionId });
+  }
+
+  /**
+   * Remember write/edit/post approvals for the rest of this agent session.
+   * @param {boolean} value
+   */
+  setAllowWritesThisSession(value) {
+    this.allowWritesThisSession = Boolean(value);
+    this.emit("writes-session", this.allowWritesThisSession);
+    return this.allowWritesThisSession;
   }
 
   /**

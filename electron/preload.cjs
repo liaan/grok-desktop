@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   cancel: () => ipcRenderer.invoke("agent:cancel"),
   respondPermission: (reqId, outcome) =>
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),
+  setAllowWritesThisSession: (value) =>
+    ipcRenderer.invoke("agent:set-allow-writes-session", value),
   listPendingPermissions: () =>
     ipcRenderer.invoke("agent:list-pending-permissions"),
   respondPlanApproval: (reqId, decision) =>
@@ -97,6 +99,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:user-question-request",
       "agent:user-question-dismiss",
       "agent:permissions-cleared",
+      "agent:writes-session",
       "agent:stderr",
       "agent:error",
       "agent:exit",

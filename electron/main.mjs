@@ -52,6 +52,7 @@ import {
 } from "./sessions.mjs";
 import {
   listPendingPermissionRequests,
+  settlePendingAllowOnce,
   settlePermission,
 } from "./pending-permissions.mjs";
 import {
@@ -870,6 +871,23 @@ function registerIpc() {
     if (ws) clearPendingPermissions(ws);
     ws?.agent?.cancel();
     return true;
+  });
+
+  ipcMain.handle("agent:set-allow-writes-session", async (e, value) => {
+    const ws = sessionFromEvent(e);
+    if (!ws?.agent) return { allowWritesThisSession: false };
+    const run = () => {
+      if (!ws.agent) return { allowWritesThisSession: false };
+      const on = ws.agent.setAllowWritesThisSession(Boolean(value));
+      if (on) settlePendingAllowOnce(ownerIdFor(ws));
+      return { allowWritesThisSession: on };
+    };
+    const p = Promise.resolve(ws.writesChain).then(run, run);
+    ws.writesChain = p.then(
+      () => undefined,
+      () => undefined,
+    );
+    return p;
   });
 
   ipcMain.handle("agent:permission-respond", async (e, { reqId, outcome }) => {

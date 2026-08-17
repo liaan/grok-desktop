@@ -73,6 +73,8 @@ export function useAgentEvents(opts: {
     null,
   );
   const [sessionUsage, setSessionUsage] = useState<SessionUsage>(emptyUsage);
+  const [allowWritesThisSession, setAllowWritesThisSession] =
+    useState(false);
 
   /**
    * Bumped on every live permission push so an in-flight list→replace
@@ -256,6 +258,12 @@ export function useAgentEvents(opts: {
         setPlanApproval(null);
         setUserQuestion(null);
       }),
+      window.grokDesktop.on("agent:writes-session", (payload) => {
+        setAllowWritesThisSession(
+          Boolean((payload as { allowWritesThisSession?: boolean })
+            ?.allowWritesThisSession),
+        );
+      }),
       window.grokDesktop.on("agent:error", (payload) => {
         if (openingRef.current) return;
         setConn("error");
@@ -293,6 +301,27 @@ export function useAgentEvents(opts: {
     setSettingsOpen,
   ]);
 
+  const onAllowWritesThisSession = useCallback(async () => {
+    try {
+      const res = await window.grokDesktop.setAllowWritesThisSession(true);
+      setAllowWritesThisSession(Boolean(res?.allowWritesThisSession));
+      setPermissions([]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Could not allow writes this session: ${msg}`);
+    }
+  }, [setError]);
+
+  const onRevokeWritesThisSession = useCallback(async () => {
+    try {
+      const res = await window.grokDesktop.setAllowWritesThisSession(false);
+      setAllowWritesThisSession(Boolean(res?.allowWritesThisSession));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Could not revoke session writes: ${msg}`);
+    }
+  }, [setError]);
+
   const clearSessionScoped = useCallback(() => {
     setPermissions([]);
     setBackgroundTasks([]);
@@ -300,6 +329,17 @@ export function useAgentEvents(opts: {
     setSessionMode(null);
     setPlanApproval(null);
     setUserQuestion(null);
+  }, []);
+
+  /** Awaited on successful open so a later grant cannot lose a race with revoke. */
+  const revokeWritesThisSession = useCallback(async () => {
+    setAllowWritesThisSession(false);
+    try {
+      const res = await window.grokDesktop.setAllowWritesThisSession(false);
+      setAllowWritesThisSession(Boolean(res?.allowWritesThisSession));
+    } catch {
+      setAllowWritesThisSession(false);
+    }
   }, []);
 
   /** Restore Tasks dock from session disk / open result. */
@@ -556,11 +596,15 @@ export function useAgentEvents(opts: {
     planApproval,
     userQuestion,
     clearSessionScoped,
+    revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
     onPermission,
     onAllowAllPermissions,
+    allowWritesThisSession,
+    onAllowWritesThisSession,
+    onRevokeWritesThisSession,
     onPlanApproval,
     onUserQuestion,
   };

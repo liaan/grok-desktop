@@ -12,17 +12,25 @@ export function ElevatedSafetyChips({
   allowOutsideProject,
   permissionMode,
   privacyMode = false,
+  allowWritesThisSession = false,
+  onRevokeWritesThisSession,
   onOpenSettings,
 }: {
   sandboxTerminal: boolean;
   allowOutsideProject: boolean;
   permissionMode: PermissionMode;
   privacyMode?: boolean;
+  allowWritesThisSession?: boolean;
+  onRevokeWritesThisSession?: () => void;
   onOpenSettings: () => void;
 }) {
   const elevatedPerms = permissionMode !== "ask";
   const show =
-    !sandboxTerminal || allowOutsideProject || elevatedPerms || privacyMode;
+    !sandboxTerminal ||
+    allowOutsideProject ||
+    elevatedPerms ||
+    privacyMode ||
+    allowWritesThisSession;
   if (!show) return null;
 
   return (
@@ -65,6 +73,16 @@ export function ElevatedSafetyChips({
           onClick={onOpenSettings}
         >
           {permissionModeChipLabel(permissionMode)}
+        </button>
+      )}
+      {allowWritesThisSession && (
+        <button
+          type="button"
+          className="elevated-chip warn"
+          title="Edits and posts are auto-allowed for this chat. Click to ask again."
+          onClick={() => onRevokeWritesThisSession?.()}
+        >
+          Writes this session
         </button>
       )}
     </div>

@@ -398,6 +398,181 @@ test("session/update does not produce tool completion responses", () => {
   assert.equal(out.length, 0);
 });
 
+test("auto mode silent-allows read permissions", async () => {
+  /** @type {object[]} */
+  const out = [];
+  let parked = false;
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    permissionMode: "auto",
+    listenerCount: () => 1,
+    onPermissionRequest: () => {
+      parked = true;
+    },
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 7,
+    method: "session/request_permission",
+    params: {
+      toolCall: { title: "Read src/App.tsx", kind: "read" },
+      options: [{ optionId: "allow-once", kind: "allow_once" }],
+    },
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(parked, false);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].result.outcome.optionId, "allow-once");
+});
+
+test("auto mode still parks write permissions", async () => {
+  /** @type {object[]} */
+  const out = [];
+  let parked = false;
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    permissionMode: "auto",
+    listenerCount: () => 1,
+    onPermissionRequest: ({ oneshot }) => {
+      parked = true;
+      oneshot.settle({
+        outcome: { outcome: "selected", optionId: "allow-once" },
+      });
+    },
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 71,
+    method: "session/request_permission",
+    params: {
+      toolCall: { title: "Write file", kind: "edit" },
+      options: [{ optionId: "allow-once", kind: "allow_once" }],
+    },
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(parked, true);
+  assert.equal(out.length, 1);
+});
+
+test("auto mode silent-allows preview_snapshot and preview_open", async () => {
+  for (const title of ["preview_snapshot", "preview_open"]) {
+    /** @type {object[]} */
+    const out = [];
+    let parked = false;
+    const rt = createAcpClientRuntime({
+      write: (m) => out.push(m),
+      permissionMode: "auto",
+      listenerCount: () => 1,
+      onPermissionRequest: () => {
+        parked = true;
+      },
+    });
+    rt.handleMessage({
+      jsonrpc: "2.0",
+      id: 72,
+      method: "session/request_permission",
+      params: {
+        toolCall: { title },
+        options: [{ optionId: "allow-once", kind: "allow_once" }],
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(parked, false, title);
+    assert.equal(out.length, 1, title);
+    assert.equal(out[0].result.outcome.optionId, "allow-once", title);
+  }
+});
+
+test("auto mode parks npm install and preview fill/click", async () => {
+  for (const toolCall of [
+    { title: "Execute `npm install`", kind: "execute" },
+    { title: "preview_fill" },
+    { title: "preview_click" },
+  ]) {
+    /** @type {object[]} */
+    const out = [];
+    let parked = false;
+    const rt = createAcpClientRuntime({
+      write: (m) => out.push(m),
+      permissionMode: "auto",
+      listenerCount: () => 1,
+      onPermissionRequest: ({ oneshot }) => {
+        parked = true;
+        oneshot.settle({
+          outcome: { outcome: "selected", optionId: "allow-once" },
+        });
+      },
+    });
+    rt.handleMessage({
+      jsonrpc: "2.0",
+      id: 73,
+      method: "session/request_permission",
+      params: {
+        toolCall,
+        options: [{ optionId: "allow-once", kind: "allow_once" }],
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(parked, true, toolCall.title);
+    assert.equal(out.length, 1, toolCall.title);
+  }
+});
+
+test("session grant auto-allows writes without allowAlwaysOk", async () => {
+  /** @type {object[]} */
+  const out = [];
+  let parked = false;
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    permissionMode: "auto",
+    allowWritesThisSession: true,
+    listenerCount: () => 1,
+    onPermissionRequest: () => {
+      parked = true;
+    },
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 74,
+    method: "session/request_permission",
+    params: {
+      toolCall: { title: "Write file", kind: "edit" },
+      options: [
+        { optionId: "allow-once", kind: "allow_once" },
+        { optionId: "allow-always", kind: "allow_always" },
+      ],
+    },
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(parked, false);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].result.outcome.optionId, "allow-once");
+});
+
+test("session grant still picks allow-once when catalog is allow-always only", async () => {
+  /** @type {object[]} */
+  const out = [];
+  const rt = createAcpClientRuntime({
+    write: (m) => out.push(m),
+    permissionMode: "ask",
+    allowWritesThisSession: true,
+    listenerCount: () => 1,
+    onPermissionRequest: () => {},
+  });
+  rt.handleMessage({
+    jsonrpc: "2.0",
+    id: 75,
+    method: "session/request_permission",
+    params: {
+      toolCall: { title: "Write file", kind: "edit" },
+      options: [{ optionId: "allow-always", kind: "allow_always" }],
+    },
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(out.length, 1);
+  assert.equal(out[0].result.outcome.optionId, "allow-once");
+});
+
 test("always-approve auto-responds permission without parking", async () => {
   /** @type {object[]} */
   const out = [];

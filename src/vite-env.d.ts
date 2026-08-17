@@ -433,6 +433,9 @@ declare global {
         reqId: string,
         outcome: PermissionOutcome,
       ) => Promise<boolean>;
+      setAllowWritesThisSession: (
+        value: boolean,
+      ) => Promise<{ allowWritesThisSession: boolean }>;
       /** Open Approvals still held in main (after HMR / reload) */
       listPendingPermissions: () => Promise<PermissionRequest[]>;
       respondPlanApproval: (

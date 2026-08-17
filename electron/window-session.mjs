@@ -14,6 +14,7 @@ import {
   listPendingPermissionRequests,
   pendingPermissionCount,
   registerPermissionRequest,
+  settlePendingByPolicy,
 } from "./pending-permissions.mjs";
 import { startBackgroundTaskFileTail } from "./sessions.mjs";
 import {
@@ -370,11 +371,13 @@ export function ensureAgent(ws, cwd, opts = {}) {
         return agent;
       }
       if (resumeSessionId && resumeSessionId === agent.sessionId) {
+        agent.setAllowWritesThisSession(false);
         rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
       }
       if (!resumeSessionId && !forceNew) {
+        agent.setAllowWritesThisSession(false);
         rememberProjectOnWindow(ws, cwd, agent.sessionId);
         restartBackgroundTaskTail(ws, cwd, agent.sessionId);
         return agent;
@@ -427,6 +430,13 @@ export function ensureAgent(ws, cwd, opts = {}) {
           debugLog("acp", "session-update", summarizeSessionUpdate(params));
         }
         send(ws, "agent:session-update", params);
+      }),
+    );
+
+    agent.on(
+      "writes-session",
+      ifCurrent((on) => {
+        send(ws, "agent:writes-session", { allowWritesThisSession: Boolean(on) });
       }),
     );
 
@@ -903,7 +913,25 @@ export async function applyPermissionModeToAllWindows(mode, prev) {
     }
   }
   if (!synced) result = { mode, agentSynced: true, restarted: false };
+  if (mode === "auto" || mode === "always-approve") {
+    flushPendingPermissionsForMode(mode);
+  }
   return result;
+}
+
+/**
+ * Ask → Auto mid-turn: allow already-queued safe prompts (read / browse)
+ * so the user does not have to Stop. Writes stay in Approvals.
+ * @param {string} mode
+ */
+export function flushPendingPermissionsForMode(mode) {
+  for (const ws of windowSessions.values()) {
+    if (ws.disposed || !ws.win || ws.win.isDestroyed()) continue;
+    settlePendingByPolicy(ownerIdFor(ws), {
+      permissionMode: mode,
+      allowWritesThisSession: Boolean(ws.agent?.allowWritesThisSession),
+    });
+  }
 }
 
 /**
@@ -923,6 +951,7 @@ export function createWindowSession(win) {
     pendingPlanApprovals: new Map(),
     pendingUserQuestions: new Map(),
     disposed: false,
+    writesChain: Promise.resolve(),
     generation: 0,
     lastCwd: null,
     lastSessionId: null,

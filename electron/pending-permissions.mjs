@@ -3,6 +3,15 @@
  * Renderer mirrors this store; it does not invent open requests.
  */
 
+import {
+  pickAllowOptionId,
+  selectedPermissionResult,
+} from "../shared/permission-options.mjs";
+import {
+  outcomeForAutoDecision,
+  permissionAutoDecision,
+} from "../shared/permission-risk.mjs";
+
 /**
  * @typedef {{ optionId?: string, name?: string, kind?: string }} PermOption
  * @typedef {{
@@ -16,14 +25,17 @@
 const pending = new Map();
 
 /**
- * Strip huge rawInput so IPC + React stay light. Approvals only need
- * title, kind, toolCallId, options, and a short preview.
+ * Strip huge rawInput so IPC + React stay light. Keep risk fields so
+ * Ask→Auto flush can reclassify without the original agent payload.
  * @param {any} params
  */
 export function slimPermissionParams(params) {
   if (!params || typeof params !== "object") return {};
   const tool = params.toolCall || params.tool_call || {};
   const raw = tool.rawInput ?? tool.raw_input;
+  const xai = tool._meta?.["x.ai/tool"] || tool._meta?.tool || {};
+  const metaName = xai.name || xai.tool || tool._meta?.name;
+  const metaKind = xai.kind || tool._meta?.kind;
   let rawSlim = undefined;
   if (raw != null) {
     try {
@@ -39,15 +51,36 @@ export function slimPermissionParams(params) {
       rawSlim = { _note: "(raw input not serializable)" };
     }
   }
+  const keepCmd =
+    raw && typeof raw === "object"
+      ? {
+          command: raw.command,
+          cmd: raw.cmd,
+          name: raw.name,
+        }
+      : {};
+  if (rawSlim && typeof rawSlim === "object" && rawSlim._truncated) {
+    rawSlim = { ...rawSlim, ...keepCmd };
+  } else if (
+    rawSlim == null &&
+    (keepCmd.command != null || keepCmd.cmd != null || keepCmd.name != null)
+  ) {
+    rawSlim = keepCmd;
+  }
+  const slimMeta =
+    metaName || metaKind
+      ? { "x.ai/tool": { name: metaName, kind: metaKind } }
+      : undefined;
   return {
     sessionId: params.sessionId || params.session_id,
     options: Array.isArray(params.options) ? params.options : [],
     toolCall: {
       toolCallId: tool.toolCallId || tool.tool_call_id || tool.id,
       title: tool.title,
-      kind: tool.kind,
+      kind: tool.kind || metaKind,
       status: tool.status,
       rawInput: rawSlim,
+      _meta: slimMeta,
     },
   };
 }
@@ -166,4 +199,51 @@ export function pendingPermissionCount(ownerId) {
     if (entry.ownerId === scope) n++;
   }
   return n;
+}
+
+/**
+ * Settle open gates matching pred. pickOutcome returns the ACP result, or
+ * null/undefined to skip.
+ *
+ * @param {string | null | undefined} ownerId
+ * @param {(p: { reqId: string, params: any }) => boolean} pred
+ * @param {(p: { reqId: string, params: any }) => any} pickOutcome
+ * @returns {number}
+ */
+export function settlePendingIf(ownerId, pred, pickOutcome) {
+  const open = listPendingPermissionRequests(ownerId);
+  let n = 0;
+  for (const p of open) {
+    if (typeof pred === "function" && !pred(p)) continue;
+    const outcome = pickOutcome(p);
+    if (outcome == null) continue;
+    if (settlePermission(p.reqId, outcome, ownerId)) n++;
+  }
+  return n;
+}
+
+/** Grant remaining prompts with allow-once (never agent allow-always). */
+export function settlePendingAllowOnce(ownerId) {
+  return settlePendingIf(
+    ownerId,
+    () => true,
+    (p) =>
+      selectedPermissionResult(
+        pickAllowOptionId(p.params?.options, { allowAlwaysOk: false }),
+      ),
+  );
+}
+
+/**
+ * Ask→Auto / always-approve flush via shared policy.
+ * @param {string | null | undefined} ownerId
+ * @param {{ permissionMode?: string, allowWritesThisSession?: boolean }} ctx
+ */
+export function settlePendingByPolicy(ownerId, ctx) {
+  return settlePendingIf(
+    ownerId,
+    (p) => permissionAutoDecision(p.params, ctx).allow,
+    (p) =>
+      outcomeForAutoDecision(p.params, permissionAutoDecision(p.params, ctx)),
+  );
 }

@@ -30,6 +30,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   onReasoningEffort,
   onOpenSettings,
   onOpenPreview,
+  allowWritesThisSession,
+  onRevokeWritesThisSession,
   onStop,
 }: {
   project: string;
@@ -53,6 +55,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   onReasoningEffort: (e: ReasoningEffort) => void;
   onOpenSettings: () => void;
   onOpenPreview?: () => void;
+  allowWritesThisSession?: boolean;
+  onRevokeWritesThisSession?: () => void;
   onStop: () => void;
 }) {
   const { redact } = usePrivacy();
@@ -118,7 +122,10 @@ export const ChatTopbar = memo(function ChatTopbar({
             <span className="model-topbar-value">{modelLabel}</span>
           </span>
         ) : null}
-        <label className="perm-mode-topbar" title="Tool permission mode">
+        <label
+          className="perm-mode-topbar"
+          title="Ask = approve every tool. Auto = reads and browsing go through; edits/posts still ask (or Allow writes this session). Always = skip approvals. Switching Auto mid-turn allows any safe prompts already waiting — no Stop needed."
+        >
           <span className="perm-mode-topbar-label">Perms</span>
           <select
             className="perm-mode-select"
@@ -203,6 +210,8 @@ export const ChatTopbar = memo(function ChatTopbar({
         allowOutsideProject={allowOutsideProject}
         permissionMode={permissionMode}
         privacyMode={privacyMode}
+        allowWritesThisSession={allowWritesThisSession}
+        onRevokeWritesThisSession={onRevokeWritesThisSession}
         onOpenSettings={onOpenSettings}
       />
     </div>

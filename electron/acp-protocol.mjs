@@ -11,16 +11,78 @@ import {
   isPermissionMethod,
   isTerminalMethod,
 } from "../shared/acp-rpc.mjs";
+import { cancelledPermissionResult } from "../shared/permission-options.mjs";
 import {
-  cancelledPermissionResult,
-  pickAllowOptionId,
-  selectedPermissionResult,
-} from "../shared/permission-options.mjs";
+  outcomeForAutoDecision,
+  permissionAutoDecision,
+} from "../shared/permission-risk.mjs";
+
+/**
+ * Auto-allow or park session/request_permission. Shared by the live client
+ * and the test runtime so Auto / session-grant cannot drift.
+ *
+ * @param {{
+ *   id: any,
+ *   params: any,
+ *   permissionMode?: string,
+ *   allowWritesThisSession?: boolean | (() => boolean),
+ *   listenerCount: number,
+ *   gates: Map<any, ReturnType<typeof createPermissionOneshot>>,
+ *   respond: (id: any, result: any, error?: any) => void,
+ *   onPark?: (args: {
+ *     params: any,
+ *     oneshot: ReturnType<typeof createPermissionOneshot>,
+ *     requestId: any,
+ *   }) => void,
+ *   onNoListener?: (toolName: string) => void,
+ * }} ctx
+ */
+export async function handleAcpPermissionRequest(ctx) {
+  const writesGranted =
+    typeof ctx.allowWritesThisSession === "function"
+      ? Boolean(ctx.allowWritesThisSession())
+      : Boolean(ctx.allowWritesThisSession);
+  const auto = permissionAutoDecision(ctx.params, {
+    permissionMode: ctx.permissionMode,
+    allowWritesThisSession: writesGranted,
+  });
+  if (auto.allow) {
+    ctx.respond(ctx.id, outcomeForAutoDecision(ctx.params, auto));
+    return;
+  }
+
+  const toolName = String(
+    ctx.params?.toolCall?.title ||
+      ctx.params?.toolCall?._meta?.["x.ai/tool"]?.name ||
+      ctx.params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
+      "",
+  );
+  if (!ctx.listenerCount) {
+    ctx.onNoListener?.(toolName);
+    ctx.respond(ctx.id, cancelledPermissionResult());
+    return;
+  }
+
+  const oneshot = createPermissionOneshot();
+  ctx.gates.set(ctx.id, oneshot);
+  try {
+    ctx.onPark?.({
+      params: ctx.params,
+      oneshot,
+      requestId: ctx.id,
+    });
+    const decision = await oneshot.wait();
+    ctx.respond(ctx.id, decision ?? cancelledPermissionResult());
+  } finally {
+    ctx.gates.delete(ctx.id);
+  }
+}
 
 /**
  * @param {{
  *   write: (msg: object) => void,
  *   permissionMode?: string,
+ *   allowWritesThisSession?: boolean | (() => boolean),
  *   listenerCount?: (event: string) => number,
  *   onPermissionRequest?: (args: {
  *     params: any,
@@ -56,49 +118,19 @@ export function createAcpClientRuntime(opts) {
     // beginRequest is done by dispatchInboundMessage before spawn.
 
     if (isPermissionMethod(method)) {
-      const toolName = String(
-        params?.toolCall?.title ||
-          params?.toolCall?._meta?.["x.ai/tool"]?.name ||
-          params?.toolCall?._meta?.["x.ai/tool"]?.kind ||
-          "",
-      );
-      const allowId = pickAllowOptionId(params?.options, {
-        allowAlwaysOk: opts.permissionMode === "always-approve",
+      await handleAcpPermissionRequest({
+        id,
+        params,
+        permissionMode: opts.permissionMode,
+        allowWritesThisSession: opts.allowWritesThisSession,
+        listenerCount:
+          typeof opts.listenerCount === "function"
+            ? opts.listenerCount("permission-request")
+            : 1,
+        gates: openPermissions,
+        respond: (rid, result, error) => once.respond(rid, result, error),
+        onPark: opts.onPermissionRequest,
       });
-
-      if (/exit_plan/i.test(toolName)) {
-        once.respond(
-          id,
-          selectedPermissionResult(
-            pickAllowOptionId(params?.options, { allowAlwaysOk: false }),
-          ),
-        );
-        return;
-      }
-
-      if (opts.permissionMode === "always-approve") {
-        once.respond(id, selectedPermissionResult(allowId));
-        return;
-      }
-
-      const listeners =
-        typeof opts.listenerCount === "function"
-          ? opts.listenerCount("permission-request")
-          : 1;
-      if (listeners === 0) {
-        once.respond(id, cancelledPermissionResult());
-        return;
-      }
-
-      const oneshot = createPermissionOneshot();
-      openPermissions.set(id, oneshot);
-      try {
-        opts.onPermissionRequest?.({ params, oneshot, requestId: id });
-        const decision = await oneshot.wait();
-        once.respond(id, decision ?? cancelledPermissionResult());
-      } finally {
-        openPermissions.delete(id);
-      }
       return;
     }
 

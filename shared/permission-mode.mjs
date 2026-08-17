@@ -129,7 +129,7 @@ export function permissionModeDescription(mode) {
     return "Skip tool approval prompts. Deny rules and plan-mode edit gates still apply.";
   }
   if (mode === "auto") {
-    return "Agent auto-allows routine safe work; escalations still appear in Approvals.";
+    return "Reads and browsing are allowed automatically. Edits, posts, and changing shells still need approval — use Allow writes this session to skip the rest of this chat.";
   }
   return "Every tool that needs permission shows in the Approvals panel (default).";
 }

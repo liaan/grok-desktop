@@ -29,6 +29,7 @@ export function useProjectSession(opts: {
   promptQueueRef: MutableRefObject<unknown>;
   sendNowRef: MutableRefObject<unknown>;
   clearSessionScoped: () => void;
+  revokeWritesThisSession: () => void | Promise<void>;
   hydrateBackgroundTasks: (tasks: import("../lib/background-tasks").BackgroundTask[]) => void;
   hydrateSessionUsage: (usage: import("../lib/usage").SessionUsage | null | undefined) => void;
   /** Mirror open permission gates from main (source of truth). */
@@ -64,6 +65,7 @@ export function useProjectSession(opts: {
     promptQueueRef,
     sendNowRef,
     clearSessionScoped,
+    revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
@@ -108,6 +110,7 @@ export function useProjectSession(opts: {
       setModelName(res.modelName || null);
       setAvailableModels(res.availableModels || []);
       clearSessionScoped();
+      await revokeWritesThisSession();
       // While openingRef is true, live usage is ignored — disk replace is safe.
       hydrateBackgroundTasks(res.backgroundTasks || []);
       hydrateSessionUsage(res.usage);
@@ -171,6 +174,7 @@ export function useProjectSession(opts: {
     },
     [
       clearSessionScoped,
+      revokeWritesThisSession,
       hydrateBackgroundTasks,
       hydrateSessionUsage,
       syncPermissionsFromMain,
