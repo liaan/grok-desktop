@@ -481,14 +481,45 @@ export default function App() {
   );
 
   const handleLocalCommand = useCallback(
-    (name: string) => {
-      runDesktopCommand(name, {
-        newChat: () => void openSession({ mode: "new" }),
-        toggleAlwaysApprove: () =>
-          applyPermissionMode(nextAlwaysApproveMode(permissionMode)),
-      });
+    (name: string, args = "") => {
+      runDesktopCommand(
+        name,
+        {
+          newChat: () => void openSession({ mode: "new" }),
+          toggleAlwaysApprove: () =>
+            applyPermissionMode(nextAlwaysApproveMode(permissionMode)),
+          preview: async (previewArgs) => {
+            const a = String(previewArgs || "").trim();
+            try {
+              if (a.toLowerCase() === "close") {
+                await window.grokDesktop.closePreview();
+                appendSystem("Preview window closed.");
+                return;
+              }
+              if (a.toLowerCase() === "snapshot") {
+                const snap = await window.grokDesktop.previewSnapshot();
+                const tokens = Math.ceil((snap.chars || snap.text.length) / 4);
+                appendSystem(
+                  `Preview snapshot (~${tokens} tokens):\n${snap.text}`,
+                );
+                return;
+              }
+              await window.grokDesktop.openPreview(a);
+              appendSystem(
+                a
+                  ? `Preview opened · ${a} (drag that window to another screen).`
+                  : "Preview window opened — drag it to another screen.",
+              );
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setError(msg || "Preview failed");
+            }
+          },
+        },
+        args,
+      );
     },
-    [openSession, applyPermissionMode, permissionMode],
+    [openSession, applyPermissionMode, permissionMode, appendSystem, setError],
   );
 
   const setAppTheme = async (next: "dark" | "light") => {
@@ -818,6 +849,7 @@ export default function App() {
             onPermissionMode={(m) => void applyPermissionMode(m)}
             onReasoningEffort={(e) => void applyReasoningEffort(e)}
             onOpenSettings={onOpenSettings}
+            onOpenPreview={() => void handleLocalCommand("preview")}
             onStop={() => {
               setItems((prev) => finalizeOpenTools(prev, "cancelled"));
               void window.grokDesktop.cancel();

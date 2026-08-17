@@ -57,6 +57,11 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setExternalEditor: (id) => ipcRenderer.invoke("app:set-external-editor", id),
   showItem: (path) => ipcRenderer.invoke("shell:show-item", path),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
+  openPreview: (url) =>
+    ipcRenderer.invoke("preview:open", url ? { url } : {}),
+  closePreview: () => ipcRenderer.invoke("preview:close"),
+  previewState: () => ipcRenderer.invoke("preview:state"),
+  previewSnapshot: () => ipcRenderer.invoke("preview:snapshot"),
 
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   login: (opts) => ipcRenderer.invoke("auth:login", opts || {}),
@@ -98,6 +103,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:ready",
       "app:open-settings",
       "auth:login-progress",
+      "preview:changed",
     ];
     if (!valid.includes(channel)) return () => {};
     const listener = (_event, payload) => handler(payload);

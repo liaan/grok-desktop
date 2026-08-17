@@ -3,8 +3,8 @@
  * Backbone: Grok Build agent runtime via ACP (same path as other embeds).
  *
  * Skills, MCP servers, plugins, and auth all come from the installed Grok CLI
- * (`~/.grok`). We pass `mcpServers: []` on session/new the same way VS Code /
- * official embeds do — the agent merges config.toml + plugins itself.
+ * (`~/.grok`). session/new `mcpServers` is *merged* with user config — we
+ * only add the Desktop Preview MCP so the agent can drive the Preview window.
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -21,6 +21,8 @@ import { AcpTerminalManager } from "./acp-terminals.mjs";
 import { expandUserPath, resolveProjectPath } from "./path-safety.mjs";
 import { readFileForAcp } from "./fs-content.mjs";
 import { sessionsRootForCwd } from "./sessions.mjs";
+import { desktopPreviewMcpServers } from "./preview-mcp.mjs";
+import { PREVIEW_SESSION_RULE } from "./preview-mcp-protocol.mjs";
 import {
 
   normalizePermissionMode,
@@ -333,7 +335,20 @@ export class GrokAcpClient extends EventEmitter {
    * same permission mode the Desktop UI shows (grok-build yoloMode + autoMode).
    */
   _sessionPermissionMeta() {
-    return sessionPermissionMeta(this.permissionMode || "ask");
+    return {
+      ...sessionPermissionMeta(this.permissionMode || "ask"),
+      rules: PREVIEW_SESSION_RULE,
+    };
+  }
+
+  _previewMcpPayload() {
+    const servers = desktopPreviewMcpServers();
+    debugLog("preview", "session-mcp", {
+      count: servers.length,
+      names: servers.map((s) => s.name),
+      types: servers.map((s) => s.type || "stdio"),
+    });
+    return servers;
   }
 
   /**
@@ -416,7 +431,7 @@ export class GrokAcpClient extends EventEmitter {
       "session/new",
       {
         cwd: this.cwd,
-        mcpServers: [],
+        mcpServers: this._previewMcpPayload(),
         _meta: this._sessionPermissionMeta(),
       },
       { timeoutMs: LOAD_TIMEOUT_MS },
@@ -457,7 +472,7 @@ export class GrokAcpClient extends EventEmitter {
       {
         sessionId,
         cwd: this.cwd,
-        mcpServers: [],
+        mcpServers: this._previewMcpPayload(),
         _meta: this._sessionPermissionMeta(),
       },
       { timeoutMs: LOAD_TIMEOUT_MS },

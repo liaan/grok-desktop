@@ -33,6 +33,13 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     local: true,
   },
   {
+    name: "preview",
+    description: "Open the detachable Preview window (optional URL)",
+    source: "desktop",
+    inputHint: "url | close",
+    local: true,
+  },
+  {
     name: "effort",
     description: "Set reasoning effort (or use topbar Effort: low/medium/high/xhigh)",
     source: "desktop",
