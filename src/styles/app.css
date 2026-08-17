@@ -3656,6 +3656,42 @@ button {
   color: var(--text-muted);
 }
 
+.auth-login-assist {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.auth-url-box,
+.auth-user-code,
+.auth-code-box {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-url {
+  display: block;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.auth-user-code code {
+  display: inline-block;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
 .auth-divider {
   text-align: center;
   color: var(--text-muted);

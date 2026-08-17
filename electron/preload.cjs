@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   login: (opts) => ipcRenderer.invoke("auth:login", opts || {}),
   cancelLogin: () => ipcRenderer.invoke("auth:cancel-login"),
+  submitLoginInput: (text) =>
+    ipcRenderer.invoke("auth:submit-login-input", text),
   logout: () => ipcRenderer.invoke("auth:logout"),
   setApiKey: (key) => ipcRenderer.invoke("auth:set-api-key", key),
   openInstallDocs: () => ipcRenderer.invoke("auth:open-install-docs"),
@@ -95,6 +97,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:exit",
       "agent:ready",
       "app:open-settings",
+      "auth:login-progress",
     ];
     if (!valid.includes(channel)) return () => {};
     const listener = (_event, payload) => handler(payload);

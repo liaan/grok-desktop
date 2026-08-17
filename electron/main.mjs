@@ -15,9 +15,11 @@ import { attachContextMenu } from "./context-menu.mjs";
 import {
   cancelLogin,
   getAuthStatus,
+  isRemoteLoginUrl,
   setSessionApiKey,
   startLogin,
   startLogout,
+  submitLoginInput,
 } from "./auth.mjs";
 import { mergeRestartResult } from "./agent-restart.mjs";
 import { inspectBackbone } from "./backbone.mjs";
@@ -577,10 +579,34 @@ function registerIpc() {
 
   ipcMain.handle("auth:status", async () => getAuthStatus());
 
-  ipcMain.handle("auth:login", async (_e, opts = {}) => {
+  ipcMain.handle("auth:login", async (e, opts = {}) => {
+    const ws = sessionFromEvent(e);
+    let pendingUrl = null;
+    let openTimer = null;
+    const opened = new Set();
+    const scheduleOpen = (url) => {
+      if (!isRemoteLoginUrl(url) || opened.has(url)) return;
+      pendingUrl = url;
+      if (openTimer) clearTimeout(openTimer);
+      openTimer = setTimeout(() => {
+        openTimer = null;
+        const toOpen = pendingUrl;
+        if (!toOpen || opened.has(toOpen) || !isRemoteLoginUrl(toOpen)) return;
+        opened.add(toOpen);
+        void shell.openExternal(toOpen).catch((err) => {
+          debugLog("auth", "open-login-url-failed", {
+            error: err?.message || String(err),
+          });
+        });
+      }, 800);
+    };
     try {
       const result = await startLogin({
         deviceAuth: Boolean(opts?.deviceAuth),
+        onProgress: (progress) => {
+          send(ws, "auth:login-progress", progress);
+          if (typeof progress?.url === "string") scheduleOpen(progress.url);
+        },
       });
       return result;
     } catch (err) {
@@ -589,12 +615,18 @@ function registerIpc() {
         status: getAuthStatus(),
         error: err?.message || String(err),
       };
+    } finally {
+      if (openTimer) clearTimeout(openTimer);
     }
   });
 
   ipcMain.handle("auth:cancel-login", async () => {
     cancelLogin();
     return getAuthStatus();
+  });
+
+  ipcMain.handle("auth:submit-login-input", async (_e, text) => {
+    return submitLoginInput(text);
   });
 
   ipcMain.handle("auth:logout", async (e) => {

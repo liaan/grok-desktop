@@ -276,7 +276,7 @@ Policy highlights:
 - **Does not sandbox** the `grok agent stdio` process, MCP servers under `~/.grok`, or Electron itself.
 - UI: Settings toggle (confirm when turning **off**); topbar chips for **Host shell** / **Outside project** / **Auto-approve**.
 - **Docker image must include git** — default `buildpack-deps:noble-scm` (not plain `ubuntu:24.04`). If the chosen image has no `git`, Desktop builds a local `grok-desktop-sandbox:2` once. Warm runs **async at app start / sandbox enable** — never pull/build on the `terminal/create` hot path (fail fast with “preparing… retry” until ready). Only **git-verified** images are cached.
-- **Windows host shells** prefer **Git for Windows bash** over `System32\bash.exe` (WSL launcher); PATH enrichment shares the same install roots. Tool env sets `GIT_EDITOR=true` / `GIT_TERMINAL_PROMPT=0` / `GIT_SSH_COMMAND=ssh -o BatchMode=yes…` so commits never hang on an editor or credential TTY (ACP stdin is not interactive). Docker runs **without** `-i` so tools do not stick on “pending” after exit.
+- **Windows host shells** prefer **Git for Windows bash** over `System32\bash.exe` (WSL launcher); PATH enrichment shares the same install roots. `buildGrokEnv` sets `SHELL` to that bash so grok `user_info` is not PowerShell (GUI launches have no `SHELL`, and the agent then emits PowerShell that the bash jail rejects). Tool env sets `GIT_EDITOR=true` / `GIT_TERMINAL_PROMPT=0` / `GIT_SSH_COMMAND=ssh -o BatchMode=yes…` so commits never hang on an editor or credential TTY (ACP stdin is not interactive). Docker runs **without** `-i` so tools do not stick on “pending” after exit.
 
 Env overrides: `GROK_DESKTOP_SANDBOX_IMAGE` (Docker image, default `buildpack-deps:noble-scm`), `GROK_DESKTOP_WSL_DISTRO` (preferred WSL distro).
 

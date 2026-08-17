@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AuthStatus, BackboneSummary } from "../vite-env";
+import type { AuthStatus, BackboneSummary, LoginProgress } from "../vite-env";
 
 const BINARY_POLL_MS = 2000;
 const BINARY_POLL_FOR_MS = 60_000;
@@ -27,10 +27,13 @@ type Props = {
   backbone: BackboneSummary | null;
   busy: boolean;
   message: string | null;
+  loginProgress?: LoginProgress | null;
+  loginDeviceAuth?: boolean;
   platform?: string;
   onRefresh: () => void;
   onLogin: (deviceAuth?: boolean) => void;
   onCancelLogin: () => void;
+  onSubmitLoginCode?: (code: string) => void;
   onLogout: () => void;
   onSetApiKey: (key: string) => void;
   onOpenInstallDocs: () => void;
@@ -42,10 +45,13 @@ export function AuthGate({
   backbone,
   busy,
   message,
+  loginProgress,
+  loginDeviceAuth,
   platform,
   onRefresh,
   onLogin,
   onCancelLogin,
+  onSubmitLoginCode,
   onLogout,
   onSetApiKey,
   onOpenInstallDocs,
@@ -53,6 +59,8 @@ export function AuthGate({
 }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [loginCode, setLoginCode] = useState("");
+  const [copied, setCopied] = useState(false);
   const [polling, setPolling] = useState(false);
   const [engineVersion, setEngineVersion] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -314,7 +322,7 @@ export function AuthGate({
           disabled={busy || auth.loginInProgress}
         >
           {auth.loginInProgress || busy
-            ? "Waiting for browser…"
+            ? "Waiting for sign-in…"
             : "Sign in with browser"}
         </button>
         {(busy || auth.loginInProgress) && (
@@ -322,13 +330,51 @@ export function AuthGate({
             Cancel
           </button>
         )}
-        <button className="btn" onClick={() => onLogin(true)} disabled={busy}>
+        <button
+          className="btn"
+          onClick={() => onLogin(true)}
+          disabled={busy || auth.loginInProgress}
+        >
           Device code…
         </button>
         <button className="btn" onClick={onRefresh} disabled={busy}>
           Refresh status
         </button>
       </div>
+
+      {(busy || auth.loginInProgress) && (
+        <LoginAssist
+          url={loginProgress?.url || null}
+          userCode={loginProgress?.userCode || null}
+          showPaste={
+            loginDeviceAuth !== true && loginProgress?.deviceAuth !== true
+          }
+          copied={copied}
+          loginCode={loginCode}
+          onLoginCode={setLoginCode}
+          onCopy={async () => {
+            const url = loginProgress?.url;
+            if (!url) return;
+            try {
+              await navigator.clipboard.writeText(url);
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            } catch {
+              setCopied(false);
+            }
+          }}
+          onOpen={() => {
+            const url = loginProgress?.url;
+            if (url) void window.grokDesktop.openExternal(url);
+          }}
+          onSubmit={() => {
+            const code = loginCode.trim();
+            if (!code || !onSubmitLoginCode) return;
+            onSubmitLoginCode(code);
+            setLoginCode("");
+          }}
+        />
+      )}
 
       {message ? <pre className="auth-output">{message}</pre> : null}
 
@@ -360,6 +406,98 @@ export function AuthGate({
             Continue with API key
           </button>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LoginAssist({
+  url,
+  userCode,
+  showPaste,
+  copied,
+  loginCode,
+  onLoginCode,
+  onCopy,
+  onOpen,
+  onSubmit,
+}: {
+  url: string | null;
+  userCode: string | null;
+  showPaste: boolean;
+  copied: boolean;
+  loginCode: string;
+  onLoginCode: (value: string) => void;
+  onCopy: () => void;
+  onOpen: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="auth-login-assist">
+      {url ? (
+        <div className="auth-url-box">
+          <div className="auth-label">Sign-in URL</div>
+          <p className="auth-muted">
+            If the browser did not open, copy this URL or open it yourself.
+          </p>
+          <code className="auth-url">{url}</code>
+          <div className="auth-actions">
+            <button className="btn" type="button" onClick={onCopy}>
+              {copied ? "Copied" : "Copy URL"}
+            </button>
+            <button className="btn" type="button" onClick={onOpen}>
+              Open in browser
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="auth-muted">
+          Waiting for Grok to print a sign-in URL. If nothing appears, use
+          Device code… or the CLI: <code>grok login --oauth</code>
+        </p>
+      )}
+
+      {userCode ? (
+        <div className="auth-user-code">
+          <div className="auth-label">Device code</div>
+          <code>{userCode}</code>
+          <p className="auth-muted">
+            Enter this code on the sign-in page if asked.
+          </p>
+        </div>
+      ) : null}
+
+      {showPaste ? (
+      <div className="auth-code-box">
+        <div className="auth-label">Paste finish-sign-in code</div>
+        <p className="auth-muted">
+          After you allow access, the browser may show a code (or a
+          localhost URL) to paste back into Grok Build. Paste it here.
+        </p>
+        <input
+          type="text"
+          className="auth-input"
+          placeholder="Paste the code from the browser"
+          value={loginCode}
+          onChange={(e) => onLoginCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onSubmit();
+            }
+          }}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          className="btn primary block"
+          type="button"
+          disabled={!loginCode.trim()}
+          onClick={onSubmit}
+        >
+          Submit code
+        </button>
+      </div>
       ) : null}
     </div>
   );

@@ -189,6 +189,13 @@ export function buildGrokEnv(extra = {}) {
     ...extra,
   };
 
+  // Windows tool terminals are Git Bash (win-host / WSL / Docker), never
+  // PowerShell. grok's user_info "Shell:" is taken from $SHELL; a GUI launch
+  // has none and the agent then writes Select-Object / && that the jail rejects.
+  if (process.platform === "win32" && extra.SHELL === undefined) {
+    env.SHELL = windowsGitBashPath() || "/bin/bash";
+  }
+
   // Drop empty overrides
   for (const k of Object.keys(extra)) {
     if (extra[k] === undefined || extra[k] === "") delete env[k];

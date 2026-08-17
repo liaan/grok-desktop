@@ -1,4 +1,4 @@
-import type { AuthStatus, BackboneSummary } from "../vite-env";
+import type { AuthStatus, BackboneSummary, LoginProgress } from "../vite-env";
 import { basen } from "../lib/path-utils";
 import { BrandMark, Spinner } from "./BrandMark";
 import { AuthGate } from "./AuthGate";
@@ -15,6 +15,8 @@ export function WelcomeView({
   backbone,
   authBusy,
   authMessage,
+  loginProgress,
+  loginDeviceAuth,
   error,
   recentProjects,
   appVersion,
@@ -22,6 +24,7 @@ export function WelcomeView({
   onRefreshAuth,
   onLogin,
   onCancelLogin,
+  onSubmitLoginCode,
   onLogout,
   onSetApiKey,
   onPickProject,
@@ -38,13 +41,16 @@ export function WelcomeView({
   backbone: BackboneSummary | null;
   authBusy: boolean;
   authMessage: string | null;
+  loginProgress?: LoginProgress | null;
+  loginDeviceAuth?: boolean;
   error: string | null;
   recentProjects: string[];
   appVersion?: string;
   grokBinary?: string | null;
   onRefreshAuth: () => void;
-  onLogin: (deviceAuth: boolean) => void;
+  onLogin: (deviceAuth?: boolean) => void;
   onCancelLogin: () => void;
+  onSubmitLoginCode?: (code: string) => void;
   onLogout: () => void;
   onSetApiKey: (key: string) => void;
   onPickProject: () => void;
@@ -80,9 +86,12 @@ export function WelcomeView({
             backbone={backbone}
             busy={authBusy || isOpening}
             message={authMessage}
+            loginProgress={loginProgress}
+            loginDeviceAuth={loginDeviceAuth}
             onRefresh={onRefreshAuth}
             onLogin={onLogin}
             onCancelLogin={onCancelLogin}
+            onSubmitLoginCode={onSubmitLoginCode}
             onLogout={onLogout}
             onSetApiKey={onSetApiKey}
             onOpenInstallDocs={() => void window.grokDesktop.openInstallDocs()}

@@ -45,6 +45,7 @@ import type {
   AuthStatus,
   AvailableModel,
   BackboneSummary,
+  LoginProgress,
   SessionSummary,
   TimelineItem,
 } from "./vite-env";
@@ -55,6 +56,9 @@ export default function App() {
   const [backbone, setBackbone] = useState<BackboneSummary | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [loginProgress, setLoginProgress] = useState<LoginProgress | null>(
+    null,
+  );
   const [project, setProject] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -96,6 +100,8 @@ export default function App() {
   sessionIdRef.current = sessionId;
   const modelApplyLock = useRef(false);
   const modelApplyGen = useRef(0);
+  const loginGen = useRef(0);
+  const [loginDeviceAuth, setLoginDeviceAuth] = useState(false);
 
   const appendSystem = useCallback((text: string) => {
     setItems((prev) => [
@@ -294,8 +300,19 @@ export default function App() {
 
   const isOpening = conn === "connecting";
 
+  useEffect(() => {
+    return window.grokDesktop.on("auth:login-progress", (payload) => {
+      const next = (payload || {}) as LoginProgress;
+      setLoginProgress(next);
+      if (next.output) setAuthMessage(next.output);
+    });
+  }, []);
+
   const handleLogin = async (deviceAuth = false) => {
+    const gen = ++loginGen.current;
     setAuthBusy(true);
+    setLoginDeviceAuth(deviceAuth);
+    setLoginProgress(null);
     setAuthMessage(
       deviceAuth
         ? "Starting device-code login…"
@@ -304,9 +321,11 @@ export default function App() {
     setError(null);
     try {
       const result = await window.grokDesktop.login({ deviceAuth });
+      if (gen !== loginGen.current) return;
       if (result.status) setAuth(result.status);
       if (result.output) setAuthMessage(result.output);
       if (result.ok || result.status?.authenticated) {
+        setLoginProgress(null);
         setAuthMessage(result.output || "Signed in successfully.");
         await refreshBackbone();
         await bootstrap();
@@ -318,6 +337,7 @@ export default function App() {
         }
       }
     } catch (e: unknown) {
+      if (gen !== loginGen.current) return;
       const msg = e instanceof Error ? e.message : String(e);
       setAuthMessage(msg);
       setError(msg);
@@ -325,16 +345,30 @@ export default function App() {
         await refreshAuth();
       }
     } finally {
-      setAuthBusy(false);
-      void refreshAuth();
+      if (gen === loginGen.current) {
+        setAuthBusy(false);
+        void refreshAuth();
+      }
     }
   };
 
   const handleCancelLogin = async () => {
+    loginGen.current += 1;
     await window.grokDesktop.cancelLogin();
     setAuthBusy(false);
+    setLoginDeviceAuth(false);
+    setLoginProgress(null);
     setAuthMessage("Login cancelled.");
     void refreshAuth();
+  };
+
+  const handleSubmitLoginCode = async (code: string) => {
+    const result = await window.grokDesktop.submitLoginInput(code);
+    if (result.ok) {
+      setAuthMessage("Code sent. Waiting for Grok to finish sign-in…");
+      return;
+    }
+    setAuthMessage(result.error || "Could not send the code.");
   };
 
   // Model is session-scoped; drop the label when the agent/session goes away.
@@ -684,6 +718,8 @@ export default function App() {
           backbone={backbone}
           authBusy={authBusy}
           authMessage={authMessage}
+          loginProgress={loginProgress}
+          loginDeviceAuth={loginDeviceAuth}
           error={error ? redact(error) : null}
           recentProjects={info?.recentProjects || []}
           appVersion={info?.version}
@@ -695,6 +731,7 @@ export default function App() {
           }}
           onLogin={(device) => void handleLogin(device)}
           onCancelLogin={() => void handleCancelLogin()}
+          onSubmitLoginCode={(code) => void handleSubmitLoginCode(code)}
           onLogout={() => void handleLogout()}
           onSetApiKey={(key) => void handleSetApiKey(key)}
           onPickProject={() => void pickProject()}

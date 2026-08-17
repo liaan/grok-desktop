@@ -99,6 +99,15 @@ export type PermissionRequest = {
   };
 };
 
+export type LoginProgress = {
+  output?: string;
+  url?: string | null;
+  urls?: string[];
+  userCode?: string | null;
+  needsPaste?: boolean;
+  deviceAuth?: boolean;
+};
+
 export type AuthStatus = {
   binary: string;
   binaryFound: boolean;
@@ -518,6 +527,9 @@ declare global {
         output?: string;
       }>;
       cancelLogin: () => Promise<AuthStatus>;
+      submitLoginInput: (
+        text: string,
+      ) => Promise<{ ok: boolean; error?: string }>;
       logout: () => Promise<{
         ok: boolean;
         status?: AuthStatus;
