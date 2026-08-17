@@ -16,6 +16,11 @@
   --success: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
+  /* Grok Build /mcps status (tokyonight / groknight) */
+  --mcp-ready: #9ece6a;
+  --mcp-auth: #e0af68;
+  --mcp-down: #f7768e;
+  --mcp-init: #7dcfff;
   --danger-soft: #fecaca;
   --user-bubble: #1e293b;
   --user-border: #334155;
@@ -62,6 +67,11 @@
   --success: #059669;
   --warn: #d97706;
   --danger: #dc2626;
+  /* Grok Build /mcps status (grokday) */
+  --mcp-ready: #378e23;
+  --mcp-auth: #a27612;
+  --mcp-down: #cd3048;
+  --mcp-init: #0082aa;
   --danger-soft: #b91c1c;
   --user-bubble: #e8eef8;
   --user-border: #c5d0e4;
@@ -3003,14 +3013,22 @@ button {
 
 /* Full-screen settings (2-column page). Other dialogs still use .modal-*. */
 .settings-page {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 20000;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
   animation: modal-fade 0.12s ease;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Chat chrome (and its Electron drag regions) cannot paint over Settings. */
+body.settings-open .app {
+  visibility: hidden !important;
 }
 
 .settings-page-header {
@@ -3022,6 +3040,43 @@ button {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--bg-elevated);
+  z-index: 1;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.settings-page-header button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Settings is portaled to body — class must be on .settings-page itself. */
+.settings-page.platform-darwin .settings-page-header {
+  /* hiddenInset traffic lights sit at ~14,16 (see main.mjs). */
+  min-height: 72px;
+  padding-top: 38px;
+  padding-bottom: 12px;
+  padding-left: 88px;
+  box-sizing: border-box;
+}
+
+/* Electron paints -webkit-app-region: drag above fixed overlays. */
+body.settings-open .brand,
+body.settings-open .titlebar-drag,
+body.settings-open .welcome-drag,
+body.settings-open .topbar,
+body.settings-open .panel-header,
+body.settings-open .panel-tabs {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
+body.settings-open .sidebar .brand,
+body.settings-open .sidebar .brand-mark,
+body.settings-open .sidebar .brand-mark-btn,
+body.settings-open .brand-welcome,
+body.settings-open .welcome-card .brand {
+  visibility: hidden;
 }
 
 .settings-page-header h2 {
@@ -3317,9 +3372,79 @@ button {
 
 .mcp-card {
   border: 1px solid var(--border-soft);
+  border-left-width: 4px;
   border-radius: 10px;
   padding: 12px 14px;
   background: var(--bg-elevated);
+}
+
+.mcp-card-ready {
+  border-left-color: var(--mcp-ready);
+}
+
+.mcp-card-auth {
+  border-left-color: var(--mcp-auth);
+}
+
+.mcp-card-down {
+  border-left-color: var(--mcp-down);
+}
+
+.mcp-card-init {
+  border-left-color: var(--mcp-init);
+}
+
+.mcp-card-unknown {
+  border-left-color: var(--border);
+}
+
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+}
+
+.mcp-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mcp-status-ready {
+  color: var(--mcp-ready);
+  background: color-mix(in srgb, var(--mcp-ready) 16%, transparent);
+}
+
+.mcp-status-auth {
+  color: var(--mcp-auth);
+  background: color-mix(in srgb, var(--mcp-auth) 16%, transparent);
+}
+
+.mcp-status-down {
+  color: var(--mcp-down);
+  background: color-mix(in srgb, var(--mcp-down) 16%, transparent);
+}
+
+.mcp-status-init {
+  color: var(--mcp-init);
+  background: color-mix(in srgb, var(--mcp-init) 16%, transparent);
+}
+
+.mcp-status-unknown {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.mcp-form-dialog {
+  width: min(560px, 100%);
 }
 
 .mcp-card-off {
@@ -3353,6 +3478,30 @@ button {
 .mcp-badge-off {
   color: var(--warn);
   border-color: var(--warn);
+}
+
+.mcp-badge-ok {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.mcp-badge-auth {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.mcp-badge-down {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.mcp-badge-init {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.mcp-test-actions {
+  margin-top: 8px;
 }
 
 .mcp-target {

@@ -434,6 +434,13 @@ export function ensureAgent(ws, cwd, opts = {}) {
     );
 
     agent.on(
+      "mcp-status",
+      ifCurrent((event) => {
+        send(ws, "agent:mcp-status", event);
+      }),
+    );
+
+    agent.on(
       "writes-session",
       ifCurrent((on) => {
         send(ws, "agent:writes-session", { allowWritesThisSession: Boolean(on) });

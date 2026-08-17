@@ -96,7 +96,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Diff review pane | Done — ACP diffs + git Changes |
 | Resume CLI sessions with history | Done (same `~/.grok/sessions`) |
 | Multi-session tabs | Basic (sidebar chat list) |
-| Settings UI (MCP list / add / toggle) | **Done** — via `grok mcp` (never edits `config.toml` in-app) |
+| Settings UI (MCP list / add / edit / toggle / OAuth sign-in) | **Done** — via `grok mcp` + ACP auth (never edits `config.toml` in-app) |
 | Settings UI (plugins list / enable / disable / install-from-git) | **Done** — via `grok plugin` (never edits `config.toml` in-app) |
 | Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
 | Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
@@ -120,7 +120,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | Auth | Sign in / out in app | — |
 | Session API key | Optional (applies on next agent start) | `XAI_API_KEY` env |
 | **Skills** (runtime) | Settings list + invoke via `/skill-name` slash menu | Install / edit under `~/.grok` (no in-app editor) |
-| **MCP servers** | Settings → MCP (list / add / toggle / test) | Still stored in `~/.grok` / project `.grok` via `grok mcp` |
+| **MCP servers** | Settings → MCP (list / add / edit / toggle / test / sign in) | Still stored in `~/.grok` / project `.grok` via `grok mcp`. OAuth uses the live agent (same as TUI `/mcps` + `i`) |
 | **Plugins** | Settings → Plugins (list / enable / disable / install from git URL) | Marketplace browse still CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |

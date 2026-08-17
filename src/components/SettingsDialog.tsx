@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CodingDataPage } from "./settings/CodingDataPage";
 import { DiagnosticsPage } from "./settings/DiagnosticsPage";
 import { EnginePage } from "./settings/EnginePage";
@@ -76,6 +77,11 @@ export function SettingsDialog({
   }, [open, focusSection]);
 
   useEffect(() => {
+    document.body.classList.toggle("settings-open", open);
+    return () => document.body.classList.remove("settings-open");
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     closeRef.current?.focus();
     const root = pageRootRef.current;
@@ -116,10 +122,14 @@ export function SettingsDialog({
 
   if (!open) return null;
 
-  return (
+  const onMac =
+    typeof navigator !== "undefined" &&
+    /Mac/i.test(`${navigator.platform} ${navigator.userAgent}`);
+
+  return createPortal(
     <div
       ref={pageRootRef}
-      className="settings-page"
+      className={"settings-page" + (onMac ? " platform-darwin" : "")}
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
@@ -204,7 +214,8 @@ export function SettingsDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

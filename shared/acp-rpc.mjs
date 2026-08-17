@@ -110,6 +110,113 @@ export function compactConversationAttempts(sessionId, hint = "") {
 }
 
 /**
+ * grok-build `McpAuthTriggerRequest` (extensions/mcp.rs). The struct has no
+ * serde rename, so the wire fields are snake_case. Also send camelCase so
+ * a future rename_all does not break Desktop.
+ * @param {string} sessionId
+ * @param {string} serverName
+ */
+export function mcpAuthTriggerRequestParams(sessionId, serverName) {
+  const sid = String(sessionId || "").trim();
+  const name = String(serverName || "").trim();
+  return {
+    sessionId: sid,
+    session_id: sid,
+    serverName: name,
+    server_name: name,
+  };
+}
+
+/**
+ * Wire method for `grok agent stdio` MCP OAuth (TUI `/mcps` + `i`).
+ * @param {string} sessionId
+ * @param {string} serverName
+ * @returns {{ method: string, params: object }[]}
+ */
+export function mcpAuthTriggerAttempts(sessionId, serverName) {
+  return [
+    {
+      method: "_x.ai/mcp/auth_trigger",
+      params: mcpAuthTriggerRequestParams(sessionId, serverName),
+    },
+  ];
+}
+
+/**
+ * grok-build `McpListRequest` (camelCase). Send both casings.
+ * @param {string} sessionId
+ * @param {{ cache?: boolean }} [opts]
+ */
+export function mcpSessionListRequestParams(sessionId, opts = {}) {
+  const sid = String(sessionId || "").trim();
+  const cache = opts.cache !== false;
+  return {
+    sessionId: sid,
+    session_id: sid,
+    cache,
+  };
+}
+
+/**
+ * @param {string} sessionId
+ * @param {{ cache?: boolean }} [opts]
+ * @returns {{ method: string, params: object }[]}
+ */
+export function mcpSessionListAttempts(sessionId, opts = {}) {
+  const params = mcpSessionListRequestParams(sessionId, opts);
+  return [
+    { method: "_x.ai/mcp/list", params },
+    { method: "x.ai/mcp/list", params },
+  ];
+}
+
+const MCP_LIVE_METHODS = new Set([
+  "x.ai/mcp/server_status",
+  "x.ai/mcp/init_progress",
+  "x.ai/mcp/tools_changed",
+  "x.ai/mcp/servers_updated",
+  "x.ai/mcp_initialized",
+]);
+
+/**
+ * @param {unknown} method
+ */
+export function isMcpLiveEventMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return MCP_LIVE_METHODS.has(m);
+}
+
+/**
+ * Peel `ext_notification` wrappers around `x.ai/mcp/*` live events.
+ * @param {unknown} method
+ * @param {any} params
+ * @returns {{ method: string, params: any } | null}
+ */
+export function unwrapMcpExtNotification(method, params) {
+  let m = String(method || "");
+  let p = params;
+  for (let i = 0; i < 4; i += 1) {
+    const bare = m.replace(/^_/, "");
+    if (bare.startsWith("x.ai/mcp/") || bare === "x.ai/mcp_initialized") {
+      return { method: bare, params: p };
+    }
+    if (!p || typeof p !== "object" || p.method == null) break;
+    const inner = String(p.method);
+    if (
+      inner === "ext_notification" ||
+      inner.endsWith("/ext_notification") ||
+      inner.replace(/^_/, "").startsWith("x.ai/mcp")
+    ) {
+      m = inner;
+      p = p.params !== undefined ? p.params : p;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
+/**
  * Classify an inbound JSON-RPC message from the agent (stdout).
  * @param {any} msg
  * @returns {ClassifiedMessage}

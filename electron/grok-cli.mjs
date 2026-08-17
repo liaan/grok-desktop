@@ -3,10 +3,13 @@
  * Never shell:true. Do not expose a generic "run any args" IPC.
  */
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { agentEnv } from "./auth.mjs";
 import {
   buildGrokEnv,
   grokBinaryExists,
+  grokHomeDir,
   resolveGrokBinary,
 } from "./grok-home.mjs";
 
@@ -355,6 +358,10 @@ function objectKeysOnly(value) {
  *   envKeys: string[],
  *   headerKeys: string[],
  *   source: string | null,
+ *   signedIn: boolean,
+ *   liveStatus: string | null,
+ *   authRequired: boolean,
+ *   liveToolCount: number | null,
  * }}
  */
 export function mapMcpServerRow(raw) {
@@ -370,6 +377,10 @@ export function mapMcpServerRow(raw) {
       envKeys: [],
       headerKeys: [],
       source: null,
+      signedIn: false,
+      liveStatus: null,
+      authRequired: false,
+      liveToolCount: null,
     };
   }
   const o = /** @type {Record<string, unknown>} */ (raw);
@@ -418,7 +429,54 @@ export function mapMcpServerRow(raw) {
     envKeys: objectKeysOnly(o.env),
     headerKeys: objectKeysOnly(o.headers),
     source,
+    signedIn: false,
+    liveStatus: null,
+    authRequired: false,
+    liveToolCount: null,
   };
+}
+
+/**
+ * OAuth handshake failures from `grok mcp doctor` (non-interactive — no browser).
+ * @param {unknown} text
+ */
+export function mcpTextNeedsAuth(text) {
+  return /oauth authorization required|no stored tokens|authenticate in tui|authorization required, when send initialize|re-authenticate in tui|stored credentials unusable/i.test(
+    String(text || ""),
+  );
+}
+
+/**
+ * Server names that have an OAuth token on disk. Keys are `name:url`.
+ * Never copies token values.
+ * @param {unknown} raw
+ * @returns {Set<string>}
+ */
+export function mcpCredentialServerNames(raw) {
+  /** @type {Set<string>} */
+  const names = new Set();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return names;
+  for (const key of Object.keys(/** @type {Record<string, unknown>} */ (raw))) {
+    const trimmed = String(key || "").trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(":");
+    names.add(colon > 0 ? trimmed.slice(0, colon) : trimmed);
+  }
+  return names;
+}
+
+/**
+ * @param {string} [home]
+ * @returns {Set<string>}
+ */
+export function readMcpCredentialServerNames(home = grokHomeDir()) {
+  try {
+    const file = path.join(home, "mcp_credentials.json");
+    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+    return mcpCredentialServerNames(raw);
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -582,6 +640,7 @@ export function mapMcpDoctorServer(raw) {
       checks: [],
       tools: [],
       toolCount: null,
+      needsAuth: false,
     };
   }
   const o = /** @type {Record<string, unknown>} */ (raw);
@@ -624,6 +683,10 @@ export function mapMcpDoctorServer(raw) {
         : String(o.url)
       : String(o.target);
 
+  const needsAuth = checks.some((c) =>
+    !c.passed && mcpTextNeedsAuth(`${c.label} ${c.detail || ""}`),
+  );
+
   return {
     name,
     transport,
@@ -633,6 +696,7 @@ export function mapMcpDoctorServer(raw) {
     checks,
     tools,
     toolCount,
+    needsAuth,
   };
 }
 
@@ -809,6 +873,19 @@ function mcpListResult(ok, servers, source, error = null) {
 }
 
 /**
+ * Flag servers that already have OAuth tokens. Names only — no token values.
+ * @param {ReturnType<typeof mcpServersFromData>} servers
+ */
+function markMcpSignedIn(servers) {
+  const signed = readMcpCredentialServerNames();
+  if (!signed.size) return servers;
+  return servers.map((s) => ({
+    ...s,
+    signedIn: signed.has(s.name),
+  }));
+}
+
+/**
  * `grok mcp list --json`. Falls back to `grok inspect --json` mcpServers
  * when list is empty or unparseable (older CLI / plugin-only servers).
  * @param {{ cwd?: string, timeoutMs?: number, bin?: string }} [opts]
@@ -823,7 +900,7 @@ export async function listMcpServers(opts = {}) {
   const listed = await runGrok(mcpListArgv(), runOpts);
   let servers = listed.ok ? mcpServersFromData(listed.data) : [];
   if (servers.length > 0) {
-    return mcpListResult(true, servers, "list");
+    return mcpListResult(true, markMcpSignedIn(servers), "list");
   }
 
   const inspected = await runGrok(["inspect", "--json"], runOpts);
@@ -832,7 +909,7 @@ export async function listMcpServers(opts = {}) {
       inspected.data?.mcpServers ?? inspected.data,
     );
     if (fromInspect.length > 0 || listed.ok) {
-      return mcpListResult(true, fromInspect, "inspect");
+      return mcpListResult(true, markMcpSignedIn(fromInspect), "inspect");
     }
   }
 
@@ -910,11 +987,17 @@ export async function doctorMcp(name, opts = {}) {
     bin: opts.bin,
   });
   const report = mcpDoctorFromData(result.data);
+  const fallbackAuth = mcpTextNeedsAuth(
+    [result.stdout, result.stderr, result.error].filter(Boolean).join("\n"),
+  );
+  const servers = report.servers.map((row) =>
+    row.needsAuth || fallbackAuth ? { ...row, needsAuth: true } : row,
+  );
   return {
     ok: result.ok,
     healthyCount: report.healthyCount,
     failingCount: report.failingCount,
-    servers: report.servers,
+    servers,
     stdout: result.stdout,
     stderr: result.stderr,
     error: result.error,

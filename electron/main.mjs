@@ -109,6 +109,7 @@ import {
 import { previewApiAddress, startPreviewApi } from "./preview-api.mjs";
 import { installDesktopPreviewSkill } from "./preview-mcp.mjs";
 import { normalizeAutoCompactAt } from "../shared/auto-compact.mjs";
+import { mergeMcpLiveStatus } from "../shared/mcp-status.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -699,8 +700,35 @@ function registerIpc() {
 
   ipcMain.handle("grok:update-install", async () => installGrokUpdate());
 
-  ipcMain.handle("mcp:list", async (e) => {
-    return listMcpServers({ cwd: mcpCwdFromEvent(e) });
+  ipcMain.handle("mcp:list", async (e, opts = {}) => {
+    const listed = await listMcpServers({ cwd: mcpCwdFromEvent(e) });
+    const agent = sessionFromEvent(e)?.agent;
+    if (!listed?.servers || !agent?.ready || !agent.sessionId) {
+      return { ...listed, liveOk: false };
+    }
+    try {
+      const live = await agent.listMcpSessionCatalog({
+        cache: opts?.cache !== false,
+      });
+      return {
+        ...listed,
+        liveOk: true,
+        servers: mergeMcpLiveStatus(listed.servers, live, {
+          assumeInitializing: true,
+        }),
+      };
+    } catch (err) {
+      debugLog("mcp", "live-list-failed", {
+        error: err?.message || String(err),
+      });
+      return {
+        ...listed,
+        liveOk: false,
+        servers: mergeMcpLiveStatus(listed.servers, [], {
+          assumeInitializing: true,
+        }),
+      };
+    }
   });
 
   ipcMain.handle("mcp:add", async (e, spec = {}) => {
@@ -746,6 +774,29 @@ function registerIpc() {
       return await doctorMcp(name, { cwd: mcpCwdFromEvent(e) });
     } catch (err) {
       return mcpIpcError(err);
+    }
+  });
+
+  ipcMain.handle("mcp:auth", async (e, name) => {
+    const agent = sessionFromEvent(e)?.agent;
+    if (!agent?.ready || !agent.sessionId) {
+      return {
+        ok: false,
+        status: "failed",
+        serverName: String(name || ""),
+        error:
+          "Open a project first. Sign-in uses the live agent so Grok can open the browser.",
+      };
+    }
+    try {
+      return await agent.authenticateMcpServer(name);
+    } catch (err) {
+      return {
+        ok: false,
+        status: "failed",
+        serverName: String(name || ""),
+        error: err?.message || String(err),
+      };
     }
   });
 

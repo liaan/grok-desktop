@@ -8,6 +8,11 @@ import {
   classifyInboundMessage,
   compactConversationAttempts,
   compactConversationRequestParams,
+  isMcpLiveEventMethod,
+  mcpAuthTriggerAttempts,
+  mcpAuthTriggerRequestParams,
+  mcpSessionListAttempts,
+  unwrapMcpExtNotification,
   createOnceResponder,
   createPermissionOneshot,
   dispatchInboundMessage,
@@ -136,6 +141,46 @@ test("compactConversationAttempts uses underscore ACP ext method on stdio", () =
     sessionId: "sess-1",
     userContext: "keep auth",
   });
+});
+
+test("mcpAuthTriggerAttempts uses underscore ACP ext method and both casings", () => {
+  assert.deepEqual(mcpAuthTriggerRequestParams("sess-1", "atlassian"), {
+    sessionId: "sess-1",
+    session_id: "sess-1",
+    serverName: "atlassian",
+    server_name: "atlassian",
+  });
+  const attempts = mcpAuthTriggerAttempts("sess-1", "atlassian");
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].method, "_x.ai/mcp/auth_trigger");
+  assert.equal(attempts[0].params.server_name, "atlassian");
+});
+
+test("mcpSessionListAttempts uses underscore ACP ext method", () => {
+  const attempts = mcpSessionListAttempts("sess-1", { cache: true });
+  assert.equal(attempts[0].method, "_x.ai/mcp/list");
+  assert.equal(attempts[1].method, "x.ai/mcp/list");
+  assert.equal(attempts[0].params.sessionId, "sess-1");
+  assert.equal(attempts[0].params.session_id, "sess-1");
+  assert.equal(attempts[0].params.cache, true);
+});
+
+test("unwrapMcpExtNotification peels server_status and init_progress", () => {
+  const nested = unwrapMcpExtNotification("ext_notification", {
+    method: "x.ai/mcp/server_status",
+    params: { name: "mysql", status: "ready" },
+  });
+  assert.deepEqual(nested, {
+    method: "x.ai/mcp/server_status",
+    params: { name: "mysql", status: "ready" },
+  });
+  const direct = unwrapMcpExtNotification("_x.ai/mcp/init_progress", {
+    total: 3,
+    connected: 1,
+  });
+  assert.equal(direct?.method, "x.ai/mcp/init_progress");
+  assert.equal(isMcpLiveEventMethod("x.ai/mcp/server_status"), true);
+  assert.equal(isMcpLiveEventMethod("session/update"), false);
 });
 
 test("classify session/request_permission as server-request", () => {

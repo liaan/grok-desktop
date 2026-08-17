@@ -1,4 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  applyMcpServerStatus,
+  mcpLiveLabel,
+  mcpNeedsSignIn,
+  resolveMcpCardStatus,
+  summarizeMcpDoctorDetail,
+} from "../../../shared/mcp-status.mjs";
 import type {
   McpDoctorResult,
   McpDoctorServer,
@@ -14,7 +21,51 @@ type TestView = {
   tools?: string[];
   toolCount?: number | null;
   error?: string | null;
+  needsAuth?: boolean;
 };
+
+function looksLikeOauthFail(text: string | null | undefined): boolean {
+  return /oauth authorization required|no stored tokens|authenticate in tui|authorization required, when send initialize|re-authenticate in tui/i.test(
+    String(text || ""),
+  );
+}
+
+function viewNeedsAuth(view?: TestView | null): boolean {
+  if (!view) return false;
+  if (view.needsAuth) return true;
+  if (looksLikeOauthFail(view.error)) return true;
+  return (view.checks || []).some(
+    (c) => !c.passed && looksLikeOauthFail(`${c.label} ${c.detail || ""}`),
+  );
+}
+
+function isManagedMcp(s: McpServerInfo): boolean {
+  return (
+    s.source === "managed" ||
+    s.scope === "managed" ||
+    String(s.name).startsWith("managed_gateway:")
+  );
+}
+
+function liveStatusClass(status: string | null | undefined): string {
+  if (status === "ready") return "mcp-status mcp-status-ready";
+  if (status === "needs-auth" || status === "setup-required") {
+    return "mcp-status mcp-status-auth";
+  }
+  if (status === "unavailable") return "mcp-status mcp-status-down";
+  if (status === "initializing") return "mcp-status mcp-status-init";
+  return "mcp-status mcp-status-unknown";
+}
+
+function cardStatusClass(status: string | null | undefined): string {
+  if (status === "ready") return "mcp-card-ready";
+  if (status === "needs-auth" || status === "setup-required") {
+    return "mcp-card-auth";
+  }
+  if (status === "unavailable") return "mcp-card-down";
+  if (status === "initializing") return "mcp-card-init";
+  return "mcp-card-unknown";
+}
 
 function splitArgTokens(command: string, extra: string): string[] {
   return [...command.trim().split(/\s+/), ...extra.trim().split(/\s+/)].filter(
@@ -33,13 +84,23 @@ function reportKey(s: { name: string }): string {
 }
 
 function viewFromDoctorServer(row: McpDoctorServer): TestView {
+  const needsAuth =
+    Boolean(row.needsAuth) ||
+    (row.checks || []).some(
+      (c) => !c.passed && looksLikeOauthFail(`${c.label} ${c.detail || ""}`),
+    );
   return {
     status: row.healthy ? "ok" : "fail",
     healthy: row.healthy,
     checks: row.checks,
     tools: row.tools,
     toolCount: row.toolCount,
-    error: row.healthy ? null : "Doctor reported this server as failing.",
+    error: row.healthy
+      ? null
+      : needsAuth
+        ? "This server needs a browser sign-in before Test can handshake."
+        : "Doctor reported this server as failing.",
+    needsAuth,
   };
 }
 
@@ -67,6 +128,7 @@ function applyDoctorResult(
         (res.ok
           ? "Doctor finished with no report for this server."
           : "Doctor failed."),
+      needsAuth: looksLikeOauthFail(fallback),
     };
   }
   return next;
@@ -98,6 +160,7 @@ export function McpPage({
   onRestartAfterWrite?: () => Promise<void> | void;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
+  const serversRef = useRef<McpServerInfo[]>([]);
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [writeBusy, setWriteBusy] = useState(false);
@@ -105,6 +168,8 @@ export function McpPage({
   const [note, setNote] = useState<string | null>(null);
   const [reports, setReports] = useState<Record<string, TestView>>({});
   const [adding, setAdding] = useState(false);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [authing, setAuthing] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "http" | "sse">("stdio");
@@ -115,16 +180,122 @@ export function McpPage({
   const [envRows, setEnvRows] = useState<KvRow[]>([{ key: "", value: "" }]);
   const [headerRows, setHeaderRows] = useState<KvRow[]>([{ key: "", value: "" }]);
 
+  const setServerList = (
+    next: McpServerInfo[] | ((prev: McpServerInfo[]) => McpServerInfo[]),
+  ) => {
+    setServers((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      serversRef.current = resolved;
+      return resolved;
+    });
+  };
+
   const writeLocked = writeBusy || restarting;
   const testLocked = testing !== null || restarting;
+  const authLocked = authing !== null || restarting;
+  const formOpen = adding || Boolean(editingName);
 
-  const reload = async () => {
-    const res = await window.grokDesktop.listMcpServers();
+  const reload = async (cache = true) => {
+    const res = await window.grokDesktop.listMcpServers({ cache });
     const next = res.servers || [];
-    setServers(next);
+    setServerList(next);
     if (!res.ok && res.error) setNote(res.error);
-    if (next.length === 0) setAdding(true);
+    if (next.length === 0 && !editingName) setAdding(true);
     return res;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        void reload();
+      }, 200);
+    };
+    const off = window.grokDesktop.on(
+      "agent:mcp-status",
+      (event: { method?: string; params?: Record<string, unknown> }) => {
+        const method = String(event?.method || "");
+        if (method === "x.ai/mcp/server_status") {
+          const name = String(event.params?.name || "");
+          if (!name) return;
+          setServerList((prev) =>
+            prev.map((s) =>
+              s.name === name ? applyMcpServerStatus(s, event.params || {}) : s,
+            ),
+          );
+          return;
+        }
+        if (
+          method === "x.ai/mcp/init_progress" ||
+          method === "x.ai/mcp/tools_changed" ||
+          method === "x.ai/mcp/servers_updated" ||
+          method === "x.ai/mcp_initialized"
+        ) {
+          scheduleReload();
+        }
+      },
+    );
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      off();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let ticks = 0;
+    const id = window.setInterval(() => {
+      ticks += 1;
+      const stuck = serversRef.current.some(
+        (s) =>
+          s.enabled !== false &&
+          (s.liveStatus === "initializing" || !s.liveStatus),
+      );
+      if (!stuck || ticks > 24) {
+        window.clearInterval(id);
+        return;
+      }
+      void reload(ticks > 2 ? false : true);
+    }, 1250);
+    return () => window.clearInterval(id);
+  }, [open]);
+
+  const resetForm = () => {
+    setName("");
+    setTransport("stdio");
+    setCommand("");
+    setArgsText("");
+    setUrl("");
+    setProjectScope(false);
+    setEnvRows([{ key: "", value: "" }]);
+    setHeaderRows([{ key: "", value: "" }]);
+    setAdding(false);
+    setEditingName(null);
+  };
+
+  const beginEdit = (s: McpServerInfo) => {
+    setAdding(false);
+    setEditingName(s.name);
+    setName(s.name);
+    const t = String(s.transport || "").toLowerCase();
+    setTransport(t === "http" || t === "sse" ? t : "stdio");
+    setCommand(s.command || "");
+    setArgsText((s.args || []).join(" "));
+    setUrl(s.url || "");
+    setProjectScope(s.scope === "project");
+    setEnvRows(
+      s.envKeys?.length
+        ? s.envKeys.map((key) => ({ key, value: "" }))
+        : [{ key: "", value: "" }],
+    );
+    setHeaderRows(
+      s.headerKeys?.length
+        ? s.headerKeys.map((key) => ({ key, value: "" }))
+        : [{ key: "", value: "" }],
+    );
+    setNote(null);
   };
 
   useEffect(() => {
@@ -153,6 +324,18 @@ export function McpPage({
       sectionRef.current?.scrollIntoView({ block: "start" });
     }
   }, [open, focus]);
+
+  useEffect(() => {
+    if (!formOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      resetForm();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [formOpen]);
 
   const afterWrite = async (ok: boolean, error?: string | null) => {
     if (!ok) {
@@ -224,6 +407,22 @@ export function McpPage({
       const res = await window.grokDesktop.doctorMcp(s?.name);
       const mapped = applyDoctorResult(res, names);
       setReports((prev) => ({ ...prev, ...mapped }));
+      setServerList((prev) =>
+        prev.map((row) => {
+          const report = mapped[row.name];
+          if (!report) return row;
+          if (report.needsAuth) {
+            return { ...row, liveStatus: "needs-auth", authRequired: true };
+          }
+          if (report.healthy) {
+            return { ...row, liveStatus: "ready", authRequired: false };
+          }
+          if (report.status === "fail") {
+            return { ...row, liveStatus: "unavailable" };
+          }
+          return row;
+        }),
+      );
       if (!res.ok && res.error && !(res.servers || []).length) {
         setNote(res.error);
       }
@@ -248,11 +447,72 @@ export function McpPage({
     }
   };
 
+  const onAuth = async (s: McpServerInfo) => {
+    setAuthing(s.name);
+    setNote(null);
+    try {
+      const res = await window.grokDesktop.authenticateMcpServer(s.name);
+      if (res.ok) {
+        setNote(`Signed in to “${s.name}”.`);
+        setReports((prev) => {
+          const next = { ...prev };
+          delete next[s.name];
+          return next;
+        });
+        setServerList((prev) =>
+          prev.map((row) =>
+            row.name === s.name
+              ? { ...row, liveStatus: "ready", authRequired: false, signedIn: true }
+              : row,
+          ),
+        );
+        await reload();
+        return;
+      }
+      setNote(res.error || `Sign-in failed for “${s.name}”.`);
+      setReports((prev) => ({
+        ...prev,
+        [s.name]: {
+          status: "fail",
+          healthy: false,
+          error: res.error || "Sign-in failed.",
+          needsAuth: res.status !== "setup_required",
+        },
+      }));
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAuthing(null);
+    }
+  };
+
   const onAdd = async () => {
-    const trimmed = name.trim();
+    const trimmed = (editingName || name).trim();
     if (!trimmed) {
       setNote("Name is required.");
       return;
+    }
+    const existing = editingName
+      ? servers.find((row) => row.name === editingName)
+      : undefined;
+    const filledEnv = envRows.filter((r) => r.key.trim() && r.value);
+    const filledHeaders = headerRows.filter((r) => r.key.trim() && r.value);
+    const hadSecrets = Boolean(
+      existing?.envKeys?.length || existing?.headerKeys?.length,
+    );
+    if (
+      existing &&
+      hadSecrets &&
+      filledEnv.length === 0 &&
+      filledHeaders.length === 0
+    ) {
+      if (
+        !window.confirm(
+          `Save “${trimmed}”? grok mcp add replaces the server definition. Env/header values left blank will be removed. OAuth tokens are kept unless you change the URL.`,
+        )
+      ) {
+        return;
+      }
     }
     setWriteBusy(true);
     setNote(null);
@@ -265,33 +525,29 @@ export function McpPage({
               transport,
               command: tokens[0] || "",
               args: tokens.slice(1),
-              env: envRows.filter((r) => r.key.trim()),
-              scope: (projectScope && hasProject ? "project" : "user") as
-                | "project"
-                | "user",
+              env: filledEnv,
+              scope: (projectScope &&
+              (hasProject || existing?.scope === "project")
+                ? "project"
+                : "user") as "project" | "user",
             }
           : {
               name: trimmed,
               transport,
               url: url.trim(),
-              headers: headerRows
-                .filter((r) => r.key.trim())
-                .map((r) => ({ name: r.key.trim(), value: r.value })),
-              scope: (projectScope && hasProject ? "project" : "user") as
-                | "project"
-                | "user",
+              headers: filledHeaders.map((r) => ({
+                name: r.key.trim(),
+                value: r.value,
+              })),
+              scope: (projectScope && hasProject
+                ? "project"
+                : existing?.scope === "project"
+                  ? "project"
+                  : "user") as "project" | "user",
             };
       const res = await window.grokDesktop.addMcpServer(spec);
       await afterWrite(res.ok, res.error);
-      if (res.ok) {
-        setName("");
-        setCommand("");
-        setArgsText("");
-        setUrl("");
-        setEnvRows([{ key: "", value: "" }]);
-        setHeaderRows([{ key: "", value: "" }]);
-        setAdding(false);
-      }
+      if (res.ok) resetForm();
     } catch (e: unknown) {
       setNote(e instanceof Error ? e.message : String(e));
     } finally {
@@ -303,9 +559,11 @@ export function McpPage({
     <section className="settings-section" ref={sectionRef} id="settings-mcp">
       <h3>MCP servers</h3>
       <p className="settings-desc settings-lead">
-        Same as <code>grok mcp</code> — add, toggle, or remove here. Desktop
-        never edits <code>config.toml</code>. Writes restart the agent so the
-        live session picks them up.
+        Same as <code>grok mcp</code> and the TUI <code>/mcps</code> modal —
+        add, edit, toggle, test, or sign in here. Status matches the TUI
+        (initializing → ready / needs auth / unavailable). Desktop never edits{" "}
+        <code>config.toml</code>. Sign in only appears when a server needs
+        OAuth.
       </p>
       <div className="mcp-toolbar">
         <span className="settings-desc">
@@ -328,9 +586,16 @@ export function McpPage({
             type="button"
             className="btn btn-sm"
             disabled={writeLocked}
-            onClick={() => setAdding((v) => !v)}
+            onClick={() => {
+              if (formOpen) {
+                resetForm();
+                return;
+              }
+              setEditingName(null);
+              setAdding(true);
+            }}
           >
-            {adding ? "Cancel" : "Add server"}
+            {formOpen ? "Cancel" : "Add server"}
           </button>
         </div>
       </div>
@@ -345,16 +610,24 @@ export function McpPage({
           const view = reports[reportKey(s)];
           const target = mcpTarget(s);
           const testingThis = testing === s.name || testing === "all";
+          const status = resolveMcpCardStatus(s, view);
+          const statusLabel = mcpLiveLabel(status) || "unknown";
           return (
             <article
-              className={`mcp-card${s.enabled === false ? " mcp-card-off" : ""}`}
+              className={`mcp-card ${cardStatusClass(status)}${s.enabled === false ? " mcp-card-off" : ""}`}
               key={`${s.name}:${s.scope || ""}`}
               id={`mcp-card-${s.name}`}
             >
               <div className="mcp-card-head">
                 <div className="settings-row-text">
-                  <span className="settings-label">{s.name}</span>
+                  <span className="settings-label">
+                    {s.displayName || s.name}
+                  </span>
                   <span className="mcp-badges">
+                    <span className={liveStatusClass(status)}>
+                      <span className="mcp-status-dot" aria-hidden />
+                      {statusLabel}
+                    </span>
                     <span className="mcp-badge">{s.transport || "unknown"}</span>
                     {s.scope ? <span className="mcp-badge">{s.scope}</span> : null}
                     {s.enabled === false ? (
@@ -392,35 +665,104 @@ export function McpPage({
                   >
                     {testingThis && testing !== "all" ? "Testing…" : "Test"}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={writeLocked}
-                    onClick={() => void onRemove(s)}
-                  >
-                    Remove
-                  </button>
+                  {mcpNeedsSignIn(s, view) || viewNeedsAuth(view) ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={authLocked || writeLocked || !hasProject}
+                      title={
+                        hasProject
+                          ? "Open a browser sign-in (same as TUI /mcps + i)"
+                          : "Open a project first so the live agent can open the browser"
+                      }
+                      onClick={() => void onAuth(s)}
+                    >
+                      {authing === s.name
+                        ? "Signing in…"
+                        : s.signedIn
+                          ? "Re-auth"
+                          : "Sign in"}
+                    </button>
+                  ) : null}
+                  {isManagedMcp(s) ? null : (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={writeLocked}
+                      onClick={() => beginEdit(s)}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {isManagedMcp(s) ? null : (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={writeLocked}
+                      onClick={() => void onRemove(s)}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
-              {view ? <McpTestPanel view={view} /> : null}
+              {view ? (
+                <McpTestPanel
+                  view={view}
+                  onAuth={
+                    viewNeedsAuth(view)
+                      ? () => void onAuth(s)
+                      : undefined
+                  }
+                  authBusy={authing === s.name}
+                  authDisabled={!hasProject}
+                />
+              ) : null}
             </article>
           );
         })}
       </div>
 
-      {adding ? (
-        <div className="mcp-add mcp-add-card">
-          <span className="settings-label">Add server</span>
+      {formOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          data-modal-layer="overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !writeLocked) resetForm();
+          }}
+        >
+          <div
+            className="modal-dialog mcp-form-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-form-title"
+          >
+            <div className="modal-header">
+              <h2 id="mcp-form-title">
+                {editingName ? `Edit ${editingName}` : "Add server"}
+              </h2>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={writeLocked}
+                onClick={() => resetForm()}
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+            <div className="modal-body mcp-add">
           <div className="mcp-grid-2">
             <label className="mcp-field">
               <span>Name</span>
               <input
                 className="settings-input"
-                value={name}
+                value={editingName || name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="filesystem"
                 autoComplete="off"
-                disabled={writeLocked}
+                disabled={writeLocked || Boolean(editingName)}
               />
             </label>
             <label className="mcp-field">
@@ -483,7 +825,7 @@ export function McpPage({
                     className="settings-input"
                     type="password"
                     value={row.value}
-                    placeholder="value"
+                    placeholder={editingName ? "leave blank to drop" : "value"}
                     autoComplete="off"
                     disabled={writeLocked}
                     onChange={(e) => {
@@ -546,7 +888,7 @@ export function McpPage({
                     className="settings-input"
                     type="password"
                     value={row.value}
-                    placeholder="value"
+                    placeholder={editingName ? "leave blank to drop" : "value"}
                     autoComplete="off"
                     disabled={writeLocked}
                     onChange={(e) => {
@@ -592,24 +934,55 @@ export function McpPage({
               {hasProject ? "" : " — open a project first"})
             </span>
           </label>
-          <div className="mcp-actions">
-            <button
-              type="button"
-              className="btn"
-              disabled={writeLocked}
-              onClick={() => void onAdd()}
-            >
-              {restarting ? "Restarting…" : writeBusy ? "Working…" : "Add"}
-            </button>
+              {note ? (
+                <span className="settings-desc settings-note">{note}</span>
+              ) : null}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={writeLocked}
+                onClick={() => resetForm()}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={writeLocked}
+                onClick={() => void onAdd()}
+              >
+                {restarting
+                  ? "Restarting…"
+                  : writeBusy
+                    ? "Working…"
+                    : editingName
+                      ? "Save"
+                      : "Add"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
-      {note ? <span className="settings-desc settings-note">{note}</span> : null}
+      {!formOpen && note ? (
+        <span className="settings-desc settings-note">{note}</span>
+      ) : null}
     </section>
   );
 }
 
-function McpTestPanel({ view }: { view: TestView }) {
+function McpTestPanel({
+  view,
+  onAuth,
+  authBusy,
+  authDisabled,
+}: {
+  view: TestView;
+  onAuth?: () => void;
+  authBusy?: boolean;
+  authDisabled?: boolean;
+}) {
   const tools = view.tools || [];
   return (
     <div
@@ -634,18 +1007,44 @@ function McpTestPanel({ view }: { view: TestView }) {
       </div>
       {view.checks && view.checks.length > 0 ? (
         <ul className="mcp-checks">
-          {view.checks.map((check) => (
-            <li key={check.label}>
-              <span className={check.passed ? "mcp-check-pass" : "mcp-check-fail"}>
-                {check.passed ? "✓" : "✗"}
-              </span>{" "}
-              {check.label}
-              {check.detail ? ` (${check.detail})` : ""}
-            </li>
-          ))}
+          {view.checks.map((check) => {
+            const detail = check.passed
+              ? check.detail
+              : summarizeMcpDoctorDetail(check.detail);
+            return (
+              <li key={check.label}>
+                <span
+                  className={check.passed ? "mcp-check-pass" : "mcp-check-fail"}
+                >
+                  {check.passed ? "✓" : "✗"}
+                </span>{" "}
+                {check.label}
+                {detail ? ` (${detail})` : ""}
+              </li>
+            );
+          })}
         </ul>
       ) : view.error ? (
-        <p className="mcp-test-error">{view.error}</p>
+        <p className="mcp-test-error">
+          {summarizeMcpDoctorDetail(view.error) || view.error}
+        </p>
+      ) : null}
+      {onAuth ? (
+        <div className="mcp-actions mcp-test-actions">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={authBusy || authDisabled}
+            title={
+              authDisabled
+                ? "Open a project first so the live agent can open the browser"
+                : undefined
+            }
+            onClick={onAuth}
+          >
+            {authBusy ? "Signing in…" : "Sign in with browser"}
+          </button>
+        </div>
       ) : null}
       {tools.length > 0 ? (
         <div className="mcp-tools" aria-label="Discovered tools">

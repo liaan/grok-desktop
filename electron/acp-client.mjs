@@ -38,6 +38,10 @@ import { compressPromptImage } from "./image-compress.mjs";
 import {
   classifyInboundMessage,
   compactConversationAttempts,
+  isMcpLiveEventMethod,
+  mcpAuthTriggerAttempts,
+  mcpSessionListAttempts,
+  unwrapMcpExtNotification,
   createOnceResponder,
   isFsReadMethod,
   isFsWriteMethod,
@@ -46,6 +50,7 @@ import {
   jsonRpcErrorCode,
 } from "../shared/acp-rpc.mjs";
 import { handleAcpPermissionRequest } from "./acp-protocol.mjs";
+import { mapMcpSessionCatalog } from "../shared/mcp-status.mjs";
 import {
   handleAskUserQuestion,
   handleExitPlanMode,
@@ -101,6 +106,42 @@ function summarizeCompactResult(raw) {
     tokens_before: Number.isFinite(before) ? before : undefined,
     tokens_after: Number.isFinite(after) ? after : undefined,
     message,
+  };
+}
+
+/**
+ * grok-build `McpAuthTriggerResponse` — status is authenticated / failed /
+ * setup_required. Do not forward `setup` field schemas (may include labels).
+ * @param {any} raw
+ * @param {string} serverName
+ */
+function summarizeMcpAuthResult(raw, serverName) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const nested = r.result && typeof r.result === "object" ? r.result : r;
+  const status = String(nested.status || "").toLowerCase();
+  const error =
+    nested.error == null || nested.error === ""
+      ? null
+      : String(nested.error);
+  if (status === "authenticated") {
+    return { ok: true, status: "authenticated", serverName, error: null };
+  }
+  if (status === "setup_required") {
+    return {
+      ok: false,
+      status: "setup_required",
+      serverName,
+      error:
+        error ||
+        "This server needs extra setup values before sign-in. Add them in the TUI /mcps modal, or set headers when adding the server.",
+    };
+  }
+  return {
+    ok: false,
+    status: status || "failed",
+    serverName,
+    error:
+      error || `Authentication failed for MCP server “${serverName}”.`,
   };
 }
 
@@ -575,6 +616,15 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     const c = classifyInboundMessage(msg);
+    const mcpEvent = unwrapMcpExtNotification(msg.method, msg.params);
+    if (mcpEvent && isMcpLiveEventMethod(mcpEvent.method)) {
+      this.emit("mcp-status", mcpEvent);
+      if (msg.id !== undefined) {
+        this._ensureOnce().beginRequest(msg.id);
+        this._respond(msg.id, {});
+      }
+      return;
+    }
 
     if (c.kind === "session-update") {
       // Progress only — does not complete tools; agent still needs client RPCs.
@@ -909,6 +959,95 @@ export class GrokAcpClient extends EventEmitter {
     }
     throw new Error(
       `Compress is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+  }
+
+  /**
+   * Same as TUI `/mcps` + `i`: ACP `x.ai/mcp/auth_trigger` opens the MCP
+   * OAuth browser flow and writes `~/.grok/mcp_credentials.json`.
+   * @param {string} serverName
+   */
+  async authenticateMcpServer(serverName) {
+    if (!this.sessionId) throw new Error("No ACP session");
+    const name = String(serverName || "").trim();
+    if (!name) throw new Error("MCP server name is required");
+    const longMs = 5 * 60_000;
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+
+    const attempts = mcpAuthTriggerAttempts(this.sessionId, name);
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: longMs,
+        });
+        debugLog("acp", "mcp-auth-ok", { path: attempt.method, server: name });
+        return summarizeMcpAuthResult(raw, name);
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "mcp-auth-try", {
+          path: attempt.method,
+          server: name,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    throw new Error(
+      `MCP sign-in is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+  }
+
+  /**
+   * Live `/mcps` catalog: `x.ai/mcp/list` annotated with session status.
+   * @param {{ cache?: boolean }} [opts]
+   */
+  async listMcpSessionCatalog(opts = {}) {
+    if (!this.sessionId) throw new Error("No ACP session");
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    const attempts = mcpSessionListAttempts(this.sessionId, opts);
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: 30_000,
+        });
+        const payload =
+          raw && typeof raw === "object" && raw.result && !raw.servers
+            ? raw.result
+            : raw;
+        return mapMcpSessionCatalog(payload);
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "mcp-list-try", {
+          path: attempt.method,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    throw new Error(
+      `MCP live status is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
     );
   }
 

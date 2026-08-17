@@ -81,13 +81,14 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getGrokEngine: () => ipcRenderer.invoke("grok:engine"),
   checkGrokUpdate: () => ipcRenderer.invoke("grok:update-check"),
   installGrokUpdate: () => ipcRenderer.invoke("grok:update-install"),
-  listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  listMcpServers: (opts) => ipcRenderer.invoke("mcp:list", opts || {}),
   addMcpServer: (spec) => ipcRenderer.invoke("mcp:add", spec || {}),
   enableMcpServer: (name) => ipcRenderer.invoke("mcp:enable", name),
   disableMcpServer: (name) => ipcRenderer.invoke("mcp:disable", name),
   removeMcpServer: (name, opts) =>
     ipcRenderer.invoke("mcp:remove", { name, scope: opts?.scope }),
   doctorMcp: (name) => ipcRenderer.invoke("mcp:doctor", name),
+  authenticateMcpServer: (name) => ipcRenderer.invoke("mcp:auth", name),
   listPlugins: () => ipcRenderer.invoke("plugin:list"),
   enablePlugin: (name) => ipcRenderer.invoke("plugin:enable", name),
   disablePlugin: (name) => ipcRenderer.invoke("plugin:disable", name),
@@ -96,6 +97,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   on: (channel, handler) => {
     const valid = [
       "agent:session-update",
+      "agent:mcp-status",
       "agent:permission-request",
       "agent:permission-dismiss",
       "agent:plan-approval-request",

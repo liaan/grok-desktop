@@ -19,8 +19,10 @@ import {
   mcpAddArgv,
   mcpDisableArgv,
   mcpDoctorArgv,
+  mcpCredentialServerNames,
   mcpDoctorFromData,
   mcpEnableArgv,
+  mcpTextNeedsAuth,
   mcpListArgv,
   mcpRemoveArgv,
   mcpServersFromData,
@@ -292,6 +294,10 @@ test("mcpServersFromData maps grok mcp list --json fixture and strips secrets", 
     envKeys: [],
     headerKeys: [],
     source: null,
+    signedIn: false,
+    liveStatus: null,
+    authRequired: false,
+    liveToolCount: null,
   });
   assert.equal(mapped[1].name, "probe-http");
   assert.equal(mapped[1].transport, "http");
@@ -352,6 +358,7 @@ test("mcpDoctorFromData maps grok mcp doctor --json and extracts tool count", ()
     ],
     tools: [],
     toolCount: 32,
+    needsAuth: false,
   });
   assert.equal(report.servers[1].healthy, false);
   assert.equal(report.servers[1].source, "/tmp/config.toml");
@@ -379,6 +386,48 @@ test("mcpDoctorFromData lists tool names when the CLI includes them", () => {
   ]);
   assert.equal(report.servers[0].toolCount, 2);
   assert.equal(JSON.stringify(report).includes("secret schema"), false);
+});
+
+test("mcpTextNeedsAuth detects non-interactive OAuth handshake failures", () => {
+  assert.equal(
+    mcpTextNeedsAuth(
+      "handshake failed (Auth error: OAuth authorization required, when send initialize request)",
+    ),
+    true,
+  );
+  assert.equal(mcpTextNeedsAuth("authenticate in TUI or set an Authorization header"), true);
+  assert.equal(mcpTextNeedsAuth("32 tools discovered"), false);
+});
+
+test("mcpDoctorFromData flags OAuth handshake failures as needsAuth", () => {
+  const report = mcpDoctorFromData({
+    servers: [
+      {
+        name: "atlassian",
+        healthy: false,
+        checks: [
+          { label: "server started", passed: true, detail: "2.5s" },
+          {
+            label: "handshake failed",
+            passed: false,
+            detail:
+              "Send message error Auth error: OAuth authorization required, when send initialize request",
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(report.servers[0].needsAuth, true);
+  assert.equal(report.servers[0].healthy, false);
+});
+
+test("mcpCredentialServerNames reads names from name:url keys and never needs values", () => {
+  const names = mcpCredentialServerNames({
+    "atlassian:https://mcp.atlassian.com/v1/mcp": { token_response: { access_token: "SECRET" } },
+    "dol_slack:http://example/mcp/": {},
+  });
+  assert.deepEqual([...names].sort(), ["atlassian", "dol_slack"]);
+  assert.equal(JSON.stringify([...names]).includes("SECRET"), false);
 });
 
 test("listMcpServers result never includes raw data/stdout or env secrets", async () => {

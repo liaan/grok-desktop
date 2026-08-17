@@ -149,6 +149,7 @@ export type GrokUpdateInstall = {
 /** Sanitized MCP row — env/header *values* never cross IPC. */
 export type McpServerInfo = {
   name: string;
+  displayName?: string | null;
   transport?: string | null;
   enabled?: boolean | null;
   scope?: string | null;
@@ -158,6 +159,18 @@ export type McpServerInfo = {
   envKeys?: string[];
   headerKeys?: string[];
   source?: string | null;
+  /** True when ~/.grok/mcp_credentials.json has a token for this name. */
+  signedIn?: boolean;
+  /** Live TUI /mcps status: ready | initializing | unavailable | needs-auth | setup-required */
+  liveStatus?:
+    | "ready"
+    | "initializing"
+    | "unavailable"
+    | "needs-auth"
+    | "setup-required"
+    | null;
+  authRequired?: boolean;
+  liveToolCount?: number | null;
 };
 
 export type McpAddSpec = {
@@ -176,6 +189,7 @@ export type McpListResult = {
   servers: McpServerInfo[];
   source?: "list" | "inspect";
   error?: string | null;
+  liveOk?: boolean;
 };
 
 export type McpWriteResult = {
@@ -200,6 +214,14 @@ export type McpDoctorServer = {
   checks: McpDoctorCheck[];
   tools: string[];
   toolCount: number | null;
+  needsAuth: boolean;
+};
+
+export type McpAuthResult = {
+  ok: boolean;
+  status?: string;
+  serverName?: string;
+  error?: string | null;
 };
 
 export type McpDoctorResult = {
@@ -576,7 +598,7 @@ declare global {
       getGrokEngine: () => Promise<GrokEngineInfo>;
       checkGrokUpdate: () => Promise<GrokUpdateCheck>;
       installGrokUpdate: () => Promise<GrokUpdateInstall>;
-      listMcpServers: () => Promise<McpListResult>;
+      listMcpServers: (opts?: { cache?: boolean }) => Promise<McpListResult>;
       addMcpServer: (spec: McpAddSpec) => Promise<McpWriteResult>;
       enableMcpServer: (name: string) => Promise<McpWriteResult>;
       disableMcpServer: (name: string) => Promise<McpWriteResult>;
@@ -585,6 +607,7 @@ declare global {
         opts?: { scope?: "user" | "project" },
       ) => Promise<McpWriteResult>;
       doctorMcp: (name?: string) => Promise<McpDoctorResult>;
+      authenticateMcpServer: (name: string) => Promise<McpAuthResult>;
       listPlugins: () => Promise<PluginListResult>;
       enablePlugin: (name: string) => Promise<PluginWriteResult>;
       disablePlugin: (name: string) => Promise<PluginWriteResult>;
