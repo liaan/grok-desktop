@@ -99,6 +99,14 @@ import {
   isDebugLogging,
   setDebugLogging,
 } from "./debug-log.mjs";
+import {
+  applyPreviewTheme,
+  getPreviewWindow,
+  openPreviewWindow,
+  registerPreviewIpc,
+} from "./preview-window.mjs";
+import { previewApiAddress, startPreviewApi } from "./preview-api.mjs";
+import { installDesktopPreviewSkill } from "./preview-mcp.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -196,6 +204,12 @@ function rememberProjectSession(cwd, sessionId) {
   saveState(state);
 }
 
+function openPreviewFromMenu() {
+  const ws = focusedSession();
+  const owner = ws?.win && !ws.win.isDestroyed() ? ws.win : null;
+  return openPreviewWindow({ owner });
+}
+
 function openSettingsFromMenu() {
   const ws = focusedSession();
   if (ws?.win && !ws.win.isDestroyed()) {
@@ -262,9 +276,12 @@ function newWindowFromMenu() {
  * @returns {import('electron').BrowserWindow[]}
  */
 function appShellWindows() {
-  return [...windowSessions.values()]
+  const shells = [...windowSessions.values()]
     .map((ws) => ws.win)
     .filter((w) => w && !w.isDestroyed());
+  const preview = getPreviewWindow();
+  if (preview && !preview.isDestroyed()) shells.push(preview);
+  return shells;
 }
 
 /**
@@ -369,6 +386,14 @@ function installApplicationMenu() {
         { role: "zoomOut" },
         { type: "separator" },
         { role: "togglefullscreen" },
+        { type: "separator" },
+        {
+          label: "Preview Window",
+          accelerator: "CmdOrCtrl+Shift+E",
+          click: () => {
+            void openPreviewFromMenu();
+          },
+        },
       ],
     },
     {
@@ -574,6 +599,7 @@ function registerIpc() {
       lastProject: state.lastProject,
       home: os.homedir(),
       auth,
+      previewApi: Boolean(previewApiAddress()),
     };
   });
 
@@ -985,6 +1011,7 @@ function registerIpc() {
     const state = loadState();
     state.theme = theme;
     saveState(state);
+    applyPreviewTheme(theme);
     return theme;
   });
 
@@ -1184,6 +1211,24 @@ function registerIpc() {
     shell.showItemInFolder(assertPathInProject(root, target));
   });
 
+  registerPreviewIpc({
+    loadState,
+    savePatch: (patch) => {
+      const state = loadState();
+      Object.assign(state, patch || {});
+      saveState(state);
+    },
+    getOwner: (e) => {
+      const ws = sessionFromEvent(e);
+      return ws?.win && !ws.win.isDestroyed() ? ws.win : null;
+    },
+    broadcast: (payload) => {
+      for (const ws of windowSessions.values()) {
+        send(ws, "preview:changed", payload);
+      }
+    },
+  });
+
   ipcMain.handle("shell:open-external", async (_e, url) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
       throw new Error("Only http(s) URLs are allowed");
@@ -1193,11 +1238,28 @@ function registerIpc() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
   installApplicationMenu();
   registerIpc();
+  try {
+    const preview = await startPreviewApi({
+      getOwner: () => {
+        const ws = focusedSession();
+        return ws?.win && !ws.win.isDestroyed() ? ws.win : null;
+      },
+    });
+    debugLog("preview", "api-ready", {
+      port: preview?.port || null,
+      ready: Boolean(preview),
+    });
+  } catch (err) {
+    debugLog("preview", "api-failed", {
+      error: err?.message || String(err),
+    });
+  }
+  installDesktopPreviewSkill();
   createWindow();
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 

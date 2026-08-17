@@ -101,6 +101,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
 | Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
 | Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
+| Detachable **Preview** window (agent open / snapshot / click / fill) | **Beta** — testers: Settings → Preview updates, then Help → Check for updates |
 
 ## Requirements
 

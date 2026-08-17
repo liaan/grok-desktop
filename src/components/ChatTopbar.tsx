@@ -29,6 +29,7 @@ export const ChatTopbar = memo(function ChatTopbar({
   onPermissionMode,
   onReasoningEffort,
   onOpenSettings,
+  onOpenPreview,
   onStop,
 }: {
   project: string;
@@ -51,6 +52,7 @@ export const ChatTopbar = memo(function ChatTopbar({
   onPermissionMode: (m: PermissionMode) => void;
   onReasoningEffort: (e: ReasoningEffort) => void;
   onOpenSettings: () => void;
+  onOpenPreview?: () => void;
   onStop: () => void;
 }) {
   const { redact } = usePrivacy();
@@ -179,6 +181,16 @@ export const ChatTopbar = memo(function ChatTopbar({
           )}
           {statusLabel}
         </span>
+        {onOpenPreview ? (
+          <button
+            className="btn btn-sm"
+            type="button"
+            title="Open a detachable Preview window (move it to another screen)"
+            onClick={onOpenPreview}
+          >
+            Preview
+          </button>
+        ) : null}
         {conn === "busy" && (
           <button className="btn danger" type="button" onClick={onStop}>
             Stop

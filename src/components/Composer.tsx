@@ -97,7 +97,7 @@ export const Composer = memo(function Composer({
   /** Return true when the draft should clear (accepted queue/delivery). */
   onSubmit: (payload: ComposerSubmit) => boolean | Promise<boolean>;
   /** Desktop-only slash (e.g. /new, /always-approve) — never reaches the agent. */
-  onLocalCommand: (name: string) => void;
+  onLocalCommand: (name: string, args?: string) => void;
   onSendQueuedNow: (id?: string) => void;
   onRemoveQueued: (id: string) => void;
   onError: (message: string) => void;
@@ -243,7 +243,7 @@ export const Composer = memo(function Composer({
         );
         if (local) {
           clearDraft();
-          onLocalCommand(name);
+          onLocalCommand(name, (localMatch[2] || "").trim());
           return;
         }
       }
@@ -269,7 +269,7 @@ export const Composer = memo(function Composer({
 
   const applySlashCommand = useCallback(
     (cmd: SlashCommand, mode: "insert" | "run" = "run") => {
-      if (cmd.local) {
+      if (cmd.local && !cmd.inputHint) {
         clearDraft();
         onLocalCommand(cmd.name);
         return;

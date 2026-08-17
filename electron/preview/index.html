@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'"
+    />
+    <title>Preview · Grok</title>
+    <link rel="stylesheet" href="./preview.css" />
+  </head>
+  <body>
+    <header class="bar" id="bar">
+      <div class="nav">
+        <button type="button" id="back" title="Back" aria-label="Back">←</button>
+        <button type="button" id="fwd" title="Forward" aria-label="Forward">→</button>
+        <button type="button" id="reload" title="Reload" aria-label="Reload">↻</button>
+      </div>
+      <form id="form" class="url-form" autocomplete="off">
+        <input
+          id="url"
+          type="text"
+          spellcheck="false"
+          placeholder="http://localhost:5173 or https://…"
+          aria-label="Address"
+        />
+      </form>
+      <label class="viewport">
+        <span>Size</span>
+        <select id="viewport" aria-label="Viewport">
+          <option value="fluid">Fluid</option>
+          <option value="desktop">1280×800</option>
+          <option value="tablet">768×1024</option>
+          <option value="mobile">390×844</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button type="button" id="snap" title="Text snapshot (cheap for the model)">
+          Snapshot
+        </button>
+        <button type="button" id="shot" title="Viewport JPEG (only when you need pixels)">
+          Screenshot
+        </button>
+        <button type="button" id="ext" title="Open in system browser">↗</button>
+      </div>
+    </header>
+    <div id="hint" class="hint" hidden></div>
+    <aside id="panel" class="panel" hidden>
+      <div class="panel-head">
+        <strong id="panel-title">Snapshot</strong>
+        <span id="panel-meta" class="meta"></span>
+        <button type="button" id="panel-close" aria-label="Close panel">×</button>
+      </div>
+      <pre id="panel-body"></pre>
+    </aside>
+    <script src="./preview.js"></script>
+  </body>
+</html>

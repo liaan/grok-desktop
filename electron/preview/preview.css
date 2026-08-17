@@ -1,0 +1,177 @@
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0c0f;
+  --bar: #14141a;
+  --border: #2a2a35;
+  --text: #f2f2f5;
+  --muted: #9a9aab;
+  --input: #1a1a22;
+  --hover: #22222c;
+  --accent: #a78bfa;
+  --danger: #f87171;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f3f7;
+  --bar: #ffffff;
+  --border: #d4d4e0;
+  --text: #14141c;
+  --muted: #5a5a6e;
+  --input: #f7f7fb;
+  --hover: #ececf3;
+  --accent: #7c3aed;
+  --danger: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.35 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.bar button,
+.bar input,
+.bar select,
+.bar label {
+  -webkit-app-region: no-drag;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--hover);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.url-form {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#url {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+  outline: none;
+}
+
+#url:focus {
+  border-color: var(--accent);
+}
+
+.viewport {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.viewport select {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 6px;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.hint {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--danger);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  width: min(420px, 46vw);
+  bottom: 0;
+  background: var(--bar);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-head .meta {
+  color: var(--muted);
+  font-size: 11px;
+  flex: 1 1 auto;
+}
+
+#panel-close {
+  min-width: 28px;
+}
+
+#panel-body {
+  margin: 0;
+  padding: 10px 12px 16px;
+  overflow: auto;
+  font: 12px/1.45 "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  user-select: text;
+  flex: 1 1 auto;
+}

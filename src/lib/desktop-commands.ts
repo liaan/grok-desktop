@@ -7,6 +7,7 @@ import type { SlashCommand } from "./commands";
 export type DesktopCommandHandlers = {
   newChat: () => void;
   toggleAlwaysApprove: () => void | Promise<void>;
+  preview?: (args: string) => void | Promise<void>;
 };
 
 /** Resolve next mode when toggling Always-approve. */
@@ -23,6 +24,7 @@ export function nextAlwaysApproveMode(
 export function runDesktopCommand(
   name: string,
   handlers: DesktopCommandHandlers,
+  args = "",
 ): boolean {
   const key = name.toLowerCase().replace(/^\//, "");
   if (key === "new" || key === "clear") {
@@ -31,6 +33,10 @@ export function runDesktopCommand(
   }
   if (key === "always-approve") {
     void handlers.toggleAlwaysApprove();
+    return true;
+  }
+  if (key === "preview") {
+    void handlers.preview?.(args);
     return true;
   }
   return false;

@@ -517,6 +517,27 @@ declare global {
       setExternalEditor: (id: string) => Promise<EditorListResult>;
       showItem: (path: string) => Promise<void>;
       openExternal: (url: string) => Promise<boolean>;
+      openPreview: (url?: string) => Promise<{
+        open: boolean;
+        url: string;
+        title: string;
+        viewport: string;
+        loading: boolean;
+      }>;
+      closePreview: () => Promise<boolean>;
+      previewState: () => Promise<{
+        open: boolean;
+        url: string;
+        title: string;
+        viewport: string;
+        loading: boolean;
+      }>;
+      previewSnapshot: () => Promise<{
+        text: string;
+        url: string;
+        title: string;
+        chars: number;
+      }>;
       getAuthStatus: () => Promise<AuthStatus>;
       login: (opts?: {
         deviceAuth?: boolean;
