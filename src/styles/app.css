@@ -740,7 +740,83 @@ button {
   -webkit-app-region: no-drag;
   app-region: no-drag;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* One 28px row: selects stay inset; buttons sit up as actions. */
+.topbar-actions .perm-mode-select,
+.topbar-actions .model-topbar-value,
+.topbar-actions .status-pill,
+.topbar-actions .topbar-btn {
+  height: 28px;
+  box-sizing: border-box;
+}
+
+.topbar-actions .perm-mode-select,
+.topbar-actions .model-topbar-value {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.topbar-actions .topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(15, 15, 20, 0.06);
+}
+
+.topbar-actions .topbar-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.topbar-actions .topbar-btn:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0.5px);
+}
+
+.topbar-actions .topbar-btn.danger {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--danger-soft);
+  box-shadow: none;
+}
+
+.topbar-actions .topbar-btn.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: rgba(248, 113, 113, 0.2);
+}
+
+[data-theme="light"] .topbar-actions .topbar-btn {
+  background: #fff;
+  border-color: #c8c8d6;
+  box-shadow: 0 1px 1px rgba(20, 20, 40, 0.06);
+}
+
+[data-theme="light"] .topbar-actions .topbar-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #faf8ff;
+}
+
+[data-theme="light"] .topbar-actions .topbar-btn.danger {
+  background: #fff5f5;
+  border-color: rgba(220, 38, 38, 0.35);
+  color: var(--danger-soft);
+}
+
+[data-theme="light"] .topbar-actions .topbar-btn.danger:hover:not(:disabled) {
+  background: #ffecec;
+  border-color: var(--danger);
 }
 
 @container topbar (max-width: 560px) {
@@ -1948,10 +2024,49 @@ button {
   flex-shrink: 0;
 }
 
+.composer-attach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .composer-images {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.composer-image-quality {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  max-width: 100%;
+}
+
+.composer-image-quality input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.composer-image-quality > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.composer-image-quality-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.composer-image-quality-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
 }
 
 .composer-image {

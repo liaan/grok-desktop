@@ -20,7 +20,9 @@ import {
 } from "../lib/commands";
 import type { ConnState } from "../lib/conn";
 import {
+  encodePendingImages,
   filesToPendingImages,
+  revokePendingImagePreview,
   type PendingImage,
 } from "../lib/pending-images";
 import { CommandMenu } from "./CommandMenu";
@@ -29,6 +31,7 @@ export type QueuedPrompt = {
   id: string;
   text: string;
   images: PendingImage[];
+  imageQuality?: "compact" | "high";
   at: number;
 };
 
@@ -36,6 +39,7 @@ export type ComposerSubmit = {
   text: string;
   images: PendingImage[];
   mode: "auto" | "queue" | "now";
+  imageQuality?: "compact" | "high";
 };
 
 const COMPOSER_HEIGHT_KEY = "grok-desktop-composer-height";
@@ -104,6 +108,7 @@ export const Composer = memo(function Composer({
 }) {
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [highDetail, setHighDetail] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [composerHeight, setComposerHeight] = useState(readStoredComposerHeight);
@@ -208,8 +213,12 @@ export const Composer = memo(function Composer({
   }, []);
 
   const clearDraft = useCallback(() => {
+    setPendingImages((prev) => {
+      for (const img of prev) revokePendingImagePreview(img);
+      return [];
+    });
     setInput("");
-    setPendingImages([]);
+    setHighDetail(false);
   }, []);
 
   const addImages = useCallback(
@@ -224,14 +233,21 @@ export const Composer = memo(function Composer({
   );
 
   const removePendingImage = useCallback((id: string) => {
-    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+    setPendingImages((prev) => {
+      const next = prev.filter((img) => {
+        if (img.id === id) revokePendingImagePreview(img);
+        return img.id !== id;
+      });
+      if (next.length === 0) setHighDetail(false);
+      return next;
+    });
   }, []);
 
   const submit = useCallback(
     async (overrideText?: string, mode: ComposerSubmit["mode"] = "auto") => {
       const text = (overrideText !== undefined ? overrideText : input).trim();
-      const images = overrideText !== undefined ? [] : pendingImages;
-      if (!text && images.length === 0) return;
+      const draftImages = overrideText !== undefined ? [] : pendingImages;
+      if (!text && draftImages.length === 0) return;
       if (conn === "connecting" || !projectOpen) return;
 
       // Desktop-local slash commands (do not send to agent)
@@ -248,21 +264,35 @@ export const Composer = memo(function Composer({
         }
       }
 
+      const imageQuality = highDetail ? "high" : "compact";
+      let images = draftImages;
+      if (draftImages.length) {
+        try {
+          images = await encodePendingImages(draftImages, imageQuality);
+        } catch (e: unknown) {
+          onError(e instanceof Error ? e.message : String(e));
+          return;
+        }
+      }
+
       // Only wipe the draft after the parent accepts (queue / deliver / interject).
       const accepted = await onSubmit({
         text,
         images: images.map((img) => ({ ...img })),
         mode,
+        imageQuality,
       });
       if (accepted) clearDraft();
     },
     [
       input,
       pendingImages,
+      highDetail,
       conn,
       projectOpen,
       clearDraft,
       onLocalCommand,
+      onError,
       onSubmit,
     ],
   );
@@ -418,20 +448,37 @@ export const Composer = memo(function Composer({
           />
         )}
         {pendingImages.length > 0 && (
-          <div className="composer-images">
-            {pendingImages.map((img) => (
-              <div key={img.id} className="composer-image">
-                <img src={img.previewUrl} alt={img.name || "Attached"} />
-                <button
-                  type="button"
-                  className="composer-image-remove"
-                  title="Remove image"
-                  onClick={() => removePendingImage(img.id)}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+          <div className="composer-attach">
+            <div className="composer-images">
+              {pendingImages.map((img) => (
+                <div key={img.id} className="composer-image">
+                  <img src={img.previewUrl} alt={img.name || "Attached"} />
+                  <button
+                    type="button"
+                    className="composer-image-remove"
+                    title="Remove image"
+                    onClick={() => removePendingImage(img.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <label className="composer-image-quality">
+              <input
+                type="checkbox"
+                checked={highDetail}
+                onChange={(e) => setHighDetail(e.target.checked)}
+              />
+              <span>
+                <span className="composer-image-quality-label">
+                  Higher detail
+                </span>
+                <span className="composer-image-quality-hint">
+                  This send only · uses more tokens
+                </span>
+              </span>
+            </label>
           </div>
         )}
         {promptQueue.length > 0 && (

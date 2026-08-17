@@ -303,6 +303,63 @@ export function applySessionUpdate(items, params) {
       });
       return next;
     }
+    case "auto_compact_started":
+    case "compact_started": {
+      const pct = Number(update.percentage ?? update.percent);
+      const used = Number(update.tokens_used ?? update.tokensUsed);
+      const bits = ["Compressing conversation…"];
+      if (Number.isFinite(pct) && pct > 0) bits.push(`(${Math.round(pct)}% full)`);
+      else if (Number.isFinite(used) && used > 0) {
+        bits.push(`(${used.toLocaleString()} tokens)`);
+      }
+      next.push({
+        id: uid("sys"),
+        kind: "system",
+        text: bits.join(" "),
+        at,
+      });
+      return next;
+    }
+    case "auto_compact_completed":
+    case "compact_completed": {
+      const before = Number(
+        update.tokens_before ?? update.tokensBefore ?? 0,
+      );
+      const after = Number(update.tokens_after ?? update.tokensAfter ?? 0);
+      let text = "Conversation compacted.";
+      if (before > 0 && after >= 0) {
+        text = `Conversation compacted: ${before.toLocaleString()} → ${after.toLocaleString()} tokens.`;
+      }
+      const preview = String(
+        update.summary_preview ?? update.summaryPreview ?? "",
+      ).trim();
+      if (preview) text += `\n${preview}`;
+      next.push({ id: uid("sys"), kind: "system", text, at });
+      return next;
+    }
+    case "auto_compact_failed":
+    case "compact_failed": {
+      const err = String(
+        update.error || update.message || "unknown error",
+      );
+      next.push({
+        id: uid("sys"),
+        kind: "system",
+        text: `Compress failed: ${err}`,
+        at,
+      });
+      return next;
+    }
+    case "auto_compact_cancelled":
+    case "compact_cancelled": {
+      next.push({
+        id: uid("sys"),
+        kind: "system",
+        text: "Compress cancelled.",
+        at,
+      });
+      return next;
+    }
     case "turn_completed":
     case "turn_complete": {
       // Safety net when the agent omits final tool status on the last tools.

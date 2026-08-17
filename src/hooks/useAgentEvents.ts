@@ -159,6 +159,8 @@ export function useAgentEvents(opts: {
           !openingRef.current &&
           (kind === "turn_completed" ||
             kind === "turn_complete" ||
+            kind === "auto_compact_completed" ||
+            kind === "compact_completed" ||
             params?._meta?.totalTokens != null ||
             update?.totalTokens != null)
         ) {

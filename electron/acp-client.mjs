@@ -34,8 +34,10 @@ import {
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
 import { cancelledPermissionResult } from "../shared/permission-options.mjs";
+import { compressPromptImage } from "./image-compress.mjs";
 import {
   classifyInboundMessage,
+  compactConversationAttempts,
   createOnceResponder,
   isFsReadMethod,
   isFsWriteMethod,
@@ -66,6 +68,40 @@ function modelEntryName(entry) {
     entry?._meta?.name ||
     null;
   return name ? String(name) : null;
+}
+
+/**
+ * @param {any} raw
+ */
+function summarizeCompactResult(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const nested = r.result && typeof r.result === "object" ? r.result : r;
+  const before = Number(
+    nested.tokens_before ??
+      nested.tokensBefore ??
+      nested.pre_tokens ??
+      nested.preTokens,
+  );
+  const after = Number(
+    nested.tokens_after ??
+      nested.tokensAfter ??
+      nested.post_tokens ??
+      nested.postTokens,
+  );
+  let message = "Compress finished.";
+  if (Number.isFinite(before) && before > 0 && Number.isFinite(after)) {
+    message = `Conversation compacted: ${before.toLocaleString()} → ${after.toLocaleString()} tokens.`;
+  } else if (nested.message) {
+    message = String(nested.message);
+  } else if (nested.error) {
+    message = String(nested.error);
+  }
+  return {
+    ok: true,
+    tokens_before: Number.isFinite(before) ? before : undefined,
+    tokens_after: Number.isFinite(after) ? after : undefined,
+    message,
+  };
 }
 
 /**
@@ -832,14 +868,59 @@ export class GrokAcpClient extends EventEmitter {
     this._write({ jsonrpc: "2.0", method, params });
   }
 
-  async prompt(text, { images = [] } = {}) {
+  /**
+   * Compact via grok-build `ext_method` → `x.ai/compact_conversation`.
+   * Never send `/compact` as session/prompt. Response body may be `{}`;
+   * token counts arrive on `x.ai/session_notification`.
+   * @param {string} [hint]
+   */
+  async compactConversation(hint = "") {
+    if (!this.sessionId) throw new Error("No ACP session");
+    const longMs = 3 * 60_000;
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+
+    const attempts = compactConversationAttempts(this.sessionId, hint);
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: longMs,
+        });
+        debugLog("acp", "compact-ok", { path: attempt.method });
+        return summarizeCompactResult(raw);
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "compact-try", {
+          path: attempt.method,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    throw new Error(
+      `Compress is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+  }
+
+  async prompt(text, { images = [], imageQuality = "compact" } = {}) {
     if (!this.sessionId) throw new Error("No ACP session");
     const prompt = [{ type: "text", text }];
     for (const img of images) {
+      const compressed = compressPromptImage(img, imageQuality);
       prompt.push({
         type: "image",
-        data: img.data,
-        mimeType: img.mimeType || "image/png",
+        data: compressed.data,
+        mimeType: compressed.mimeType || "image/png",
       });
     }
     // Long agent turns — generous timeout

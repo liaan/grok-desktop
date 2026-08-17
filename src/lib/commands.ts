@@ -54,6 +54,13 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     // Not local: sent to the agent as `/plan …` (same as CLI)
   },
   {
+    name: "compact",
+    description: "Summarize older turns to free context (same as topbar Compress)",
+    source: "desktop",
+    inputHint: "optional note to keep",
+    local: true,
+  },
+  {
     name: "view-plan",
     description: "Ask the agent to show the current plan",
     source: "desktop",

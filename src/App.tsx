@@ -30,6 +30,11 @@ import {
   runDesktopCommand,
 } from "./lib/desktop-commands";
 import { isMissingBinaryError, type ConnState } from "./lib/conn";
+import {
+  normalizeAutoCompactAt,
+  shouldAutoCompact,
+  type AutoCompactAt,
+} from "../shared/auto-compact.mjs";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
@@ -82,6 +87,11 @@ export default function App() {
   const [debugLogging, setDebugLogging] = useState(false);
   const [debugLogPath, setDebugLogPath] = useState("");
   const [allowPrerelease, setAllowPrerelease] = useState(false);
+  const [autoCompactAt, setAutoCompactAt] = useState<AutoCompactAt>("off");
+  const autoCompactFiredRef = useRef({ sessionId: "", tokens: 0 });
+  const autoCompactInFlightRef = useRef(false);
+  const autoCompactFailedAtRef = useRef({ sessionId: "", tokens: 0 });
+  const autoCompactUnsupportedRef = useRef(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitDetached, setGitDetached] = useState(false);
   const { setFilesDirty, confirmDiscardFiles } = useUnsavedGuard();
@@ -178,6 +188,7 @@ export default function App() {
     setDebugLogging(Boolean(i.debugLogging));
     setDebugLogPath(i.debugLogPath || "");
     setAllowPrerelease(Boolean(i.allowPrerelease));
+    setAutoCompactAt(normalizeAutoCompactAt(i.autoCompactAt));
     const nextTheme = i.theme === "light" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
@@ -485,6 +496,76 @@ export default function App() {
     [backbone?.skills, agentCommands],
   );
 
+  const compactingRef = useRef(false);
+  const [compacting, setCompacting] = useState(false);
+
+  const runCompress = useCallback(
+    async (hint?: unknown) => {
+      if (!project || openingRef.current) return false;
+      if (conn !== "online") {
+        appendSystem("Compress is available when the agent is idle.");
+        return false;
+      }
+      if (compactingRef.current) return false;
+      if (typeof window.grokDesktop.compact !== "function") {
+        appendSystem(
+          "Restart this Grok Desktop window to enable Compress (Electron preload does not hot-reload).",
+        );
+        return false;
+      }
+      const note = typeof hint === "string" ? hint.trim() : "";
+      compactingRef.current = true;
+      setCompacting(true);
+      try {
+        const result = (await window.grokDesktop.compact(note)) as {
+          ok?: boolean;
+          message?: string;
+          tokens_before?: number;
+          tokensBefore?: number;
+          tokens_after?: number;
+          tokensAfter?: number;
+        } | null;
+        if (result && result.ok === false) {
+          throw new Error(result.message || "Compress failed");
+        }
+        const before = Number(result?.tokens_before ?? result?.tokensBefore);
+        const after = Number(result?.tokens_after ?? result?.tokensAfter);
+        // Empty CompactConversationResponse is success; counts come from
+        // session_notification, not the RPC body.
+        if (Number.isFinite(before) && Number.isFinite(after) && before > 0) {
+          appendSystem(
+            `Conversation compacted: ${before.toLocaleString()} → ${after.toLocaleString()} tokens.`,
+          );
+        }
+        const mark = Math.max(
+          sessionUsage.lastContextTokens,
+          Number.isFinite(after) && after > 0 ? after : 0,
+        );
+        autoCompactFiredRef.current = {
+          sessionId: sessionIdRef.current || "",
+          tokens: mark,
+        };
+        return true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (
+          /does not support Compress|not available on this Grok CLI|-32601|method not found/i.test(
+            msg,
+          )
+        ) {
+          autoCompactUnsupportedRef.current = true;
+        }
+        setError(msg || "Compress failed");
+        appendSystem(`Compress failed: ${msg}`);
+        return false;
+      } finally {
+        compactingRef.current = false;
+        setCompacting(false);
+      }
+    },
+    [project, conn, sessionUsage.lastContextTokens, appendSystem, setError],
+  );
+
   const handleLocalCommand = useCallback(
     (name: string, args = "") => {
       runDesktopCommand(
@@ -493,6 +574,9 @@ export default function App() {
           newChat: () => void openSession({ mode: "new" }),
           toggleAlwaysApprove: () =>
             applyPermissionMode(nextAlwaysApproveMode(permissionMode)),
+          compact: (hint) => {
+            void runCompress(hint);
+          },
           preview: async (previewArgs) => {
             const a = String(previewArgs || "").trim();
             try {
@@ -524,8 +608,83 @@ export default function App() {
         args,
       );
     },
-    [openSession, applyPermissionMode, permissionMode, appendSystem, setError],
+    [
+      openSession,
+      applyPermissionMode,
+      permissionMode,
+      appendSystem,
+      setError,
+      runCompress,
+    ],
   );
+
+  useEffect(() => {
+    autoCompactFiredRef.current = { sessionId: sessionId || "", tokens: 0 };
+    autoCompactFailedAtRef.current = { sessionId: sessionId || "", tokens: 0 };
+    autoCompactInFlightRef.current = false;
+    autoCompactUnsupportedRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    autoCompactUnsupportedRef.current = false;
+    autoCompactFailedAtRef.current = { sessionId: "", tokens: 0 };
+  }, [autoCompactAt]);
+
+  useEffect(() => {
+    if (!project || !sessionId) return;
+    if (conn !== "online") return;
+    if (openingRef.current) return;
+    if (autoCompactInFlightRef.current) return;
+    if (autoCompactUnsupportedRef.current) return;
+    const ctx = sessionUsage.lastContextTokens;
+    const fired = autoCompactFiredRef.current;
+    const already =
+      fired.sessionId === sessionId ? fired.tokens : 0;
+    if (
+      !shouldAutoCompact({
+        at: autoCompactAt,
+        lastContextTokens: ctx,
+        alreadyFiredAt: already,
+      })
+    ) {
+      return;
+    }
+    const failed = autoCompactFailedAtRef.current;
+    if (failed.sessionId === sessionId && failed.tokens === ctx) {
+      return;
+    }
+    appendSystem(
+      `Auto-compress: context is ${ctx.toLocaleString()} tokens (threshold ${autoCompactAt}).`,
+    );
+    autoCompactInFlightRef.current = true;
+    void runCompress().then((ok) => {
+      autoCompactInFlightRef.current = false;
+      if (ok) {
+        autoCompactFailedAtRef.current = { sessionId: "", tokens: 0 };
+      } else if (!autoCompactUnsupportedRef.current) {
+        autoCompactFailedAtRef.current = { sessionId, tokens: ctx };
+      }
+    });
+  }, [
+    project,
+    sessionId,
+    conn,
+    sessionUsage.lastContextTokens,
+    autoCompactAt,
+    runCompress,
+    appendSystem,
+  ]);
+
+  const applyAutoCompactAt = async (next: AutoCompactAt) => {
+    setAutoCompactAt(next);
+    try {
+      const value = await window.grokDesktop.setAutoCompactAt(next);
+      setAutoCompactAt(normalizeAutoCompactAt(value));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Failed to save auto-compress setting");
+    }
+  };
 
   const setAppTheme = async (next: "dark" | "light") => {
     if (next === theme) return;
@@ -713,6 +872,7 @@ export default function App() {
       debugLogging={debugLogging}
       debugLogPath={debugLogPath}
       allowPrerelease={allowPrerelease}
+      autoCompactAt={autoCompactAt}
       onSetTheme={(t) => void setAppTheme(t)}
       onSetPrivacyMode={(next) => void applyPrivacyMode(next)}
       onSetCodingDataOptIn={(next) => void applyCodingDataOptIn(next)}
@@ -721,6 +881,7 @@ export default function App() {
       onSetSandboxTerminal={(next) => void applySandboxTerminal(next)}
       onSetDebugLogging={(next) => void applyDebugLogging(next)}
       onSetAllowPrerelease={(next) => void applyAllowPrerelease(next)}
+      onSetAutoCompactAt={(next) => void applyAutoCompactAt(next)}
       onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
       onRestartAgent={() => {
         setSettingsOpen(false);
@@ -855,6 +1016,8 @@ export default function App() {
             onReasoningEffort={(e) => void applyReasoningEffort(e)}
             onOpenSettings={onOpenSettings}
             onOpenPreview={() => void handleLocalCommand("preview")}
+            onCompress={runCompress}
+            compacting={compacting}
             allowWritesThisSession={allowWritesThisSession}
             onRevokeWritesThisSession={() =>
               void onRevokeWritesThisSession()

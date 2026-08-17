@@ -30,6 +30,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   onReasoningEffort,
   onOpenSettings,
   onOpenPreview,
+  onCompress,
+  compacting = false,
   allowWritesThisSession,
   onRevokeWritesThisSession,
   onStop,
@@ -55,6 +57,9 @@ export const ChatTopbar = memo(function ChatTopbar({
   onReasoningEffort: (e: ReasoningEffort) => void;
   onOpenSettings: () => void;
   onOpenPreview?: () => void;
+  /** Call the agent compact API (summarize older turns). */
+  onCompress?: () => void;
+  compacting?: boolean;
   allowWritesThisSession?: boolean;
   onRevokeWritesThisSession?: () => void;
   onStop: () => void;
@@ -188,9 +193,20 @@ export const ChatTopbar = memo(function ChatTopbar({
           )}
           {statusLabel}
         </span>
+        {onCompress ? (
+          <button
+            className="btn btn-sm topbar-btn"
+            type="button"
+            title="Summarize older turns to free context. Does not send a chat message."
+            disabled={conn !== "online" || isOpening || compacting}
+            onClick={() => onCompress?.()}
+          >
+            {compacting ? "Compressing…" : "Compress"}
+          </button>
+        ) : null}
         {onOpenPreview ? (
           <button
-            className="btn btn-sm"
+            className="btn btn-sm topbar-btn"
             type="button"
             title="Open a detachable Preview window (move it to another screen)"
             onClick={onOpenPreview}
@@ -199,7 +215,11 @@ export const ChatTopbar = memo(function ChatTopbar({
           </button>
         ) : null}
         {conn === "busy" && (
-          <button className="btn danger" type="button" onClick={onStop}>
+          <button
+            className="btn btn-sm topbar-btn danger"
+            type="button"
+            onClick={onStop}
+          >
             Stop
           </button>
         )}

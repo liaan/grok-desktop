@@ -14,8 +14,10 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:prompt", {
       text,
       images: opts?.images || [],
+      imageQuality: opts?.imageQuality || "compact",
     }),
   cancel: () => ipcRenderer.invoke("agent:cancel"),
+  compact: (hint) => ipcRenderer.invoke("agent:compact", hint || ""),
   respondPermission: (reqId, outcome) =>
     ipcRenderer.invoke("agent:permission-respond", { reqId, outcome }),
   setAllowWritesThisSession: (value) =>
@@ -39,6 +41,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:set-sandbox-terminal", value),
   setTheme: (value) => ipcRenderer.invoke("app:set-theme", value),
   setPrivacyMode: (value) => ipcRenderer.invoke("app:set-privacy-mode", value),
+  setAutoCompactAt: (value) =>
+    ipcRenderer.invoke("app:set-auto-compact-at", value),
   getCodingDataStatus: () => ipcRenderer.invoke("app:get-coding-data"),
   setCodingDataOptIn: (value) =>
     ipcRenderer.invoke("app:set-coding-data-opt-in", value),

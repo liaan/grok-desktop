@@ -6,6 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyInboundMessage,
+  compactConversationAttempts,
+  compactConversationRequestParams,
   createOnceResponder,
   createPermissionOneshot,
   dispatchInboundMessage,
@@ -45,6 +47,95 @@ test("classify session/update with id expects empty ack only", () => {
   assert.equal(c.kind, "session-update");
   assert.equal(c.expectsEmptyAck, true);
   assert.equal(c.id, 9);
+});
+
+test("classify ext_notification session_notification as session-update", () => {
+  const inner = {
+    sessionId: "s1",
+    update: {
+      sessionUpdate: "auto_compact_completed",
+      tokens_before: 31000,
+      tokens_after: 12000,
+    },
+  };
+  const c = classifyInboundMessage({
+    jsonrpc: "2.0",
+    method: "ext_notification",
+    params: {
+      method: "x.ai/session_notification",
+      params: inner,
+    },
+  });
+  assert.equal(c.kind, "session-update");
+  assert.equal(c.method, "x.ai/session_notification");
+  assert.deepEqual(c.params, inner);
+});
+
+test("classify _x.ai/session_notification as session-update", () => {
+  const inner = {
+    update: { sessionUpdate: "auto_compact_started" },
+  };
+  const c = classifyInboundMessage({
+    jsonrpc: "2.0",
+    method: "_x.ai/session_notification",
+    params: inner,
+  });
+  assert.equal(c.kind, "session-update");
+  assert.deepEqual(c.params, inner);
+});
+
+test("classify nested session_notification params.method + params.params", () => {
+  const update = {
+    sessionUpdate: "auto_compact_completed",
+    tokens_before: 10,
+    tokens_after: 4,
+  };
+  const c = classifyInboundMessage({
+    jsonrpc: "2.0",
+    method: "ext_notification",
+    params: {
+      method: "x.ai/session_notification",
+      params: {
+        method: "session/update",
+        params: { update },
+      },
+    },
+  });
+  assert.equal(c.kind, "session-update");
+  assert.deepEqual(c.params, { update });
+});
+
+test("classify ext_notification yolo_mode_changed stays a notification", () => {
+  const c = classifyInboundMessage({
+    jsonrpc: "2.0",
+    method: "ext_notification",
+    params: {
+      method: "x.ai/yolo_mode_changed",
+      params: { yolo_mode: true },
+    },
+  });
+  assert.equal(c.kind, "notification");
+  assert.equal(c.method, "ext_notification");
+});
+
+test("compactConversationRequestParams matches grok-build CompactConversationRequest", () => {
+  assert.deepEqual(compactConversationRequestParams("sess-1"), {
+    sessionId: "sess-1",
+  });
+  assert.deepEqual(compactConversationRequestParams("sess-1", " keep this "), {
+    sessionId: "sess-1",
+    userContext: "keep this",
+  });
+});
+
+test("compactConversationAttempts uses underscore ACP ext method on stdio", () => {
+  const attempts = compactConversationAttempts("sess-1", "keep auth");
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].method, "_x.ai/compact_conversation");
+  assert.deepEqual(attempts[0].params, {
+    sessionId: "sess-1",
+    userContext: "keep auth",
+  });
 });
 
 test("classify session/request_permission as server-request", () => {
@@ -396,6 +487,41 @@ test("session/update does not produce tool completion responses", () => {
   );
   assert.equal(updates.length, 1);
   assert.equal(out.length, 0);
+});
+
+test("ext_notification session_notification is forwarded as session-update", () => {
+  /** @type {any[]} */
+  const updates = [];
+  const once = createOnceResponder(() => {});
+  dispatchInboundMessage(
+    {
+      jsonrpc: "2.0",
+      method: "ext_notification",
+      params: {
+        method: "x.ai/session_notification",
+        params: {
+          update: {
+            sessionUpdate: "auto_compact_completed",
+            tokens_before: 8000,
+            tokens_after: 3000,
+          },
+        },
+      },
+    },
+    {
+      once,
+      onSessionUpdate: (p) => updates.push(p),
+      onNotification: () => {
+        assert.fail("compact session_notification must not stay a generic notification");
+      },
+      handleServerRequest: async () => {
+        assert.fail("session_notification must not run handleServerRequest");
+      },
+    },
+  );
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].update.sessionUpdate, "auto_compact_completed");
+  assert.equal(updates[0].update.tokens_after, 3000);
 });
 
 test("auto mode silent-allows read permissions", async () => {

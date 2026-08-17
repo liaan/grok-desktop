@@ -108,6 +108,7 @@ import {
 } from "./preview-window.mjs";
 import { previewApiAddress, startPreviewApi } from "./preview-api.mjs";
 import { installDesktopPreviewSkill } from "./preview-mcp.mjs";
+import { normalizeAutoCompactAt } from "../shared/auto-compact.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -155,6 +156,11 @@ function loadState() {
        * | textedit | notepad
        */
       externalEditor: "auto",
+      /**
+       * Call the agent compact API when last context size passes this mark.
+       * off | 64k | 128k | 192k
+       */
+      autoCompactAt: "off",
       lastProject: null,
       ...raw,
     };
@@ -169,6 +175,7 @@ function loadState() {
     merged.debugLogging = Boolean(merged.debugLogging);
     merged.allowPrerelease = Boolean(merged.allowPrerelease);
     merged.externalEditor = normalizeExternalEditor(merged.externalEditor);
+    merged.autoCompactAt = normalizeAutoCompactAt(merged.autoCompactAt);
     return merged;
   } catch {
     return {
@@ -181,6 +188,7 @@ function loadState() {
       debugLogging: false,
       allowPrerelease: false,
       externalEditor: "auto",
+      autoCompactAt: "off",
       lastProject: null,
       recentProjects: [],
     };
@@ -596,6 +604,7 @@ function registerIpc() {
       debugLogPath: getDebugLogPath(),
       allowPrerelease: Boolean(state.allowPrerelease),
       externalEditor: normalizeExternalEditor(state.externalEditor),
+      autoCompactAt: normalizeAutoCompactAt(state.autoCompactAt),
       recentProjects: state.recentProjects || [],
       lastProject: state.lastProject,
       home: os.homedir(),
@@ -857,10 +866,29 @@ function registerIpc() {
     });
   });
 
-  ipcMain.handle("agent:prompt", async (e, { text, images = [] }) => {
+  ipcMain.handle(
+    "agent:prompt",
+    async (e, { text, images = [], imageQuality = "compact" }) => {
+      const agent = sessionFromEvent(e)?.agent;
+      if (!agent?.ready)
+        throw new Error("Agent not connected. Open a project first.");
+      return agent.prompt(text, { images, imageQuality });
+    },
+  );
+
+  ipcMain.handle("agent:compact", async (e, hint = "") => {
     const agent = sessionFromEvent(e)?.agent;
-    if (!agent?.ready) throw new Error("Agent not connected. Open a project first.");
-    return agent.prompt(text, { images });
+    if (!agent?.ready)
+      throw new Error("Agent not connected. Open a project first.");
+    try {
+      const result = await agent.compactConversation(
+        typeof hint === "string" ? hint : "",
+      );
+      // IPC can only clone plain JSON — drop class instances / cycles.
+      return JSON.parse(JSON.stringify(result ?? { ok: true }));
+    } catch (err) {
+      throw new Error(err?.message || String(err));
+    }
   });
 
   ipcMain.handle("agent:cancel", async (e) => {
@@ -1038,6 +1066,13 @@ function registerIpc() {
     state.privacyMode = Boolean(value);
     saveState(state);
     return state.privacyMode;
+  });
+
+  ipcMain.handle("app:set-auto-compact-at", async (_e, value) => {
+    const state = loadState();
+    state.autoCompactAt = normalizeAutoCompactAt(value);
+    saveState(state);
+    return state.autoCompactAt;
   });
 
   /** CLI `/privacy` — coding data retention & training (auth.json). */

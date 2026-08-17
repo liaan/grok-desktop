@@ -476,3 +476,17 @@ test("read tools with explicit completed still work", () => {
   });
   assert.equal(items[0].status, "completed");
 });
+
+test("auto_compact_completed becomes a system line with before/after", () => {
+  const items = applySessionUpdate([], {
+    update: {
+      sessionUpdate: "auto_compact_completed",
+      tokens_before: 31000,
+      tokens_after: 12000,
+    },
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, "system");
+  assert.match(items[0].text, /31,000/);
+  assert.match(items[0].text, /12,000/);
+});

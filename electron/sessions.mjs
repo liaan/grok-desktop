@@ -134,7 +134,12 @@ export function loadSessionOpenState(cwd, sessionId, opts = {}) {
 
       const update = params?.update ?? params;
       const kind = update?.sessionUpdate || update?.session_update;
-      if (kind === "turn_completed" || kind === "turn_complete") {
+      if (
+        kind === "turn_completed" ||
+        kind === "turn_complete" ||
+        kind === "auto_compact_completed" ||
+        kind === "compact_completed"
+      ) {
         usage = applyUsageUpdate(usage, params);
       }
       if (isBackgroundTaskUpdateKind(kind)) {

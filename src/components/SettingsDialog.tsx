@@ -33,6 +33,7 @@ export function SettingsDialog({
   debugLogging,
   debugLogPath,
   allowPrerelease,
+  autoCompactAt,
   onSetTheme,
   onSetPrivacyMode,
   onSetCodingDataOptIn,
@@ -41,6 +42,7 @@ export function SettingsDialog({
   onSetSandboxTerminal,
   onSetDebugLogging,
   onSetAllowPrerelease,
+  onSetAutoCompactAt,
   onOpenDebugLog,
   onRestartAgent,
   onRestartAfterWrite,
@@ -177,6 +179,7 @@ export function SettingsDialog({
               debugLogging={debugLogging}
               debugLogPath={debugLogPath}
               allowPrerelease={allowPrerelease}
+              autoCompactAt={autoCompactAt}
               onSetTheme={onSetTheme}
               onSetPrivacyMode={onSetPrivacyMode}
               onSetCodingDataOptIn={onSetCodingDataOptIn}
@@ -185,6 +188,7 @@ export function SettingsDialog({
               onSetSandboxTerminal={onSetSandboxTerminal}
               onSetDebugLogging={onSetDebugLogging}
               onSetAllowPrerelease={onSetAllowPrerelease}
+              onSetAutoCompactAt={onSetAutoCompactAt}
               onOpenDebugLog={onOpenDebugLog}
               onRestartAgent={onRestartAgent}
               onRestartAfterWrite={onRestartAfterWrite}
@@ -223,6 +227,8 @@ function SettingsPageBody({
         <EnginePage
           grokBinary={props.grokBinary}
           restarting={props.restarting}
+          autoCompactAt={props.autoCompactAt}
+          onSetAutoCompactAt={props.onSetAutoCompactAt}
           onRestartAgent={props.onRestartAgent}
         />
       );

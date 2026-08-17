@@ -1,3 +1,4 @@
+import type { AutoCompactAt } from "../../../shared/auto-compact.mjs";
 import type { PermissionMode } from "../../lib/permission-mode";
 
 export type SettingsPageId =
@@ -86,6 +87,7 @@ export type SettingsSharedProps = {
   debugLogging: boolean;
   debugLogPath: string;
   allowPrerelease: boolean;
+  autoCompactAt: AutoCompactAt;
   onSetTheme: (theme: "dark" | "light") => void;
   onSetPrivacyMode: (next: boolean) => void;
   onSetCodingDataOptIn: (next: boolean) => void;
@@ -94,6 +96,7 @@ export type SettingsSharedProps = {
   onSetSandboxTerminal: (next: boolean) => void;
   onSetDebugLogging: (next: boolean) => void;
   onSetAllowPrerelease: (next: boolean) => void;
+  onSetAutoCompactAt: (next: AutoCompactAt) => void;
   onOpenDebugLog: () => void;
   onRestartAgent: () => void;
   onRestartAfterWrite?: () => Promise<void> | void;

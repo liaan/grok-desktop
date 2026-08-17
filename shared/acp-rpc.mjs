@@ -21,6 +21,95 @@
  */
 
 /**
+ * Progress methods: ACP session/update and grok-build session_notification
+ * (AutoCompactCompleted and other XaiSessionUpdate events).
+ * @param {unknown} method
+ */
+export function isSessionUpdateMethod(method) {
+  const m = String(method || "");
+  return (
+    m === "session/update" ||
+    m === "_x.ai/session/update" ||
+    m === "x.ai/session/update" ||
+    m.endsWith("/session/update") ||
+    m === "x.ai/session_notification" ||
+    m === "_x.ai/session_notification" ||
+    m.endsWith("/session_notification")
+  );
+}
+
+/**
+ * Peel `ext_notification` / nested `{ method, params }` so compact and other
+ * XaiSessionUpdate events look like a normal session/update to the UI.
+ * @param {any} msg
+ * @returns {{ method: string, params: any }}
+ */
+export function unwrapInboundSessionEnvelope(msg) {
+  let method = String(msg?.method || "");
+  let params = msg?.params;
+
+  const peel = () => {
+    if (!params || typeof params !== "object") return false;
+    if (params.method == null || params.params === undefined) return false;
+    const inner = String(params.method);
+    if (
+      inner === "ext_notification" ||
+      inner.endsWith("/ext_notification") ||
+      isSessionUpdateMethod(inner)
+    ) {
+      method = inner;
+      params = params.params;
+      return true;
+    }
+    return false;
+  };
+
+  if (
+    method === "ext_notification" ||
+    method === "_ext_notification" ||
+    method.endsWith("/ext_notification")
+  ) {
+    peel();
+  }
+  if (isSessionUpdateMethod(method)) {
+    peel();
+  }
+
+  return { method, params };
+}
+
+/**
+ * grok-build CompactConversationRequest (session/acp_types.rs).
+ * Optional `/compact` note is `userContext`.
+ * @param {string} sessionId
+ * @param {string} [hint]
+ */
+export function compactConversationRequestParams(sessionId, hint = "") {
+  const context = String(hint || "").trim();
+  return {
+    sessionId,
+    ...(context ? { userContext: context } : {}),
+  };
+}
+
+/**
+ * Wire method for `grok agent stdio`.
+ *
+ * Official ACP (`AgentSide::decode_request`) only routes names that start
+ * with `_` into `ext_method`. The pager's private channel uses
+ * `ext_method` + `x.ai/compact_conversation`; on stdio that is
+ * `_x.ai/compact_conversation` and the JSON-RPC params *are* the
+ * CompactConversationRequest (ExtRequest is serde-transparent).
+ * @param {string} sessionId
+ * @param {string} [hint]
+ * @returns {{ method: string, params: object }[]}
+ */
+export function compactConversationAttempts(sessionId, hint = "") {
+  const params = compactConversationRequestParams(sessionId, hint);
+  return [{ method: "_x.ai/compact_conversation", params }];
+}
+
+/**
  * Classify an inbound JSON-RPC message from the agent (stdout).
  * @param {any} msg
  * @returns {ClassifiedMessage}
@@ -48,20 +137,15 @@ export function classifyInboundMessage(msg) {
     return { kind: "invalid" };
   }
 
-  const method = String(msg.method);
-  const isSessionUpdate =
-    method === "session/update" ||
-    method === "_x.ai/session/update" ||
-    method === "x.ai/session/update" ||
-    method.endsWith("/session/update");
+  const { method, params } = unwrapInboundSessionEnvelope(msg);
 
   // Progress notifications (and Grok variants that attach id + expect empty ack)
-  if (isSessionUpdate && msg.params != null && !msg.result && !msg.error) {
+  if (isSessionUpdateMethod(method) && params != null && !msg.result && !msg.error) {
     return {
       kind: "session-update",
       method,
       id: msg.id,
-      params: msg.params,
+      params,
       expectsEmptyAck: msg.id !== undefined,
     };
   }

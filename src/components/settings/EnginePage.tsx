@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
+import {
+  AUTO_COMPACT_OPTIONS,
+  type AutoCompactAt,
+} from "../../../shared/auto-compact.mjs";
 import type { GrokEngineInfo, GrokUpdateCheck } from "../../vite-env";
 
 export function EnginePage({
   grokBinary,
   restarting,
+  autoCompactAt,
+  onSetAutoCompactAt,
   onRestartAgent,
 }: {
   grokBinary?: string;
   restarting?: boolean;
+  autoCompactAt: AutoCompactAt;
+  onSetAutoCompactAt: (next: AutoCompactAt) => void;
   onRestartAgent: () => void;
 }) {
   const [engine, setEngine] = useState<GrokEngineInfo | null>(null);
@@ -27,6 +35,30 @@ export function EnginePage({
 
   return (
     <section className="settings-section">
+      <label className="settings-row settings-row-stack">
+        <div className="settings-row-text">
+          <span className="settings-label">Auto-compress context</span>
+          <span className="settings-desc">
+            When last context size passes this mark, Desktop calls the agent
+            compact API (same as the topbar Compress button). The CLI still
+            compresses on its own near the hard window. Off unless you want it
+            earlier — pick a lower number to kick off sooner.
+          </span>
+        </div>
+        <select
+          className="settings-select"
+          value={autoCompactAt}
+          onChange={(e) =>
+            onSetAutoCompactAt(e.target.value as AutoCompactAt)
+          }
+        >
+          {AUTO_COMPACT_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id} title={opt.hint}>
+              {opt.id === "off" ? "Off" : opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="settings-row settings-row-stack">
         <div className="settings-row-text">
           <span className="settings-label">Grok CLI</span>

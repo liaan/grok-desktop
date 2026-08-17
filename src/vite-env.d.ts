@@ -378,6 +378,8 @@ export type AppInfo = {
    * | textedit | notepad
    */
   externalEditor: string;
+  /** Call the agent compact API when last context size passes this mark. */
+  autoCompactAt: "off" | "64k" | "128k" | "192k";
   recentProjects: string[];
   lastProject: string | null;
   home: string;
@@ -426,9 +428,13 @@ declare global {
       }) => Promise<OpenProjectResult>;
       prompt: (
         text: string,
-        opts?: { images?: PromptImage[] },
+        opts?: {
+          images?: PromptImage[];
+          imageQuality?: "compact" | "high";
+        },
       ) => Promise<unknown>;
       cancel: () => Promise<boolean>;
+      compact: (hint?: string) => Promise<unknown>;
       respondPermission: (
         reqId: string,
         outcome: PermissionOutcome,
@@ -477,6 +483,9 @@ declare global {
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
       setPrivacyMode: (value: boolean) => Promise<boolean>;
+      setAutoCompactAt: (
+        value: "off" | "64k" | "128k" | "192k",
+      ) => Promise<"off" | "64k" | "128k" | "192k">;
       getCodingDataStatus: () => Promise<{
         optedIn: boolean;
         source: "auth" | "default" | "none";

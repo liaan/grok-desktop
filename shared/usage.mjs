@@ -55,6 +55,19 @@ export function applyUsageUpdate(prev, params) {
     num(update?._meta?.totalTokens) ||
     num(update?.totalTokens);
 
+  if (
+    kind === "auto_compact_completed" ||
+    kind === "compact_completed"
+  ) {
+    const after =
+      num(update.tokens_after ?? update.tokensAfter) ||
+      num(update.tokens_used ?? update.tokensUsed);
+    if (after > 0 && after !== prev.lastContextTokens) {
+      return { ...prev, lastContextTokens: after };
+    }
+    return prev;
+  }
+
   if (kind === "turn_completed" || kind === "turn_complete") {
     const usage = update.usage || update.Usage || {};
     const input = num(usage.inputTokens ?? usage.input_tokens);

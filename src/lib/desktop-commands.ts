@@ -8,6 +8,7 @@ export type DesktopCommandHandlers = {
   newChat: () => void;
   toggleAlwaysApprove: () => void | Promise<void>;
   preview?: (args: string) => void | Promise<void>;
+  compact?: (hint?: string) => void | Promise<void>;
 };
 
 /** Resolve next mode when toggling Always-approve. */
@@ -37,6 +38,10 @@ export function runDesktopCommand(
   }
   if (key === "preview") {
     void handlers.preview?.(args);
+    return true;
+  }
+  if (key === "compact") {
+    void handlers.compact?.(args);
     return true;
   }
   return false;

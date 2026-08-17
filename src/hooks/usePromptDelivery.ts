@@ -47,6 +47,7 @@ export function usePromptDelivery(opts: {
   const deliverRef = useRef<(payload: {
     text: string;
     images: PendingImage[];
+    imageQuality?: "compact" | "high";
   }) => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -61,11 +62,16 @@ export function usePromptDelivery(opts: {
   }, []);
 
   const enqueuePrompt = useCallback(
-    (text: string, images: PendingImage[]) => {
+    (
+      text: string,
+      images: PendingImage[],
+      imageQuality: "compact" | "high" = "compact",
+    ) => {
       const item: QueuedPrompt = {
         id: uid("q"),
         text,
         images: images.map((img) => ({ ...img })),
+        imageQuality,
         at: Date.now(),
       };
       setPromptQueue((prev) => {
@@ -88,7 +94,11 @@ export function usePromptDelivery(opts: {
   }, []);
 
   const deliverPrompt = useCallback(
-    async (payload: { text: string; images: PendingImage[] }) => {
+    async (payload: {
+      text: string;
+      images: PendingImage[];
+      imageQuality?: "compact" | "high";
+    }) => {
       if (!project || busyRef.current || openingRef.current) return;
       const text = payload.text.trim();
       const images = payload.images;
@@ -122,6 +132,7 @@ export function usePromptDelivery(opts: {
       try {
         await window.grokDesktop.prompt(text, {
           images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+          imageQuality: payload.imageQuality || "compact",
         });
         if (stale()) return;
         setItems((prev) => finalizeOpenTools(prev, "completed"));
@@ -161,6 +172,7 @@ export function usePromptDelivery(opts: {
           void deliverRef.current({
             text: nextNow.text,
             images: nextNow.images,
+            imageQuality: nextNow.imageQuality,
           });
           return;
         }
@@ -174,6 +186,7 @@ export function usePromptDelivery(opts: {
           void deliverRef.current({
             text: queued.text,
             images: queued.images,
+            imageQuality: queued.imageQuality,
           });
         }
       }
@@ -197,7 +210,12 @@ export function usePromptDelivery(opts: {
    * (queued, interject, or delivered). False when refused (opening / no project).
    */
   const submitFromComposer = useCallback(
-    async ({ text, images, mode }: ComposerSubmit): Promise<boolean> => {
+    async ({
+      text,
+      images,
+      mode,
+      imageQuality = "compact",
+    }: ComposerSubmit): Promise<boolean> => {
       if (!project || openingRef.current || conn === "connecting") {
         return false;
       }
@@ -205,19 +223,19 @@ export function usePromptDelivery(opts: {
 
       if (busyRef.current) {
         if (mode === "now") {
-          const item = enqueuePrompt(text, images);
+          const item = enqueuePrompt(text, images, imageQuality);
           sendNowRef.current = item;
           setItems((prev) => finalizeOpenTools(prev, "cancelled"));
           void window.grokDesktop.cancel();
           return true;
         }
-        enqueuePrompt(text, images);
+        enqueuePrompt(text, images, imageQuality);
         return true;
       }
 
       // Do not await the full turn — Composer clears the draft on this true.
       // deliverPrompt owns busy/queue drain for the rest of the turn.
-      void deliverPrompt({ text, images });
+      void deliverPrompt({ text, images, imageQuality });
       return true;
     },
     [
@@ -247,7 +265,11 @@ export function usePromptDelivery(opts: {
           promptQueueRef.current = next;
           return next;
         });
-        void deliverPrompt({ text: item.text, images: item.images });
+        void deliverPrompt({
+          text: item.text,
+          images: item.images,
+          imageQuality: item.imageQuality,
+        });
       }
     },
     [busyRef, openingRef, setItems, deliverPrompt],
