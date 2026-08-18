@@ -18,7 +18,7 @@ export type SessionUsage = {
   outputTokens: number;
   /** Sum of per-turn totalTokens (can exceed context — sum of billable totals) */
   totalTokens: number;
-  /** Latest context-ish size (last turn totalTokens or stream meta) */
+  /** Live window occupancy (`_meta.totalTokens`), not billed turn totals */
   lastContextTokens: number;
   cachedReadTokens: number;
   reasoningTokens: number;

@@ -134,14 +134,9 @@ export function loadSessionOpenState(cwd, sessionId, opts = {}) {
 
       const update = params?.update ?? params;
       const kind = update?.sessionUpdate || update?.session_update;
-      if (
-        kind === "turn_completed" ||
-        kind === "turn_complete" ||
-        kind === "auto_compact_completed" ||
-        kind === "compact_completed"
-      ) {
-        usage = applyUsageUpdate(usage, params);
-      }
+      // Include stream `_meta.totalTokens` so ctx is window occupancy, not
+      // the last turn's billed usage.totalTokens (cache-inflated).
+      usage = applyUsageUpdate(usage, params);
       if (isBackgroundTaskUpdateKind(kind)) {
         tasks = applyBackgroundUpdate(tasks, params);
       }

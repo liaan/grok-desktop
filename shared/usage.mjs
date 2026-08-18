@@ -38,6 +38,30 @@ function num(v) {
 }
 
 /**
+ * Live window occupancy from ACP `_meta.totalTokens`.
+ * Do not use turn `usage.totalTokens` — that is billed input+output (includes
+ * cache) and stays well above the real window after compact / cache hits.
+ */
+function metaContextTokens(params, update) {
+  return (
+    num(params?._meta?.totalTokens) ||
+    num(update?._meta?.totalTokens) ||
+    num(update?.totalTokens)
+  );
+}
+
+/**
+ * Request-time occupancy from a turn usage blob when stream meta is missing.
+ * Cached prefix is not sitting in the live window.
+ */
+function occupancyFromTurnUsage(usage) {
+  const input = num(usage.inputTokens ?? usage.input_tokens);
+  const cached = num(usage.cachedReadTokens ?? usage.cached_read_tokens);
+  if (input > 0 && cached > 0 && input >= cached) return input - cached;
+  return input;
+}
+
+/**
  * Apply a session/update params blob to cumulative usage.
  * Returns the same reference if nothing changed.
  * @param {SessionUsage} prev
@@ -50,10 +74,7 @@ export function applyUsageUpdate(prev, params) {
 
   const kind = update.sessionUpdate || update.session_update;
 
-  const metaTotal =
-    num(params?._meta?.totalTokens) ||
-    num(update?._meta?.totalTokens) ||
-    num(update?.totalTokens);
+  const metaTotal = metaContextTokens(params, update);
 
   if (
     kind === "auto_compact_completed" ||
@@ -84,12 +105,19 @@ export function applyUsageUpdate(prev, params) {
       if (keys.length) lastModel = keys[keys.length - 1];
     }
 
+    // Prefer live/stream occupancy already on `prev` over this turn's
+    // billed input (cache-inflated). Occupancy is only a hydrate fallback.
+    const ctx =
+      metaTotal ||
+      prev.lastContextTokens ||
+      occupancyFromTurnUsage(usage);
+
     return {
       turns: prev.turns + 1,
       inputTokens: prev.inputTokens + input,
       outputTokens: prev.outputTokens + output,
       totalTokens: prev.totalTokens + total,
-      lastContextTokens: total || metaTotal || prev.lastContextTokens,
+      lastContextTokens: ctx,
       cachedReadTokens: prev.cachedReadTokens + cached,
       reasoningTokens: prev.reasoningTokens + reasoning,
       modelCalls: prev.modelCalls + calls,
