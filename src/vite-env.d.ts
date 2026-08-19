@@ -608,6 +608,10 @@ declare global {
       ) => Promise<McpWriteResult>;
       doctorMcp: (name?: string) => Promise<McpDoctorResult>;
       authenticateMcpServer: (name: string) => Promise<McpAuthResult>;
+      logoutMcpServer: (
+        name: string,
+      ) => Promise<{ ok: boolean; removed?: number; error?: string | null }>;
+      setSettingsOpen: (open: boolean) => Promise<boolean>;
       listPlugins: () => Promise<PluginListResult>;
       enablePlugin: (name: string) => Promise<PluginWriteResult>;
       disablePlugin: (name: string) => Promise<PluginWriteResult>;

@@ -80,6 +80,15 @@ export function WelcomeView({
             <code>~/.grok</code> load automatically. Manage them in Settings —
             no terminal.
           </p>
+          {!auth && !isOpening ? (
+            <div className="loading-banner" role="status" aria-live="polite">
+              <Spinner size={18} />
+              <div>
+                <strong>Starting…</strong>
+                <span>Loading Grok login and backbone</span>
+              </div>
+            </div>
+          ) : null}
 
           <AuthGate
             auth={auth}

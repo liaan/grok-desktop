@@ -447,6 +447,52 @@ export function McpPage({
     }
   };
 
+  const onLogout = async (s: McpServerInfo) => {
+    if (
+      !window.confirm(
+        `Sign out of “${s.displayName || s.name}”? This removes the stored OAuth token. You will need to sign in again.`,
+      )
+    ) {
+      return;
+    }
+    setWriteBusy(true);
+    setNote(null);
+    try {
+      const res = await window.grokDesktop.logoutMcpServer(s.name);
+      if (!res.ok) {
+        setNote(res.error || `Sign-out failed for “${s.name}”.`);
+        return;
+      }
+      setReports((prev) => {
+        const next = { ...prev };
+        delete next[s.name];
+        return next;
+      });
+      setServerList((prev) =>
+        prev.map((row) =>
+          row.name === s.name
+            ? {
+                ...row,
+                signedIn: false,
+                liveStatus: "needs-auth",
+                authRequired: true,
+              }
+            : row,
+        ),
+      );
+      await afterWrite(true);
+      setNote(
+        res.removed
+          ? `Signed out of “${s.name}”. Sign in again to reconnect.`
+          : `No stored token for “${s.name}”.`,
+      );
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setWriteBusy(false);
+    }
+  };
+
   const onAuth = async (s: McpServerInfo) => {
     setAuthing(s.name);
     setNote(null);
@@ -560,10 +606,10 @@ export function McpPage({
       <h3>MCP servers</h3>
       <p className="settings-desc settings-lead">
         Same as <code>grok mcp</code> and the TUI <code>/mcps</code> modal —
-        add, edit, toggle, test, or sign in here. Status matches the TUI
+        add, edit, toggle, test, sign in, or log out here. Status matches the TUI
         (initializing → ready / needs auth / unavailable). Desktop never edits{" "}
         <code>config.toml</code>. Sign in only appears when a server needs
-        OAuth.
+        OAuth. Log out removes the stored token for that server.
       </p>
       <div className="mcp-toolbar">
         <span className="settings-desc">
@@ -682,6 +728,17 @@ export function McpPage({
                         : s.signedIn
                           ? "Re-auth"
                           : "Sign in"}
+                    </button>
+                  ) : null}
+                  {s.signedIn ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={writeLocked || authLocked}
+                      title="Remove the stored OAuth token for this server"
+                      onClick={() => void onLogout(s)}
+                    >
+                      Log out
                     </button>
                   ) : null}
                   {isManagedMcp(s) ? null : (

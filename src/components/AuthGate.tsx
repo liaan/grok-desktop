@@ -114,7 +114,7 @@ export function AuthGate({
   if (!auth) {
     return (
       <div className="auth-card">
-        <p className="auth-muted">Checking Grok login…</p>
+        <p className="auth-muted">Starting… checking Grok login.</p>
       </div>
     );
   }

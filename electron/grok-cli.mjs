@@ -466,6 +466,77 @@ export function mcpCredentialServerNames(raw) {
 }
 
 /**
+ * Drop OAuth entries for one MCP server. Keys are `name:url` (or bare name).
+ * Never copies token values.
+ * @param {unknown} raw
+ * @param {string} serverName
+ * @returns {{ next: Record<string, unknown> | null, removed: number }}
+ */
+export function stripMcpCredentialKeys(raw, serverName) {
+  const name = String(serverName || "").trim();
+  if (!name) return { next: null, removed: 0 };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { next: {}, removed: 0 };
+  }
+  /** @type {Record<string, unknown>} */
+  const next = {};
+  let removed = 0;
+  for (const key of Object.keys(/** @type {Record<string, unknown>} */ (raw))) {
+    if (key === name || key.startsWith(`${name}:`)) {
+      removed += 1;
+      continue;
+    }
+    next[key] = /** @type {Record<string, unknown>} */ (raw)[key];
+  }
+  return { next, removed };
+}
+
+/**
+ * Remove stored MCP OAuth tokens for `name` from ~/.grok/mcp_credentials.json.
+ * Does not edit config.toml. Live agent still needs Restart to drop in-memory tokens.
+ * @param {string} serverName
+ * @param {{ home?: string }} [opts]
+ * @returns {{ ok: boolean, removed: number, error?: string | null }}
+ */
+export function logoutMcpServer(serverName, opts = {}) {
+  const name = String(serverName || "").trim();
+  if (!name) {
+    return { ok: false, removed: 0, error: "MCP server name is required" };
+  }
+  const file = path.join(opts.home || grokHomeDir(), "mcp_credentials.json");
+  let raw = {};
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    if (err && typeof err === "object" && /** @type {{ code?: string }} */ (err).code === "ENOENT") {
+      return { ok: true, removed: 0, error: null };
+    }
+    return {
+      ok: false,
+      removed: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  const { next, removed } = stripMcpCredentialKeys(raw, name);
+  if (!removed) return { ok: true, removed: 0, error: null };
+  try {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    fs.renameSync(tmp, file);
+    return { ok: true, removed, error: null };
+  } catch (err) {
+    return {
+      ok: false,
+      removed: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
  * @param {string} [home]
  * @returns {Set<string>}
  */

@@ -13,9 +13,45 @@
     <title>Grok Desktop</title>
     <!-- External script only; CSP script-src 'self' blocks inline scripts -->
     <script src="./theme-boot.js"></script>
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      body {
+        background: #0c0c0f;
+        color: #f2f2f5;
+        font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      }
+      [data-theme="light"] body { background: #f3f3f7; color: #14141c; }
+      .boot-splash {
+        min-height: 100%;
+        display: grid;
+        place-items: center;
+        gap: 14px;
+        text-align: center;
+        user-select: none;
+      }
+      .boot-splash strong { font-size: 18px; font-weight: 650; }
+      .boot-splash span { color: #9a9aab; font-size: 13px; }
+      [data-theme="light"] .boot-splash span { color: #5a5a6e; }
+      .boot-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: #0a0a0a;
+        border: 1px solid rgba(255,255,255,.14);
+        margin: 0 auto 4px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash" role="status" aria-live="polite">
+        <div>
+          <div class="boot-mark" aria-hidden="true"></div>
+          <strong>Grok Desktop</strong>
+          <div><span>Starting…</span></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

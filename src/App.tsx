@@ -324,6 +324,17 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => {
+    void window.grokDesktop.setSettingsOpen(settingsOpen);
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    return window.grokDesktop.on("app:close-settings", () => {
+      setSettingsOpen(false);
+      setSettingsSection(null);
+    });
+  }, []);
+
   const handleLogin = async (deviceAuth = false) => {
     const gen = ++loginGen.current;
     setAuthBusy(true);

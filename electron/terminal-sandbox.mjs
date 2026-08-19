@@ -761,11 +761,22 @@ export function buildSeatbeltProfile(opts) {
 }
 
 /**
- * @param {{ refresh?: boolean }} [opts]
+ * @param {{ refresh?: boolean, lazy?: boolean }} [opts]
  * @returns {SandboxProbe}
  */
 export function probeSandbox(opts = {}) {
   if (!opts.refresh && probeCache) return probeCache;
+  // WSL `wsl -l` / bwrap checks use spawnSync (up to 12s per distro) and
+  // freeze the UI if they run on first getInfo.
+  if (opts.lazy && !opts.refresh) {
+    return {
+      platform: process.platform,
+      dockerImage: DEFAULT_DOCKER_IMAGE,
+      available: true,
+      backend: "pending",
+      detail: "Checking sandbox…",
+    };
+  }
   probeCache = probeSandboxUncached();
   return probeCache;
 }
@@ -1257,7 +1268,7 @@ function planDocker(p) {
 
 /**
  * Human-readable one-liner for Settings.
- * @param {{ refresh?: boolean }} [opts]
+ * @param {{ refresh?: boolean, lazy?: boolean }} [opts]
  */
 export function sandboxStatusLabel(opts = {}) {
   const p = probeSandbox(opts);

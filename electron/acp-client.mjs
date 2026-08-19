@@ -877,7 +877,16 @@ export class GrokAcpClient extends EventEmitter {
    * @param {{ code?: number, message?: string } | null} [error]
    */
   _respond(id, result, error = null) {
-    this._ensureOnce().respond(id, result, error);
+    try {
+      this._ensureOnce().respond(id, result, error);
+    } catch (err) {
+      // Agent already gone (HMR / restart / crash). Do not reject the
+      // inbound-line handler — that surfaces as an unhandled rejection.
+      debugLog("acp", "respond-failed", {
+        id,
+        error: err?.message || String(err),
+      });
+    }
   }
 
   _write(obj) {
@@ -915,7 +924,14 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   notify(method, params = {}) {
-    this._write({ jsonrpc: "2.0", method, params });
+    try {
+      this._write({ jsonrpc: "2.0", method, params });
+    } catch (err) {
+      debugLog("acp", "notify-failed", {
+        method,
+        error: err?.message || String(err),
+      });
+    }
   }
 
   /**

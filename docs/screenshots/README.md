@@ -4,9 +4,10 @@ Product shots for the GitHub README (theme-matched HTML mocks of the real UI).
 
 | File | Use |
 |------|-----|
-| `main.png` | Hero — full app (sidebar, chat, tools, files) |
+| `main.png` | Hero — full app (sidebar, chat, tools, files, Preview button) |
 | `welcome.png` | Sign-in / welcome |
 | `approvals.png` | Tool permission card |
+| `preview.png` | Detachable Preview window (address bar + guest page) |
 
 ## Regenerate
 

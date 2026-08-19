@@ -37,6 +37,7 @@ import {
   installPlugin,
   listMcpServers,
   listPlugins,
+  logoutMcpServer,
   removeMcpServer,
 } from "./grok-cli.mjs";
 import {
@@ -113,6 +114,9 @@ import { mergeMcpLiveStatus } from "../shared/mcp-status.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
+
+/** File → Quit / Cmd+Q. Window X does not set this (Settings can swallow that). */
+let appQuitting = false;
 
 const storePath = path.join(app.getPath("userData"), "desktop-state.json");
 
@@ -490,7 +494,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: APP_WINDOW_TITLE,
-    show: false,
+    show: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f6f6f8",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -510,6 +514,14 @@ function createWindow() {
   // Session owns page-title guard + empty-shell title.
   createWindowSession(win);
   attachContextMenu(win);
+
+  win.on("close", (e) => {
+    if (appQuitting || isQuittingForUpdate()) return;
+    const ws = windowSessions.get(win.id);
+    if (!ws?.settingsOpen) return;
+    e.preventDefault();
+    send(ws, "app:close-settings");
+  });
 
   // Cmd+` / Ctrl+Tab: cycle shells even if the menu accelerator is swallowed.
   win.webContents.on("before-input-event", (event, input) => {
@@ -543,10 +555,11 @@ function createWindow() {
 
   if (isDev) {
     void win.loadURL("http://127.0.0.1:5173");
-    // Only auto-open DevTools for the first window to avoid spam
-    if (windowSessions.size <= 1) {
-      win.webContents.openDevTools({ mode: "detach" });
-    }
+    win.once("ready-to-show", () => {
+      if (windowSessions.size <= 1 && !win.isDestroyed()) {
+        win.webContents.openDevTools({ mode: "detach" });
+      }
+    });
   } else {
     void win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
@@ -594,8 +607,8 @@ function registerIpc() {
       reasoningEffort: normalizeReasoningEffort(state.reasoningEffort),
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
-      sandboxStatus: sandboxStatusLabel(),
-      sandboxBackend: probeSandbox().backend,
+      sandboxStatus: sandboxStatusLabel({ lazy: true }),
+      sandboxBackend: probeSandbox({ lazy: true }).backend,
       theme: state.theme === "light" ? "light" : "dark",
       privacyMode: Boolean(state.privacyMode),
       /** SpaceXAI coding-data share (auth.json); default opt-in */
@@ -777,8 +790,23 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle("settings:set-open", (e, open) => {
+    const ws = sessionFromEvent(e);
+    if (ws) ws.settingsOpen = Boolean(open);
+    return true;
+  });
+
+  ipcMain.handle("mcp:logout", async (_e, name) => {
+    try {
+      return logoutMcpServer(name);
+    } catch (err) {
+      return mcpIpcError(err);
+    }
+  });
+
   ipcMain.handle("mcp:auth", async (e, name) => {
-    const agent = sessionFromEvent(e)?.agent;
+    const ws = sessionFromEvent(e);
+    const agent = ws?.agent;
     if (!agent?.ready || !agent.sessionId) {
       return {
         ok: false,
@@ -1342,33 +1370,37 @@ function registerIpc() {
   });
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
   installApplicationMenu();
   registerIpc();
-  try {
-    const preview = await startPreviewApi({
-      getOwner: () => {
-        const ws = focusedSession();
-        return ws?.win && !ws.win.isDestroyed() ? ws.win : null;
-      },
-    });
-    debugLog("preview", "api-ready", {
-      port: preview?.port || null,
-      ready: Boolean(preview),
-    });
-  } catch (err) {
-    debugLog("preview", "api-failed", {
-      error: err?.message || String(err),
-    });
-  }
-  installDesktopPreviewSkill();
   createWindow();
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 
+  void startPreviewApi({
+    getOwner: () => {
+      const ws = focusedSession();
+      return ws?.win && !ws.win.isDestroyed() ? ws.win : null;
+    },
+  })
+    .then((preview) => {
+      debugLog("preview", "api-ready", {
+        port: preview?.port || null,
+        ready: Boolean(preview),
+      });
+      installDesktopPreviewSkill();
+    })
+    .catch((err) => {
+      debugLog("preview", "api-failed", {
+        error: err?.message || String(err),
+      });
+      installDesktopPreviewSkill();
+    });
+
   // Warm Docker sandbox image in the background when sandbox is on (default).
   // Pull/build must never run on the terminal/create hot path (freezes UI).
+  // Delay the WSL/bwrap spawnSync probe so first paint is not stalled.
   try {
     const state = loadState();
     setDebugLogging(Boolean(state.debugLogging));
@@ -1378,7 +1410,13 @@ app.whenReady().then(async () => {
       logPath: getDebugLogPath(),
     });
     if (state.sandboxTerminal !== false) {
-      maybeWarmDockerSandbox();
+      setTimeout(() => {
+        try {
+          maybeWarmDockerSandbox();
+        } catch {
+          /* ignore */
+        }
+      }, 1500);
     }
   } catch {
     /* ignore */
@@ -1399,5 +1437,6 @@ app.on("window-all-closed", () => {
 // Do not `await` dispose here — async before-quit handlers can stall
 // electron-updater quitAndInstall so "Restart now" appears to do nothing.
 app.on("before-quit", () => {
+  appQuitting = true;
   disposeAgentQuick();
 });

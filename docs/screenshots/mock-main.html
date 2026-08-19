@@ -186,6 +186,16 @@
       padding: 4px 22px 4px 8px;
       font-size: 12px;
     }
+    .topbar-btn {
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
     .status {
       display: flex;
       align-items: center;
@@ -451,6 +461,8 @@
           <label class="field">Effort
             <select><option>High</option><option>Medium</option><option>Low</option><option>X-High</option></select>
           </label>
+          <button class="topbar-btn" type="button">Compress</button>
+          <button class="topbar-btn" type="button">Preview</button>
           <div class="status"><span class="dot"></span> Connected</div>
         </div>
       </div>

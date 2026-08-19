@@ -20,6 +20,8 @@ import {
   mcpDisableArgv,
   mcpDoctorArgv,
   mcpCredentialServerNames,
+  logoutMcpServer,
+  stripMcpCredentialKeys,
   mcpDoctorFromData,
   mcpEnableArgv,
   mcpTextNeedsAuth,
@@ -419,6 +421,38 @@ test("mcpDoctorFromData flags OAuth handshake failures as needsAuth", () => {
   });
   assert.equal(report.servers[0].needsAuth, true);
   assert.equal(report.servers[0].healthy, false);
+});
+
+test("stripMcpCredentialKeys drops name:url keys without copying token values", () => {
+  const store = {
+    "atlassian:https://mcp.atlassian.com/v1/mcp": {
+      token_response: { access_token: "SECRET" },
+    },
+    "dol_slack:http://example/mcp/": { token_response: { access_token: "OTHER" } },
+  };
+  const { next, removed } = stripMcpCredentialKeys(store, "atlassian");
+  assert.equal(removed, 1);
+  assert.deepEqual(Object.keys(next), ["dol_slack:http://example/mcp/"]);
+  assert.equal(JSON.stringify(next).includes("SECRET"), false);
+  assert.equal(stripMcpCredentialKeys(store, "nope").removed, 0);
+});
+
+test("logoutMcpServer writes a store without the named server", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-mcp-cred-"));
+  const file = path.join(dir, "mcp_credentials.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      "atlassian:https://mcp.atlassian.com/v1/mcp": { access: "SECRET" },
+      "other:https://example/mcp": { access: "KEEP" },
+    }),
+  );
+  const res = logoutMcpServer("atlassian", { home: dir });
+  assert.equal(res.ok, true);
+  assert.equal(res.removed, 1);
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(Object.keys(saved), ["other:https://example/mcp"]);
+  assert.equal(JSON.stringify(saved).includes("SECRET"), false);
 });
 
 test("mcpCredentialServerNames reads names from name:url keys and never needs values", () => {

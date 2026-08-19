@@ -60,6 +60,7 @@ export function setDesktopStateLoader(fn) {
  *   generation: number,
  *   lastCwd: string | null,
  *   lastSessionId: string | null,
+ *   settingsOpen: boolean,
  * }} WindowSession
  */
 
@@ -962,6 +963,7 @@ export function createWindowSession(win) {
     generation: 0,
     lastCwd: null,
     lastSessionId: null,
+    settingsOpen: false,
   };
   // Main owns native titles; HTML <title> / document.title must not clobber.
   win.on("page-title-updated", (e) => {

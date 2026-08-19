@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("mcp:remove", { name, scope: opts?.scope }),
   doctorMcp: (name) => ipcRenderer.invoke("mcp:doctor", name),
   authenticateMcpServer: (name) => ipcRenderer.invoke("mcp:auth", name),
+  logoutMcpServer: (name) => ipcRenderer.invoke("mcp:logout", name),
+  setSettingsOpen: (open) => ipcRenderer.invoke("settings:set-open", Boolean(open)),
   listPlugins: () => ipcRenderer.invoke("plugin:list"),
   enablePlugin: (name) => ipcRenderer.invoke("plugin:enable", name),
   disablePlugin: (name) => ipcRenderer.invoke("plugin:disable", name),
@@ -111,6 +113,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:exit",
       "agent:ready",
       "app:open-settings",
+      "app:close-settings",
       "auth:login-progress",
       "preview:changed",
     ];

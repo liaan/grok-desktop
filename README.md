@@ -1,18 +1,28 @@
 # Grok Desktop
 
-Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding agent — chat, tools, approvals, and project sessions over ACP.
+Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding agent — chat, tools, approvals, a detachable **Preview** window, and project sessions over ACP.
 
 <p align="center">
-  <img src="docs/screenshots/main.png" alt="Grok Desktop main window: chats, tool cards, and project files" width="920" />
+
+![Grok Desktop main window: chats, tool cards, Preview, and project files](docs/screenshots/main.png)
+
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/welcome.png" alt="Sign-in welcome screen" width="440" />
-  &nbsp;
-  <img src="docs/screenshots/approvals.png" alt="Tool permission approvals panel" width="440" />
+
+![Sign-in welcome screen](docs/screenshots/welcome.png)
+&nbsp;
+![Tool permission approvals panel](docs/screenshots/approvals.png)
+
 </p>
 
-<p align="center"><sub>Day theme · browser sign-in with URL + paste · tool approvals</sub></p>
+<p align="center">
+
+![Detachable Preview window: address bar, viewport, Snapshot — drag to another screen](docs/screenshots/preview.png)
+
+</p>
+
+<p align="center"><sub>Day theme · browser sign-in · tool approvals · detachable Preview window</sub></p>
 
 ## Install for the team (no npm)
 
@@ -69,7 +79,7 @@ This project is **not** a reimplementation of the agent, models, or tools. It is
 
 ```text
 ┌────────────────────────────┐
-│  Grok Desktop (this repo)  │  chat · tools · approvals · projects
+│  Grok Desktop (this repo)  │  chat · tools · approvals · Preview · projects
 └─────────────┬──────────────┘
               │ ACP / stdio
 ┌─────────────▼──────────────┐
@@ -101,7 +111,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
 | Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
 | Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
-| Detachable **Preview** window (agent open / snapshot / click / fill) | **Beta** — testers: Settings → Preview updates, then Help → Check for updates |
+| Detachable **Preview** window (you or the agent open / snapshot / click / fill) | **Done** — topbar **Preview**, `/preview [url\|close]`, or ask the agent to show a URL |
 
 ## Requirements
 
@@ -128,6 +138,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | Reasoning effort (`/effort`) | Topbar **Effort** dropdown (Low / Medium / High / X-High) | Agent `--reasoning-effort` on spawn + live `session/set_model` `_meta.reasoningEffort` |
 | **Project-root safety** | On by default (Settings: “Allow outside project” off) | Open project + **linked git worktrees** of that repo are allowed; turn on only for unrelated host paths. Independent of terminal sandbox. |
 | **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |
+| **Preview window** | Topbar **Preview**, `/preview [url\|close]`, or ask the agent to open a URL | Desktop attaches its own Preview MCP; **Restart agent** if those tools are missing |
 
 **After changing** MCP or plugins in Settings, Desktop restarts the agent automatically. Skills added under `~/.grok/skills` still need **Restart agent** (or re-open the project) so a new process picks them up. The welcome “N skills · M MCP · P plugins” strip is a `grok inspect` summary.
 
@@ -143,6 +154,20 @@ Optional environment variables:
 | `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
 | `GROK_DESKTOP_DEBUG` | Set `1` to enable desktop-debug.log (tools/hooks/terminals) |
 | `GROK_DESKTOP_TERMINAL_TIMEOUT_MS` | Kill hung tool shells after N ms (default `900000` = 15 min; `0` = off) |
+
+## Preview window
+
+A second Electron window you can drag to another screen. Use it to look at localhost, a ticket URL, or a page the agent is testing. The agent drives that window (open, snapshot, click, type) instead of curling the site or spinning up a separate browser.
+
+**Open it**
+
+- Topbar **Preview** (empty window, then load a URL from the address bar)
+- Composer: `/preview https://localhost:5173` or `/preview close`
+- Ask in chat: “preview this URL” / “show the login page” — the agent should call Desktop’s Preview MCP (`desktop-preview__preview_open`, then snapshot / click / fill)
+
+**If the agent says Preview tools are missing:** Settings → **Restart agent** so Desktop can attach the Preview MCP. That MCP is part of this app (not something you add under `~/.grok`).
+
+This is **not** Settings → **Preview updates**. That switch only opts you into GitHub prerelease installers (`vX.Y.Z-beta.N`). Stable `1.2.0+` already includes the Preview window.
 
 ## Quick start (developers)
 
@@ -210,10 +235,10 @@ grok-desktop/
 
 | | Grok CLI (TUI) | Grok Desktop |
 |--|----------------|--------------|
-| UI | Terminal | Electron GUI |
+| UI | Terminal | Electron GUI + detachable **Preview** window |
 | Agent | `grok` binary | Same binary via ACP |
 | Auth | `grok login` / env | In-app (same underlying login) |
-| Skills / MCP | `~/.grok` | Same `~/.grok` |
+| Skills / MCP | `~/.grok` | Same `~/.grok` + Desktop Preview MCP (agent can drive the Preview window) |
 | Models | From Grok install | Same |
 
 ## Author
