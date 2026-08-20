@@ -7,9 +7,17 @@ export type GitStatusEntry = {
   worktree: string;
   status: string;
   untracked: boolean;
+  ignored: boolean;
   staged: boolean;
   unstaged: boolean;
 };
+
+export function visibleGitChanges(
+  changes: GitStatusEntry[],
+  hideIgnored: boolean,
+): GitStatusEntry[] {
+  return hideIgnored ? changes.filter((c) => !c.ignored) : changes;
+}
 
 export type PeekTarget =
   | { kind: "file"; path: string; absPath: string }

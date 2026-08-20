@@ -35,8 +35,7 @@ test("parsePorcelain: dirty list M/A/D/? plus rename and unmerged", () => {
   const files = parsePorcelain(FIXTURE);
   const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
 
-  assert.equal(files.length, 11);
-  assert.ok(!byPath["ignored.log"]);
+  assert.equal(files.length, 12);
   assert.ok(!files.some((f) => f.path === "not-porcelain"));
 
   assert.deepEqual(byPath["src/foo.ts"], {
@@ -46,9 +45,16 @@ test("parsePorcelain: dirty list M/A/D/? plus rename and unmerged", () => {
     worktree: "M",
     status: "M",
     untracked: false,
+    ignored: false,
     staged: false,
     unstaged: true,
   });
+
+  assert.equal(byPath["ignored.log"].ignored, true);
+  assert.equal(byPath["ignored.log"].status, "I");
+  assert.equal(byPath["ignored.log"].untracked, false);
+  assert.equal(byPath["ignored.log"].staged, false);
+  assert.equal(byPath["ignored.log"].unstaged, false);
 
   assert.equal(byPath["staged.ts"].status, "M");
   assert.equal(byPath["staged.ts"].staged, true);
@@ -66,6 +72,7 @@ test("parsePorcelain: dirty list M/A/D/? plus rename and unmerged", () => {
 
   assert.equal(byPath["scratch.txt"].status, "?");
   assert.equal(byPath["scratch.txt"].untracked, true);
+  assert.equal(byPath["scratch.txt"].ignored, false);
   assert.equal(byPath["scratch.txt"].staged, false);
   assert.equal(byPath["scratch.txt"].unstaged, true);
 
@@ -153,6 +160,7 @@ test("stripGitPrefix: repo-root paths become cwd-relative", () => {
 
 test("porcelainStatusLetter: prefer D/A over M", () => {
   assert.equal(porcelainStatusLetter("?", "?"), "?");
+  assert.equal(porcelainStatusLetter("!", "!"), "I");
   assert.equal(porcelainStatusLetter("M", "D"), "D");
   assert.equal(porcelainStatusLetter("A", "M"), "A");
   assert.equal(porcelainStatusLetter("R", "M"), "R");

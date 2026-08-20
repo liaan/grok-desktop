@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { AuthStatus, BackboneSummary, SessionSummary } from "../vite-env";
 import type { ConnState } from "../lib/conn";
 import { basen } from "../lib/path-utils";
@@ -22,6 +22,8 @@ export const AppSidebar = memo(function AppSidebar({
   onPickProject,
   onOpenProject,
   onOpenSession,
+  onRenameSession,
+  onDeleteSession,
   onLogout,
   onOpenSettingsSection,
   collapsed,
@@ -42,6 +44,11 @@ export const AppSidebar = memo(function AppSidebar({
   onPickProject: () => void;
   onOpenProject: (cwd: string) => void;
   onOpenSession: (opts: { mode: "new" | "resume"; sessionId?: string }) => void;
+  onRenameSession?: (opts: {
+    sessionId: string;
+    title: string;
+  }) => void | Promise<void>;
+  onDeleteSession?: (opts: { sessionId: string }) => void | Promise<void>;
   onLogout: () => void;
   onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
   collapsed: boolean;
@@ -50,6 +57,112 @@ export const AppSidebar = memo(function AppSidebar({
 }) {
   const { redact } = usePrivacy();
   const busyGate = isOpening || conn === "busy";
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [chatMenu, setChatMenu] = useState<{
+    x: number;
+    y: number;
+    session: SessionSummary;
+  } | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const skipRenameBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!renamingId) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingId]);
+
+  useEffect(() => {
+    if (!chatMenu) return;
+    const close = () => setChatMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [chatMenu]);
+
+  const startRename = useCallback((s: SessionSummary) => {
+    const current = (s.title || "").trim();
+    setChatMenu(null);
+    setRenamingId(s.id);
+    setRenameDraft(current === "(no summary)" ? "" : current);
+  }, []);
+
+  const openChatMenu = useCallback(
+    (e: { clientX: number; clientY: number; preventDefault: () => void }, s: SessionSummary) => {
+      e.preventDefault();
+      const pad = 8;
+      const w = 180;
+      const h = 88;
+      setChatMenu({
+        session: s,
+        x: Math.min(e.clientX, window.innerWidth - w - pad),
+        y: Math.min(e.clientY, window.innerHeight - h - pad),
+      });
+    },
+    [],
+  );
+
+  const confirmDelete = useCallback(
+    async (s: SessionSummary) => {
+      setChatMenu(null);
+      if (!onDeleteSession) return;
+      const label = (s.title || "").trim() || "this chat";
+      if (
+        !window.confirm(
+          `Delete “${label}”? This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      try {
+        await onDeleteSession({ sessionId: s.id });
+      } catch {
+        /* App surfaces the error */
+      }
+    },
+    [onDeleteSession],
+  );
+
+  const cancelRename = useCallback(() => {
+    if (renameBusy) return;
+    setRenamingId(null);
+    setRenameDraft("");
+  }, [renameBusy]);
+
+  const commitRename = useCallback(async () => {
+    if (!renamingId || !onRenameSession || renameBusy) return;
+    const next = renameDraft.trim();
+    const current = sessions.find((s) => s.id === renamingId);
+    if (!next || next === (current?.title || "").trim()) {
+      cancelRename();
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      await onRenameSession({ sessionId: renamingId, title: next });
+      setRenamingId(null);
+      setRenameDraft("");
+    } catch {
+      /* App surfaces the error; keep the editor open */
+    } finally {
+      setRenameBusy(false);
+    }
+  }, [
+    cancelRename,
+    onRenameSession,
+    renameBusy,
+    renameDraft,
+    renamingId,
+    sessions,
+  ]);
 
   return (
     <aside
@@ -191,24 +304,92 @@ export const AppSidebar = memo(function AppSidebar({
                 No saved chats yet for this project.
               </p>
             ) : (
-              sessions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`recent-item ${s.id === sessionId ? "active" : ""}`}
-                  disabled={busyGate}
-                  title={s.id}
-                  onClick={() =>
-                    onOpenSession({ mode: "resume", sessionId: s.id })
-                  }
-                >
-                  <span className="name">{s.title || "(no summary)"}</span>
-                  <span className="path">
-                    {formatSessionWhen(s.lastActiveAt || s.updatedAt)}
-                    {s.numChatMessages ? ` · ${s.numChatMessages} msgs` : ""}
-                  </span>
-                </button>
-              ))
+              sessions.map((s) =>
+                renamingId === s.id ? (
+                  <form
+                    key={s.id}
+                    className="session-row session-row--editing"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void commitRename();
+                    }}
+                  >
+                    <input
+                      ref={renameInputRef}
+                      className="session-rename-input"
+                      value={renameDraft}
+                      disabled={renameBusy}
+                      maxLength={100}
+                      aria-label="Chat title"
+                      placeholder="Chat title"
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          skipRenameBlurRef.current = true;
+                          cancelRename();
+                        }
+                      }}
+                      onBlur={() => {
+                        if (skipRenameBlurRef.current) {
+                          skipRenameBlurRef.current = false;
+                          return;
+                        }
+                        void commitRename();
+                      }}
+                    />
+                  </form>
+                ) : (
+                  <div
+                    key={s.id}
+                    className={
+                      "session-row" + (s.id === sessionId ? " active" : "")
+                    }
+                  >
+                    <button
+                      type="button"
+                      className={`recent-item ${s.id === sessionId ? "active" : ""}`}
+                      disabled={busyGate}
+                      title={`${s.title || s.id}\nRight-click for rename or delete`}
+                      onClick={() =>
+                        onOpenSession({ mode: "resume", sessionId: s.id })
+                      }
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (onRenameSession) startRename(s);
+                      }}
+                      onContextMenu={(e) => {
+                        if (!onRenameSession && !onDeleteSession) return;
+                        e.stopPropagation();
+                        openChatMenu(e, s);
+                      }}
+                    >
+                      <span className="name">{s.title || "(no summary)"}</span>
+                      <span className="path">
+                        {formatSessionWhen(s.lastActiveAt || s.updatedAt)}
+                        {s.numChatMessages ? ` · ${s.numChatMessages} msgs` : ""}
+                      </span>
+                    </button>
+                    {onRenameSession || onDeleteSession ? (
+                      <button
+                        type="button"
+                        className="session-more-btn"
+                        title="Chat options"
+                        aria-label={`Options for ${s.title || "chat"}`}
+                        disabled={renameBusy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openChatMenu(e, s);
+                        }}
+                      >
+                        <span aria-hidden>⋯</span>
+                      </button>
+                    ) : null}
+                  </div>
+                ),
+              )
             )}
           </div>
         </div>
@@ -246,6 +427,35 @@ export const AppSidebar = memo(function AppSidebar({
       </div>
       </>
       )}
+      {chatMenu ? (
+        <div
+          className="ctx-menu"
+          role="menu"
+          style={{ left: chatMenu.x, top: chatMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {onRenameSession ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => startRename(chatMenu.session)}
+            >
+              Rename
+            </button>
+          ) : null}
+          {onDeleteSession ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => void confirmDelete(chatMenu.session)}
+            >
+              Delete
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   );
 });

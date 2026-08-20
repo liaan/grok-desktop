@@ -8,6 +8,10 @@ import {
   classifyInboundMessage,
   compactConversationAttempts,
   compactConversationRequestParams,
+  sessionRenameAttempts,
+  sessionRenameRequestParams,
+  sessionDeleteAttempts,
+  sessionDeleteRequestParams,
   isMcpLiveEventMethod,
   mcpAuthTriggerAttempts,
   mcpAuthTriggerRequestParams,
@@ -154,6 +158,46 @@ test("mcpAuthTriggerAttempts uses underscore ACP ext method and both casings", (
   assert.equal(attempts.length, 1);
   assert.equal(attempts[0].method, "_x.ai/mcp/auth_trigger");
   assert.equal(attempts[0].params.server_name, "atlassian");
+});
+
+test("sessionRenameAttempts uses underscore ACP ext method and both casings", () => {
+  const params = sessionRenameRequestParams({
+    sessionId: "sess-1",
+    title: "Auth refactor",
+    cwd: "/proj",
+  });
+  assert.equal(params.sessionId, "sess-1");
+  assert.equal(params.session_id, "sess-1");
+  assert.equal(params.title, "Auth refactor");
+  assert.equal(params.cwd, "/proj");
+  assert.equal(params.kind, "build");
+  assert.equal(params.resetToAuto, undefined);
+  const attempts = sessionRenameAttempts({
+    sessionId: "sess-1",
+    title: "Auth refactor",
+    cwd: "/proj",
+  });
+  assert.equal(attempts[0].method, "_x.ai/session/rename");
+  assert.equal(attempts[1].method, "x.ai/session/rename");
+  assert.deepEqual(attempts[0].params, params);
+});
+
+test("sessionDeleteAttempts uses underscore ACP ext method and both casings", () => {
+  const params = sessionDeleteRequestParams({
+    sessionId: "sess-1",
+    cwd: "/proj",
+  });
+  assert.equal(params.sessionId, "sess-1");
+  assert.equal(params.session_id, "sess-1");
+  assert.equal(params.cwd, "/proj");
+  assert.equal(params.kind, "build");
+  const attempts = sessionDeleteAttempts({
+    sessionId: "sess-1",
+    cwd: "/proj",
+  });
+  assert.equal(attempts[0].method, "_x.ai/session/delete");
+  assert.equal(attempts[1].method, "x.ai/session/delete");
+  assert.deepEqual(attempts[0].params, params);
 });
 
 test("mcpSessionListAttempts uses underscore ACP ext method", () => {

@@ -7,7 +7,13 @@ import {
   relativeDisplay,
 } from "../../lib/path-utils";
 import { usePrivacy } from "../../lib/privacy-context";
-import { joinProjectPath, type FileEntry, type GitStatusEntry } from "./types";
+import { RefreshIcon } from "../BrandMark";
+import {
+  joinProjectPath,
+  visibleGitChanges,
+  type FileEntry,
+  type GitStatusEntry,
+} from "./types";
 
 type CtxMenu = {
   x: number;
@@ -166,6 +172,20 @@ export function useProjectFiles(project: string | null) {
     };
   }, [project, loadChanges]);
 
+  const reloadCurrent = useCallback(() => {
+    if (!project) return Promise.resolve();
+    return loadDir(browseCwd || project);
+  }, [project, browseCwd, loadDir]);
+
+  useEffect(() => {
+    if (!project) return;
+    const onFocus = () => {
+      void loadDir(browseCwd || project);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [project, browseCwd, loadDir]);
+
   return {
     browseCwd,
     files,
@@ -176,6 +196,7 @@ export function useProjectFiles(project: string | null) {
     changesLoading,
     loadDir,
     loadChanges,
+    reloadCurrent,
     isNavQuiet,
   };
 }
@@ -200,6 +221,9 @@ export function FileBrowser({
   onOpenEditor,
   onCopyPath,
   onNavigate,
+  onRefresh,
+  hideIgnored,
+  onHideIgnoredChange,
   isNavQuiet,
 }: {
   tab: "files" | "changes";
@@ -221,6 +245,9 @@ export function FileBrowser({
   onOpenEditor: (absPath: string) => void;
   onCopyPath: (absPath: string) => void;
   onNavigate: (dir: string) => void;
+  onRefresh: () => void;
+  hideIgnored: boolean;
+  onHideIgnoredChange: (next: boolean) => void;
   isNavQuiet: () => boolean;
 }) {
   const { redact } = usePrivacy();
@@ -256,6 +283,25 @@ export function FileBrowser({
       : project
         ? basen(project)
         : "";
+  const visibleChanges = visibleGitChanges(changes, hideIgnored);
+  const ignoredChangeCount = changes.filter((c) => c.ignored).length;
+  const listingBusy = tab === "files" ? filesLoading : changesLoading;
+  const refreshBtn = (
+    <button
+      type="button"
+      className={
+        "btn ghost btn-sm file-refresh-btn" +
+        (listingBusy ? " is-loading" : "")
+      }
+      title={tab === "files" ? "Refresh files" : "Refresh changes"}
+      aria-label={tab === "files" ? "Refresh files" : "Refresh changes"}
+      aria-busy={listingBusy}
+      disabled={listingBusy}
+      onClick={onRefresh}
+    >
+      <RefreshIcon size={14} />
+    </button>
+  );
 
   const openFileMenu = (
     e: ReactMouseEvent,
@@ -292,6 +338,7 @@ export function FileBrowser({
               </button>
             ) : null}
             <span className="file-browser-label">{pathLabel}</span>
+            {refreshBtn}
           </div>
           <p className="file-browser-hint">
             Click a file to preview. Edit opens it in {editorLabel}.
@@ -366,6 +413,18 @@ export function FileBrowser({
         </>
       ) : (
         <>
+          <div className="file-browser-path">
+            <span className="file-browser-label">Local changes</span>
+            <label className="hide-ignored">
+              <input
+                type="checkbox"
+                checked={hideIgnored}
+                onChange={(e) => onHideIgnoredChange(e.target.checked)}
+              />
+              Hide ignored
+            </label>
+            {refreshBtn}
+          </div>
           {openError ? (
             <p style={{ color: "var(--danger, #f87171)", fontSize: 12 }}>
               {openError}
@@ -381,30 +440,35 @@ export function FileBrowser({
               {changesError}
             </p>
           ) : null}
-          {!changesLoading && !changesError && changes.length === 0 ? (
+          {!changesLoading && !changesError && visibleChanges.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              No local changes.
+              {hideIgnored && ignoredChangeCount
+                ? `No local changes (${ignoredChangeCount} ignored hidden).`
+                : "No local changes."}
             </p>
           ) : null}
-          {changes.map((entry) => {
+          {visibleChanges.map((entry) => {
             const selected =
               selectedRelPath != null &&
               normalizePathKey(selectedRelPath) ===
                 normalizePathKey(entry.path);
-            const badge =
-              entry.untracked || entry.status === "?"
+            const badge = entry.ignored
+              ? "I"
+              : entry.untracked || entry.status === "?"
                 ? "U"
                 : entry.status || "M";
             const badgeLabel =
-              badge === "U"
-                ? "Untracked"
-                : badge === "D"
-                  ? "Deleted"
-                  : badge === "A"
-                    ? "Added"
-                    : badge === "R"
-                      ? "Renamed"
-                      : "Modified";
+              badge === "I"
+                ? "Ignored"
+                : badge === "U"
+                  ? "Untracked"
+                  : badge === "D"
+                    ? "Deleted"
+                    : badge === "A"
+                      ? "Added"
+                      : badge === "R"
+                        ? "Renamed"
+                        : "Modified";
             const abs = joinProjectPath(project, entry.path);
             return (
               <div
@@ -428,7 +492,13 @@ export function FileBrowser({
                   }}
                 >
                   <span
-                    className={`change-badge change-badge-${badge === "U" ? "untracked" : badge}`}
+                    className={`change-badge change-badge-${
+                      badge === "U"
+                        ? "untracked"
+                        : badge === "I"
+                          ? "ignored"
+                          : badge
+                    }`}
                     title={badgeLabel}
                     aria-label={badgeLabel}
                   >

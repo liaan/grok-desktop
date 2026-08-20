@@ -50,6 +50,10 @@ import {
   listSessionsForCwd,
   loadSessionOpenState,
   mostRecentSession,
+  renameSessionOnDisk,
+  deleteSessionOnDisk,
+  sanitizeSessionTitle,
+  MAX_SESSION_TITLE_LENGTH,
 } from "./sessions.mjs";
 import {
   listPendingPermissionRequests,
@@ -494,8 +498,10 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: APP_WINDOW_TITLE,
+    // Visible immediately so launch is a branded window, not an empty wait
+    // while Chromium loads the renderer. HTML splash covers until React mounts.
     show: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f6f6f8",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f3f3f7",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -548,17 +554,19 @@ function createWindow() {
     revealed = true;
     focusWindow(win);
   };
+  // Show as soon as the HTML splash is in the DOM — do not wait for the
+  // Vite/React module graph (that is what made launch look like a blank hang).
+  win.webContents.once("dom-ready", reveal);
   win.once("ready-to-show", reveal);
-  win.webContents.once("did-finish-load", () => {
-    if (!revealed) reveal();
-  });
 
   if (isDev) {
     void win.loadURL("http://127.0.0.1:5173");
-    win.once("ready-to-show", () => {
-      if (windowSessions.size <= 1 && !win.isDestroyed()) {
-        win.webContents.openDevTools({ mode: "detach" });
-      }
+    win.webContents.once("dom-ready", () => {
+      setTimeout(() => {
+        if (windowSessions.size <= 1 && !win.isDestroyed()) {
+          win.webContents.openDevTools({ mode: "detach" });
+        }
+      }, 500);
     });
   } else {
     void win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
@@ -926,6 +934,73 @@ function registerIpc() {
   ipcMain.handle("sessions:list", async (_e, cwd) => {
     if (!cwd) return [];
     return listSessionsForCwd(cwd);
+  });
+
+  ipcMain.handle("sessions:rename", async (e, { cwd, sessionId, title } = {}) => {
+    const ws = sessionFromEvent(e);
+    const project = cwd || ws?.agent?.cwd || ws?.lastCwd;
+    if (!project) throw new Error("No project open");
+    const cleaned = sanitizeSessionTitle(title);
+    if (!cleaned) throw new Error("Title must not be blank");
+    if ([...cleaned].length > MAX_SESSION_TITLE_LENGTH) {
+      throw new Error(
+        `Title too long (max ${MAX_SESSION_TITLE_LENGTH} characters)`,
+      );
+    }
+    const agent = ws?.agent;
+    if (agent?.ready) {
+      try {
+        await agent.renameSession({
+          sessionId,
+          title: cleaned,
+          cwd: project,
+        });
+        return {
+          ok: true,
+          title: cleaned,
+          sessions: listSessionsForCwd(project),
+        };
+      } catch (err) {
+        const missing =
+          err?.code === -32601 ||
+          /method not found|-32601|not available on this Grok CLI/i.test(
+            String(err?.message || err),
+          );
+        if (!missing) {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+      }
+    }
+    const written = renameSessionOnDisk(project, sessionId, cleaned);
+    return {
+      ok: true,
+      title: written.title,
+      sessions: listSessionsForCwd(project),
+    };
+  });
+
+  ipcMain.handle("sessions:delete", async (e, { cwd, sessionId } = {}) => {
+    const ws = sessionFromEvent(e);
+    const project = cwd || ws?.agent?.cwd || ws?.lastCwd;
+    if (!project) throw new Error("No project open");
+    const agent = ws?.agent;
+    if (agent?.ready) {
+      try {
+        await agent.deleteSession({ sessionId, cwd: project });
+        return { ok: true, sessions: listSessionsForCwd(project) };
+      } catch (err) {
+        const missing =
+          err?.code === -32601 ||
+          /method not found|-32601|not available on this Grok CLI/i.test(
+            String(err?.message || err),
+          );
+        if (!missing) {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+      }
+    }
+    deleteSessionOnDisk(project, sessionId);
+    return { ok: true, sessions: listSessionsForCwd(project) };
   });
 
   ipcMain.handle("sessions:open", async (e, { cwd, sessionId, mode }) => {
@@ -1373,9 +1448,10 @@ function registerIpc() {
 app.whenReady().then(() => {
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
-  installApplicationMenu();
   registerIpc();
+  // Window (HTML splash) before menu/updater so launch is not a blank wait.
   createWindow();
+  installApplicationMenu();
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 
   void startPreviewApi({

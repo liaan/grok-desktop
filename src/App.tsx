@@ -37,6 +37,7 @@ import {
 } from "../shared/auto-compact.mjs";
 import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
+import { hideBootSplash } from "./lib/boot-splash";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
 import { finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
@@ -179,26 +180,31 @@ export default function App() {
   }, []);
 
   const bootstrap = useCallback(async () => {
-    const i = await window.grokDesktop.getInfo();
-    setInfo(i);
-    hydrateFromInfo(i);
-    setPrivacyMode(Boolean(i.privacyMode));
-    setCodingDataOptIn(i.codingDataOptIn !== false);
-    setCodingDataNote(i.codingDataStatus?.note);
-    setDebugLogging(Boolean(i.debugLogging));
-    setDebugLogPath(i.debugLogPath || "");
-    setAllowPrerelease(Boolean(i.allowPrerelease));
-    setAutoCompactAt(normalizeAutoCompactAt(i.autoCompactAt));
-    const nextTheme = i.theme === "light" ? "light" : "dark";
-    setTheme(nextTheme);
-    applyTheme(nextTheme);
-    setAuth(i.auth);
-    if (i.auth.authenticated && !i.auth.expired) {
-      void refreshBackbone(i.lastProject || undefined);
+    try {
+      const i = await window.grokDesktop.getInfo();
+      setInfo(i);
+      hydrateFromInfo(i);
+      setPrivacyMode(Boolean(i.privacyMode));
+      setCodingDataOptIn(i.codingDataOptIn !== false);
+      setCodingDataNote(i.codingDataStatus?.note);
+      setDebugLogging(Boolean(i.debugLogging));
+      setDebugLogPath(i.debugLogPath || "");
+      setAllowPrerelease(Boolean(i.allowPrerelease));
+      setAutoCompactAt(normalizeAutoCompactAt(i.autoCompactAt));
+      const nextTheme = i.theme === "light" ? "light" : "dark";
+      setTheme(nextTheme);
+      applyTheme(nextTheme);
+      setAuth(i.auth);
+      if (i.auth.authenticated && !i.auth.expired) {
+        void refreshBackbone(i.lastProject || undefined);
+      }
+    } catch {
+      /* WelcomeView still renders; splash already dismissed on first paint. */
     }
   }, [refreshBackbone, hydrateFromInfo]);
 
   useEffect(() => {
+    hideBootSplash();
     void bootstrap();
   }, [bootstrap]);
 
@@ -303,6 +309,57 @@ export default function App() {
       clearPromptQueue,
       onMissingBinary,
     });
+
+  const renameSession = useCallback(
+    async (opts: { sessionId: string; title: string }) => {
+      if (!project) return;
+      try {
+        const res = await window.grokDesktop.renameSession({
+          cwd: project,
+          sessionId: opts.sessionId,
+          title: opts.title,
+        });
+        if (res?.sessions) setSessions(res.sessions);
+        else setSessions(await window.grokDesktop.listSessions(project));
+        setError(null);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        throw e instanceof Error ? e : new Error(msg);
+      }
+    },
+    [project],
+  );
+
+  const deleteSession = useCallback(
+    async (opts: { sessionId: string }) => {
+      if (!project) return;
+      const wasCurrent = opts.sessionId === sessionId;
+      if (wasCurrent && conn === "busy") {
+        throw new Error("Stop the current turn before deleting this chat.");
+      }
+      try {
+        const res = await window.grokDesktop.deleteSession({
+          cwd: project,
+          sessionId: opts.sessionId,
+        });
+        const nextList =
+          res?.sessions || (await window.grokDesktop.listSessions(project));
+        setSessions(nextList);
+        setError(null);
+        if (wasCurrent) {
+          const next = nextList.find((s) => s.id !== opts.sessionId) || nextList[0];
+          if (next) await openSession({ mode: "resume", sessionId: next.id });
+          else await openSession({ mode: "new" });
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        throw e instanceof Error ? e : new Error(msg);
+      }
+    },
+    [project, sessionId, conn, openSession],
+  );
 
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
@@ -988,6 +1045,8 @@ export default function App() {
               void openProject(cwd, { mode: "continue" });
             }}
             onOpenSession={(opts) => void openSession(opts)}
+            onRenameSession={(opts) => renameSession(opts)}
+            onDeleteSession={(opts) => deleteSession(opts)}
             onLogout={() => void handleLogout()}
             onOpenSettingsSection={onOpenSettings}
             inert={settingsOpen}

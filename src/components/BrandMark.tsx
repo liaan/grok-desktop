@@ -67,6 +67,53 @@ export function BrandMark({
   );
 }
 
+/** Circular arrows — refresh a listing. */
+export function RefreshIcon({
+  size = 14,
+  className = "refresh-icon",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M13.25 6.1A5.25 5.25 0 0 0 4.2 5.15"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M13.25 3.15v2.95h-2.95"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.75 9.9A5.25 5.25 0 0 0 11.8 10.85"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M2.75 12.85V9.9h2.95"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Spinner({ size = 18, className = "spinner" }: { size?: number; className?: string }) {
   return (
     <svg

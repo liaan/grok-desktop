@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   /** Respawn grok agent on this window and resume the same chat. */
   restartAgent: () => ipcRenderer.invoke("agent:restart"),
   listSessions: (cwd) => ipcRenderer.invoke("sessions:list", cwd),
+  renameSession: (opts) => ipcRenderer.invoke("sessions:rename", opts || {}),
+  deleteSession: (opts) => ipcRenderer.invoke("sessions:delete", opts || {}),
   openSession: (opts) => ipcRenderer.invoke("sessions:open", opts || {}),
   prompt: (text, opts) =>
     ipcRenderer.invoke("agent:prompt", {

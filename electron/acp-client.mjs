@@ -38,6 +38,8 @@ import { compressPromptImage } from "./image-compress.mjs";
 import {
   classifyInboundMessage,
   compactConversationAttempts,
+  sessionRenameAttempts,
+  sessionDeleteAttempts,
   isMcpLiveEventMethod,
   mcpAuthTriggerAttempts,
   mcpSessionListAttempts,
@@ -976,6 +978,106 @@ export class GrokAcpClient extends EventEmitter {
     throw new Error(
       `Compress is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
     );
+  }
+
+  /**
+   * Same as TUI `/rename`: ACP `x.ai/session/rename` pins generated_title.
+   * Works for the live session or a dormant chat under the same cwd.
+   * @param {{ sessionId: string, title: string, cwd?: string }} opts
+   */
+  async renameSession(opts) {
+    if (!this.ready) throw new Error("Agent not connected");
+    const sessionId = String(opts?.sessionId || "").trim();
+    const title = String(opts?.title || "");
+    const cwd = String(opts?.cwd || this.cwd || "").trim();
+    if (!sessionId) throw new Error("Session id is required");
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    const attempts = sessionRenameAttempts({ sessionId, title, cwd });
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: 20_000,
+        });
+        debugLog("acp", "session-rename-ok", {
+          path: attempt.method,
+          sessionId,
+        });
+        return raw ?? { ok: true };
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "session-rename-try", {
+          path: attempt.method,
+          sessionId,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    const miss = new Error(
+      `Rename is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+    miss.code = -32601;
+    throw miss;
+  }
+
+  /**
+   * Same as TUI / CLI `grok sessions delete`: ACP `x.ai/session/delete`.
+   * @param {{ sessionId: string, cwd?: string }} opts
+   */
+  async deleteSession(opts) {
+    if (!this.ready) throw new Error("Agent not connected");
+    const sessionId = String(opts?.sessionId || "").trim();
+    const cwd = String(opts?.cwd || this.cwd || "").trim();
+    if (!sessionId) throw new Error("Session id is required");
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    const attempts = sessionDeleteAttempts({ sessionId, cwd });
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: 20_000,
+        });
+        debugLog("acp", "session-delete-ok", {
+          path: attempt.method,
+          sessionId,
+        });
+        return raw ?? { ok: true };
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "session-delete-try", {
+          path: attempt.method,
+          sessionId,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    const miss = new Error(
+      `Delete is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+    miss.code = -32601;
+    throw miss;
   }
 
   /**

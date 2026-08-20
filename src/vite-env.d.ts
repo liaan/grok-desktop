@@ -291,6 +291,7 @@ export type GitStatusEntry = {
   worktree: string;
   status: string;
   untracked: boolean;
+  ignored: boolean;
   staged: boolean;
   unstaged: boolean;
 };
@@ -300,6 +301,8 @@ export type SessionSummary = {
   cwd: string;
   title: string;
   summary: string | null;
+  /** True when the title was pinned with Rename / CLI `/rename`. */
+  titleIsManual?: boolean;
   createdAt: string | null;
   updatedAt: string | null;
   lastActiveAt: string | null;
@@ -443,6 +446,24 @@ declare global {
       /** Respawn grok agent and resume the same chat. */
       restartAgent: () => Promise<OpenProjectResult>;
       listSessions: (cwd: string) => Promise<SessionSummary[]>;
+      renameSession: (opts: {
+        cwd: string;
+        sessionId: string;
+        title: string;
+      }) => Promise<{
+        ok: boolean;
+        title?: string;
+        sessions?: SessionSummary[];
+        error?: string;
+      }>;
+      deleteSession: (opts: {
+        cwd: string;
+        sessionId: string;
+      }) => Promise<{
+        ok: boolean;
+        sessions?: SessionSummary[];
+        error?: string;
+      }>;
       openSession: (opts: {
         cwd: string;
         sessionId?: string;

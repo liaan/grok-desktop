@@ -8,7 +8,12 @@ import { ColToggle } from "./ColToggle";
 import { FileBrowser, useProjectFiles } from "./files/FileBrowser";
 import { FilePeek } from "./files/FilePeek";
 import { useFileDocument } from "./files/useFileDocument";
-import { joinProjectPath, type FileEntry, type GitStatusEntry } from "./files/types";
+import {
+  joinProjectPath,
+  visibleGitChanges,
+  type FileEntry,
+  type GitStatusEntry,
+} from "./files/types";
 
 type PanelTab = "files" | "changes";
 
@@ -39,6 +44,7 @@ export const SidePanel = memo(function SidePanel({
   const hasTasks = hasAnyTasks(backgroundTasks);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [tab, setTab] = useState<PanelTab>("files");
+  const [hideIgnored, setHideIgnored] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [editorLabel, setEditorLabel] = useState("editor");
   const prevRunning = useRef(0);
@@ -103,8 +109,11 @@ export const SidePanel = memo(function SidePanel({
       ? `Tasks (${backgroundTasks.length})`
       : "Tasks";
 
+  const visibleChanges = visibleGitChanges(files.changes, hideIgnored);
   const changesLabel =
-    files.changes.length > 0 ? `Changes (${files.changes.length})` : "Changes";
+    visibleChanges.length > 0
+      ? `Changes (${visibleChanges.length})`
+      : "Changes";
 
   const selectFile = (file: FileEntry) => {
     if (file.isDirectory) {
@@ -123,7 +132,7 @@ export const SidePanel = memo(function SidePanel({
   const selectChange = (entry: GitStatusEntry) => {
     if (!project) return;
     const absPath = joinProjectPath(project, entry.path);
-    if (entry.untracked) {
+    if (entry.untracked || entry.ignored) {
       peek.openPeek({ kind: "file", path: entry.path, absPath });
       return;
     }
@@ -165,7 +174,10 @@ export const SidePanel = memo(function SidePanel({
           aria-selected={tab === "files"}
           className={tab === "files" ? "active" : ""}
           onClick={() => {
-            if (tab === "files") return;
+            if (tab === "files") {
+              if (project) void files.reloadCurrent();
+              return;
+            }
             if (!peek.confirmLeave()) return;
             setTab("files");
             peek.reset();
@@ -228,6 +240,12 @@ export const SidePanel = memo(function SidePanel({
               onOpenEditor={(abs) => void peek.openEditor(abs)}
               onCopyPath={(abs) => void copyPath(abs)}
               onNavigate={(dir) => void files.loadDir(dir)}
+              onRefresh={() => {
+                if (tab === "files") void files.reloadCurrent();
+                else if (project) void files.loadChanges(project);
+              }}
+              hideIgnored={hideIgnored}
+              onHideIgnoredChange={setHideIgnored}
               isNavQuiet={files.isNavQuiet}
             />
           )}

@@ -22,6 +22,122 @@ export function sessionsRootForCwd(cwd) {
   return path.join(grokHomeDir(), "sessions", encodeSessionCwd(cwd));
 }
 
+/** Same cap as Grok CLI `/rename` (`MAX_TITLE_SCALARS`). */
+export const MAX_SESSION_TITLE_LENGTH = 100;
+
+/**
+ * Session folder names are ULIDs / UUIDs. Reject anything that could
+ * escape the cwd sessions root.
+ * @param {unknown} id
+ */
+export function isSafeSessionId(id) {
+  if (typeof id !== "string") return false;
+  if (id.length < 8 || id.length > 128) return false;
+  if (id.includes("..") || id.includes("/") || id.includes("\\")) return false;
+  return /^[A-Za-z0-9._-]+$/.test(id);
+}
+
+/**
+ * Strip C0/C1 + bidi overrides (same class as CLI `sanitize_rename_title`),
+ * then trim. Empty after sanitize is rejected by rename, not truncated.
+ * @param {unknown} title
+ */
+export function sanitizeSessionTitle(title) {
+  const raw = typeof title === "string" ? title : String(title ?? "");
+  let out = "";
+  for (const c of raw) {
+    const code = c.codePointAt(0) || 0;
+    if (code < 32 || (code >= 127 && code <= 159)) continue;
+    if (
+      c === "\u200E" ||
+      c === "\u200F" ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      continue;
+    }
+    out += c;
+  }
+  return out.trim();
+}
+
+/**
+ * Display title matches the CLI: non-empty `generated_title` wins
+ * (including a manual `/rename`), else `session_summary`.
+ * @param {Record<string, unknown>} raw
+ */
+export function displayTitleFromSummary(raw) {
+  const generated = String(raw?.generated_title || "").trim();
+  if (generated) return generated;
+  const summary = String(raw?.session_summary || raw?.title || "").trim();
+  return summary || "(no summary)";
+}
+
+/**
+ * Pin a chat title on disk (`generated_title` + `title_is_manual`).
+ * Same fields the TUI `/rename` / `x.ai/session/rename` persist so auto
+ * titling does not overwrite on next resume.
+ *
+ * @param {string} cwd
+ * @param {string} sessionId
+ * @param {string} title
+ * @returns {{ title: string }}
+ */
+export function renameSessionOnDisk(cwd, sessionId, title) {
+  if (!cwd) throw new Error("No project path");
+  if (!isSafeSessionId(sessionId)) throw new Error("Invalid session id");
+  const cleaned = sanitizeSessionTitle(title);
+  if (!cleaned) throw new Error("Title must not be blank");
+  if ([...cleaned].length > MAX_SESSION_TITLE_LENGTH) {
+    throw new Error(
+      `Title too long (max ${MAX_SESSION_TITLE_LENGTH} characters)`,
+    );
+  }
+
+  const dir = path.join(sessionsRootForCwd(cwd), sessionId);
+  const summaryPath = path.join(dir, "summary.json");
+  if (!fs.existsSync(summaryPath)) {
+    throw new Error("Chat not found");
+  }
+
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+  } catch {
+    throw new Error("Could not read chat summary");
+  }
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Chat summary is invalid");
+  }
+
+  raw.generated_title = cleaned;
+  raw.title_is_manual = true;
+  raw.updated_at = new Date().toISOString();
+
+  const tmp = `${summaryPath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+  fs.renameSync(tmp, summaryPath);
+  return { title: cleaned };
+}
+
+/**
+ * Remove a chat folder under ~/.grok/sessions/<cwd>/<id>/.
+ * Same local effect as `grok sessions delete` / `x.ai/session/delete`.
+ *
+ * @param {string} cwd
+ * @param {string} sessionId
+ */
+export function deleteSessionOnDisk(cwd, sessionId) {
+  if (!cwd) throw new Error("No project path");
+  if (!isSafeSessionId(sessionId)) throw new Error("Invalid session id");
+  const dir = path.join(sessionsRootForCwd(cwd), sessionId);
+  const summaryPath = path.join(dir, "summary.json");
+  if (!fs.existsSync(summaryPath) && !fs.existsSync(dir)) {
+    throw new Error("Chat not found");
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 /**
  * List sessions for a project directory (newest first).
  * @param {string} cwd
@@ -43,21 +159,20 @@ export function listSessionsForCwd(cwd, opts = {}) {
   for (const ent of entries) {
     if (!ent.isDirectory()) continue;
     const id = ent.name;
-    if (id.length < 8) continue;
+    if (!isSafeSessionId(id)) continue;
     const summaryPath = path.join(root, id, "summary.json");
     if (!fs.existsSync(summaryPath)) continue;
     try {
       const raw = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
-      const title =
-        raw.session_summary ||
-        raw.generated_title ||
-        raw.title ||
-        "(no summary)";
+      const title = displayTitleFromSummary(raw);
+      const generated = String(raw.generated_title || "").trim();
+      const summaryText = String(raw.session_summary || "").trim();
       out.push({
         id,
         cwd: raw.info?.cwd || cwd,
         title: String(title),
-        summary: raw.session_summary || raw.generated_title || null,
+        summary: generated || summaryText || null,
+        titleIsManual: Boolean(raw.title_is_manual) && Boolean(generated),
         createdAt: raw.created_at || null,
         updatedAt: raw.updated_at || raw.last_active_at || null,
         lastActiveAt: raw.last_active_at || raw.updated_at || null,

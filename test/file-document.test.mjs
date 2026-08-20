@@ -8,6 +8,7 @@ import {
   finishSave,
   isDirty,
   joinProjectPath,
+  visibleGitChanges,
 } from "../src/components/files/types.ts";
 
 const readyFile = {
@@ -108,4 +109,16 @@ test("canEditFile is false while loading, on error, binary, truncated, or diffs"
   assert.equal(canEditFile({ ...readyFile, binary: true }), false);
   assert.equal(canEditFile({ ...readyFile, truncated: true }), false);
   assert.equal(canEditFile({ ...readyFile, kind: "diff" }), false);
+});
+
+test("visibleGitChanges hides ignored rows when asked", () => {
+  const rows = [
+    { path: "a.ts", ignored: false, untracked: true },
+    { path: "dist/", ignored: true, untracked: false },
+  ];
+  assert.deepEqual(
+    visibleGitChanges(rows, true).map((r) => r.path),
+    ["a.ts"],
+  );
+  assert.equal(visibleGitChanges(rows, false).length, 2);
 });

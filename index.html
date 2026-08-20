@@ -21,37 +21,106 @@
         font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
       }
       [data-theme="light"] body { background: #f3f3f7; color: #14141c; }
+      /* Overlay — stays until App bootstrap hides it, even after React mounts. */
       .boot-splash {
-        min-height: 100%;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         display: grid;
         place-items: center;
-        gap: 14px;
+        background: #0c0c0f;
+        color: #f2f2f5;
         text-align: center;
         user-select: none;
+        transition: opacity 0.28s ease;
       }
-      .boot-splash strong { font-size: 18px; font-weight: 650; }
+      [data-theme="light"] .boot-splash {
+        background: #f3f3f7;
+        color: #14141c;
+      }
+      .boot-splash--done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .boot-splash-inner { padding: 24px; }
+      .boot-splash strong {
+        display: block;
+        margin-top: 14px;
+        font-size: 18px;
+        font-weight: 650;
+      }
       .boot-splash span { color: #9a9aab; font-size: 13px; }
       [data-theme="light"] .boot-splash span { color: #5a5a6e; }
       .boot-mark {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        background: #0a0a0a;
-        border: 1px solid rgba(255,255,255,.14);
-        margin: 0 auto 4px;
+        width: 48px;
+        height: 48px;
+        margin: 0 auto;
+        display: block;
       }
+      .boot-spin {
+        width: 22px;
+        height: 22px;
+        margin: 16px auto 0;
+        border: 2.5px solid rgba(167, 139, 250, 0.25);
+        border-top-color: #a78bfa;
+        border-radius: 50%;
+        animation: boot-spin 0.75s linear infinite;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
-    <div id="root">
-      <div class="boot-splash" role="status" aria-live="polite">
-        <div>
-          <div class="boot-mark" aria-hidden="true"></div>
-          <strong>Grok Desktop</strong>
-          <div><span>Starting…</span></div>
-        </div>
+    <div id="boot-splash" class="boot-splash" role="status" aria-live="polite">
+      <div class="boot-splash-inner">
+        <svg
+          class="boot-mark"
+          width="48"
+          height="48"
+          viewBox="0 0 32 32"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <rect width="32" height="32" rx="7.5" fill="#0A0A0A" />
+          <rect
+            x="0.5"
+            y="0.5"
+            width="31"
+            height="31"
+            rx="7.25"
+            stroke="#FFFFFF"
+            stroke-opacity="0.14"
+            stroke-width="1"
+          />
+          <circle
+            cx="16"
+            cy="16"
+            r="10"
+            stroke="#FFFFFF"
+            stroke-opacity="0.22"
+            stroke-width="1"
+          />
+          <path
+            d="M16 6 A10 10 0 0 1 26 16"
+            stroke="#FFFFFF"
+            stroke-opacity="0.85"
+            stroke-width="1.35"
+            stroke-linecap="round"
+          />
+          <path
+            d="M16 8.2 L17.35 13.65 L22.8 15 L17.35 16.35 L16 21.8 L14.65 16.35 L9.2 15 L14.65 13.65 Z"
+            fill="#FFFFFF"
+          />
+          <circle cx="16" cy="15" r="1.55" fill="#0A0A0A" />
+          <circle cx="16" cy="15" r="0.85" fill="#FFFFFF" />
+          <circle cx="26" cy="16" r="1.15" fill="#FFFFFF" />
+        </svg>
+        <strong>Grok Desktop</strong>
+        <div><span>Loading the app…</span></div>
+        <div class="boot-spin" aria-hidden="true"></div>
       </div>
     </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

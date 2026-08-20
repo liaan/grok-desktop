@@ -170,6 +170,67 @@ export function mcpSessionListAttempts(sessionId, opts = {}) {
   ];
 }
 
+/**
+ * grok-build `SessionRenameRequest` (camelCase). Send both casings.
+ * Kind defaults to build (coding sessions); chat conversations are separate.
+ * @param {{ sessionId: string, title: string, cwd: string, resetToAuto?: boolean }} opts
+ */
+export function sessionRenameRequestParams(opts) {
+  const sid = String(opts?.sessionId || "").trim();
+  const title = String(opts?.title || "");
+  const cwd = String(opts?.cwd || "");
+  const resetToAuto = Boolean(opts?.resetToAuto);
+  return {
+    sessionId: sid,
+    session_id: sid,
+    title,
+    cwd,
+    kind: "build",
+    ...(resetToAuto ? { resetToAuto: true, reset_to_auto: true } : {}),
+  };
+}
+
+/**
+ * Wire method for `grok agent stdio` session rename (TUI `/rename`).
+ * @param {{ sessionId: string, title: string, cwd: string, resetToAuto?: boolean }} opts
+ * @returns {{ method: string, params: object }[]}
+ */
+export function sessionRenameAttempts(opts) {
+  const params = sessionRenameRequestParams(opts);
+  return [
+    { method: "_x.ai/session/rename", params },
+    { method: "x.ai/session/rename", params },
+  ];
+}
+
+/**
+ * grok-build `DeleteRequest` (camelCase). Send both casings.
+ * @param {{ sessionId: string, cwd: string }} opts
+ */
+export function sessionDeleteRequestParams(opts) {
+  const sid = String(opts?.sessionId || "").trim();
+  const cwd = String(opts?.cwd || "");
+  return {
+    sessionId: sid,
+    session_id: sid,
+    cwd,
+    kind: "build",
+  };
+}
+
+/**
+ * Wire method for `grok agent stdio` session delete (CLI `grok sessions delete`).
+ * @param {{ sessionId: string, cwd: string }} opts
+ * @returns {{ method: string, params: object }[]}
+ */
+export function sessionDeleteAttempts(opts) {
+  const params = sessionDeleteRequestParams(opts);
+  return [
+    { method: "_x.ai/session/delete", params },
+    { method: "x.ai/session/delete", params },
+  ];
+}
+
 const MCP_LIVE_METHODS = new Set([
   "x.ai/mcp/server_status",
   "x.ai/mcp/init_progress",

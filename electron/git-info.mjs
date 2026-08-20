@@ -112,6 +112,7 @@ export function takePorcelainPath(raw) {
  * @returns {string}
  */
 export function porcelainStatusLetter(index, worktree) {
+  if (index === "!" || worktree === "!") return "I";
   if (index === "?" || worktree === "?") return "?";
   if (index === "D" || worktree === "D") return "D";
   if (index === "A" || worktree === "A") return "A";
@@ -133,6 +134,7 @@ export function porcelainStatusLetter(index, worktree) {
  *   worktree: string,
  *   status: string,
  *   untracked: boolean,
+ *   ignored: boolean,
  *   staged: boolean,
  *   unstaged: boolean,
  * } | null}
@@ -142,7 +144,6 @@ export function parsePorcelainLine(line) {
   if (raw.length < 3 || raw[2] !== " ") return null;
   const index = raw[0];
   const worktree = raw[1];
-  if (index === "!" || worktree === "!") return null;
 
   const rest = raw.slice(3);
   const isRename = index === "R" || index === "C";
@@ -163,7 +164,8 @@ export function parsePorcelainLine(line) {
   if (!filePath) return null;
   if (origPath != null && !origPath) origPath = null;
 
-  const untracked = index === "?" && worktree === "?";
+  const ignored = index === "!" || worktree === "!";
+  const untracked = !ignored && index === "?" && worktree === "?";
   return {
     path: filePath,
     origPath,
@@ -171,8 +173,9 @@ export function parsePorcelainLine(line) {
     worktree,
     status: porcelainStatusLetter(index, worktree),
     untracked,
-    staged: !untracked && index !== " ",
-    unstaged: untracked || worktree !== " ",
+    ignored,
+    staged: !ignored && !untracked && index !== " ",
+    unstaged: !ignored && (untracked || worktree !== " "),
   };
 }
 
@@ -262,6 +265,24 @@ async function gitShowPrefix(cwd) {
 
 /**
  * @param {string} cwd
+ * @param {string[]} extraArgs
+ * @returns {Promise<string>}
+ */
+async function gitStatusPorcelain(cwd, extraArgs) {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain=v1", ...extraArgs],
+      gitExecOpts(cwd, { timeout: 8000, maxBuffer: 1024 * 1024 }),
+    );
+    return String(stdout || "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * @param {string} cwd
  * @returns {Promise<{ files: NonNullable<ReturnType<typeof parsePorcelainLine>>[] }>}
  */
 export async function getGitStatus(cwd) {
@@ -269,20 +290,31 @@ export async function getGitStatus(cwd) {
     return { files: [] };
   }
   try {
-    const prefix = await gitShowPrefix(cwd);
-    const { stdout } = await execFileAsync(
-      "git",
-      ["status", "--porcelain=v1", "-uall", "--", "."],
-      gitExecOpts(cwd, { timeout: 8000, maxBuffer: 1024 * 1024 }),
-    );
-    const files = parsePorcelain(stdout)
-      .map((f) => ({
-        ...f,
-        path: stripGitPrefix(f.path, prefix),
-        origPath: f.origPath ? stripGitPrefix(f.origPath, prefix) : null,
-      }))
-      .filter((f) => f.path && !f.path.startsWith("../") && f.path !== "..");
-    return { files };
+    const [prefix, mainOut, ignoredOut] = await Promise.all([
+      gitShowPrefix(cwd),
+      // Untracked files individually; ignored paths are omitted here.
+      gitStatusPorcelain(cwd, ["-uall", "--", "."]),
+      // Separate call so `-uall` does not expand ignored trees (node_modules).
+      gitStatusPorcelain(cwd, [
+        "--untracked-files=no",
+        "--ignored",
+        "--",
+        ".",
+      ]),
+    ]);
+    const relocate = (f) => ({
+      ...f,
+      path: stripGitPrefix(f.path, prefix),
+      origPath: f.origPath ? stripGitPrefix(f.origPath, prefix) : null,
+    });
+    const inProject = (f) =>
+      Boolean(f.path) && !f.path.startsWith("../") && f.path !== "..";
+    const main = parsePorcelain(mainOut).map(relocate).filter(inProject);
+    const seen = new Set(main.map((f) => f.path));
+    const ignored = parsePorcelain(ignoredOut)
+      .map(relocate)
+      .filter((f) => f.ignored && inProject(f) && !seen.has(f.path));
+    return { files: main.concat(ignored) };
   } catch {
     return { files: [] };
   }
