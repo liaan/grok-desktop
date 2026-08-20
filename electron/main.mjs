@@ -85,8 +85,14 @@ import {
   send,
   sessionFromEvent,
   setDesktopStateLoader,
+  setWindowChromeListener,
   windowSessions,
 } from "./window-session.mjs";
+import {
+  menuListsOpenWindows,
+  windowCycleKind,
+  windowListMenuItems,
+} from "./window-menu.mjs";
 import {
   maybeWarmDockerSandbox,
   probeSandbox,
@@ -325,9 +331,32 @@ function cycleAppWindows(dir = 1) {
  * Standard app menu with Edit roles.
  * Without role-based Cut/Copy/Paste/Select All, Cmd/Ctrl+V often does nothing
  * in packaged Electron apps (macOS especially).
+ * Win/Linux rebuild the Window menu when shells open/close/title/focus.
  */
+let menuRebuildTimer = null;
+function scheduleApplicationMenu() {
+  if (!menuListsOpenWindows()) return;
+  if (menuRebuildTimer != null) return;
+  menuRebuildTimer = setTimeout(() => {
+    menuRebuildTimer = null;
+    installApplicationMenu();
+  }, 40);
+}
+
+function wireWindowMenuRefresh() {
+  if (!menuListsOpenWindows()) return;
+  setWindowChromeListener(scheduleApplicationMenu);
+  app.on("browser-window-created", (_e, win) => {
+    scheduleApplicationMenu();
+    win.on("closed", () => scheduleApplicationMenu());
+    win.on("focus", () => scheduleApplicationMenu());
+    win.on("page-title-updated", () => scheduleApplicationMenu());
+  });
+}
+
 function installApplicationMenu() {
   const isMac = process.platform === "darwin";
+  const cycleKind = windowCycleKind();
   /** @type {import('electron').MenuItemConstructorOptions} */
   const settingsItem = {
     label: "Settings…",
@@ -346,6 +375,21 @@ function installApplicationMenu() {
     ...(opts.accelerator ? { accelerator: opts.accelerator } : {}),
     click: () => newWindowFromMenu(),
   });
+  const listedWindows = menuListsOpenWindows()
+    ? windowListMenuItems(
+        appShellWindows()
+          .sort((a, b) => a.id - b.id)
+          .map((w) => ({
+            id: w.id,
+            title: w.getTitle() || APP_WINDOW_TITLE,
+            focused: w.isFocused(),
+          })),
+        (id) => {
+          const target = BrowserWindow.fromId(id);
+          if (target) focusWindow(target);
+        },
+      )
+    : [];
   /** @type {import('electron').MenuItemConstructorOptions[]} */
   // macOS menu bar (left → right): App name | File | Edit | View | Window | Help
   // Packaged builds only pick this up after rebuild — Dock/Applications is NOT live source.
@@ -421,6 +465,8 @@ function installApplicationMenu() {
       // role: "window" marks this as the macOS Window menu so the OS appends
       // the open-window list (by title). Nested role:"window" was a leaf item
       // literally labeled "Window" and is not needed.
+      // Windows / Linux: Electron does not append that list — we add radio
+      // items from appShellWindows() and rebuild when shells change.
       label: "Window",
       role: "window",
       submenu: [
@@ -428,7 +474,7 @@ function installApplicationMenu() {
         { type: "separator" },
         { role: "minimize" },
         { role: "zoom" },
-        ...(isMac
+        ...(cycleKind === "cmd-backtick"
           ? [
               { type: "separator" },
               // Cmd+Tab = apps. Same-app windows = Cmd+` (Mac standard).
@@ -445,19 +491,24 @@ function installApplicationMenu() {
               { type: "separator" },
               { role: "front" },
             ]
-          : [
-              {
-                label: "Next Window",
-                accelerator: "Ctrl+Tab",
-                click: () => cycleAppWindows(1),
-              },
-              {
-                label: "Previous Window",
-                accelerator: "Ctrl+Shift+Tab",
-                click: () => cycleAppWindows(-1),
-              },
-              { role: "close" },
-            ]),
+          : cycleKind === "ctrl-tab"
+            ? [
+                {
+                  label: "Next Window",
+                  accelerator: "Ctrl+Tab",
+                  click: () => cycleAppWindows(1),
+                },
+                {
+                  label: "Previous Window",
+                  accelerator: "Ctrl+Shift+Tab",
+                  click: () => cycleAppWindows(-1),
+                },
+                { role: "close" },
+              ]
+            : [{ role: "close" }]),
+        ...(listedWindows.length
+          ? [{ type: "separator" }, ...listedWindows]
+          : []),
       ],
     },
     {
@@ -546,20 +597,27 @@ function createWindow(opts = {}) {
     send(ws, "app:close-settings");
   });
 
-  // Cmd+` / Ctrl+Tab: cycle shells even if the menu accelerator is swallowed.
+  // Cycle shells even if the menu accelerator is swallowed.
+  // Windows: no Ctrl+Tab intercept — Alt+Tab already switches OS windows.
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;
     const key = input.key;
     const isBacktick = key === "`" || key === "~";
-    if (process.platform === "darwin") {
+    const cycleKind = windowCycleKind();
+    if (cycleKind === "cmd-backtick") {
       if (input.meta && !input.alt && !input.control && isBacktick) {
         event.preventDefault();
         cycleAppWindows(input.shift ? -1 : 1);
       }
       return;
     }
-    // Windows / Linux: Ctrl+Tab between shells (same idea as browser tabs).
-    if (input.control && !input.meta && !input.alt && key === "Tab") {
+    if (
+      cycleKind === "ctrl-tab" &&
+      input.control &&
+      !input.meta &&
+      !input.alt &&
+      key === "Tab"
+    ) {
       event.preventDefault();
       cycleAppWindows(input.shift ? -1 : 1);
     }
@@ -1480,6 +1538,7 @@ app.whenReady().then(() => {
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
   registerIpc();
+  wireWindowMenuRefresh();
   // Native splash first; main window stays hidden until the renderer paints.
   createWindow({ splash: true });
   installApplicationMenu();

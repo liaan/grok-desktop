@@ -47,6 +47,25 @@ export function setDesktopStateLoader(fn) {
   if (typeof fn === "function") loadDesktopState = fn;
 }
 
+/** @type {(() => void) | null} */
+let windowChromeListener = null;
+
+/**
+ * Native Window menu on Win/Linux rebuilds when titles change.
+ * @param {(() => void) | null | undefined} fn
+ */
+export function setWindowChromeListener(fn) {
+  windowChromeListener = typeof fn === "function" ? fn : null;
+}
+
+function notifyWindowChrome() {
+  try {
+    windowChromeListener?.();
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Per-window session: each File → New Window owns its own agent process.
  * @typedef {{
@@ -169,6 +188,7 @@ export function setWindowTitle(ws, cwd) {
       trimmed ||
       String(cwd);
     ws.win.setTitle(`${short} · Grok`);
+    notifyWindowChrome();
     return;
   }
   let shells = 0;
@@ -178,6 +198,7 @@ export function setWindowTitle(ws, cwd) {
   ws.win.setTitle(
     shells <= 1 ? APP_WINDOW_TITLE : `${APP_WINDOW_TITLE} · ${ws.win.id}`,
   );
+  notifyWindowChrome();
 }
 
 /** @param {any} client */
