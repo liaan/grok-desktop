@@ -13,9 +13,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   openProjectInNewWindow: (cwd) =>
     ipcRenderer.invoke("window:open-project-in-new", cwd),
   inspectCheckout: (cwd) => ipcRenderer.invoke("git:inspect-checkout", cwd),
-  addWorktree: (opts) => ipcRenderer.invoke("git:add-worktree", opts || {}),
-  suggestWorktreeDir: (opts) =>
-    ipcRenderer.invoke("git:suggest-worktree-dir", opts || {}),
+  createWorktree: (opts) => ipcRenderer.invoke("worktree:create", opts || {}),
   /** Drop agent on this window; title returns to empty shell. */
   closeProject: () => ipcRenderer.invoke("project:close"),
   /** Respawn grok agent on this window and resume the same chat. */

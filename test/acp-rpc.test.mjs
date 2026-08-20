@@ -8,6 +8,11 @@ import {
   classifyInboundMessage,
   compactConversationAttempts,
   compactConversationRequestParams,
+  unwrapExtMethodResult,
+  worktreeCreateFromSyncAttempts,
+  worktreeListAttempts,
+  parseWorktreeCreateResponse,
+  parseWorktreeListResponse,
   sessionRenameAttempts,
   sessionRenameRequestParams,
   sessionDeleteAttempts,
@@ -145,6 +150,33 @@ test("compactConversationAttempts uses underscore ACP ext method on stdio", () =
     sessionId: "sess-1",
     userContext: "keep auth",
   });
+});
+
+test("worktree ACP helpers match TUI create_from_worktree_sync", () => {
+  const attempts = worktreeCreateFromSyncAttempts({
+    sourceWorktreePath: "/repo",
+    newSessionId: "desktop-abc",
+    copyMode: "dirty",
+  });
+  assert.equal(attempts[0].method, "_x.ai/git/worktree/create_from_worktree_sync");
+  assert.equal(attempts[0].params.sourceWorktreePath, "/repo");
+  assert.equal(attempts[0].params.newSessionId, "desktop-abc");
+  assert.equal(worktreeListAttempts({ repo: "/repo" })[0].method, "_x.ai/git/worktree/list");
+
+  const created = parseWorktreeCreateResponse({
+    result: { worktreePath: "/home/u/.grok/worktrees/repo/wt-1", newSessionId: "desktop-abc" },
+    error: null,
+  });
+  assert.equal(created.path, "/home/u/.grok/worktrees/repo/wt-1");
+
+  const listed = parseWorktreeListResponse([
+    { path: "/home/u/.grok/worktrees/repo/wt-1", git_ref: "HEAD", metadata: { label: "fix" } },
+  ]);
+  assert.equal(listed[0].label, "fix");
+  assert.equal(listed[0].gitRef, "HEAD");
+
+  assert.equal(unwrapExtMethodResult({ result: { ok: true }, error: null }).ok, true);
+  assert.throws(() => unwrapExtMethodResult({ error: "nope" }), /nope/);
 });
 
 test("mcpAuthTriggerAttempts uses underscore ACP ext method and both casings", () => {

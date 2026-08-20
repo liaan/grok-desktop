@@ -96,11 +96,7 @@ import {
   windowCycleKind,
   windowListMenuItems,
 } from "./window-menu.mjs";
-import {
-  addGitWorktree,
-  listLinkedWorktrees,
-  suggestWorktreeDir,
-} from "./git-worktrees.mjs";
+import { sameCheckoutPath } from "./git-worktrees.mjs";
 import {
   buildCheckoutConflict,
   inspectCheckoutForUi,
@@ -308,6 +304,27 @@ function focusWindow(win) {
 function newWindowFromMenu() {
   // Keep the shell hidden until the renderer paints — do not show a blank frame.
   createWindow();
+}
+
+/**
+ * Live ACP agent whose cwd is this checkout (or any live agent as fallback).
+ * Worktree create/list must go through that agent — not `git` from Desktop.
+ * @param {string} cwd
+ * @param {import('./window-session.mjs').WindowSession | null} [prefer]
+ */
+function agentForWorktreeRpc(cwd, prefer = null) {
+  if (prefer?.agent?.ready && prefer.agent.cwd) return prefer.agent;
+  if (cwd) {
+    for (const other of windowSessions.values()) {
+      if (other.disposed || !other.agent?.ready || !other.agent.cwd) continue;
+      if (sameCheckoutPath(other.agent.cwd, cwd)) return other.agent;
+    }
+  }
+  for (const other of windowSessions.values()) {
+    if (other.disposed || !other.agent?.ready || !other.agent.cwd) continue;
+    return other.agent;
+  }
+  return null;
 }
 
 /**
@@ -1019,10 +1036,21 @@ function registerIpc() {
       throw new Error(`Project path not found: ${cwd}`);
     }
     if (!opts?.allowSameCheckout) {
+      const agent = agentForWorktreeRpc(cwd, ws);
+      /** @type {any[]} */
+      let acpWorktrees = [];
+      if (agent?.listWorktrees) {
+        try {
+          acpWorktrees = await agent.listWorktrees({ repo: cwd });
+        } catch {
+          acpWorktrees = [];
+        }
+      }
       const conflict = await buildCheckoutConflict(
         cwd,
         collectOpenCheckouts(),
         ws.win.id,
+        { acpWorktrees },
       );
       if (conflict) return conflict;
     }
@@ -1089,41 +1117,42 @@ function registerIpc() {
         occupancy: null,
       };
     }
+    const agent = agentForWorktreeRpc(root, ws);
+    /** @type {any[]} */
+    let acpWorktrees = [];
+    if (agent?.listWorktrees) {
+      try {
+        acpWorktrees = await agent.listWorktrees({ repo: root });
+      } catch {
+        acpWorktrees = [];
+      }
+    }
     return inspectCheckoutForUi(root, collectOpenCheckouts(), {
       excludeWindowId: ws?.win?.id ?? null,
+      acpWorktrees,
     });
   });
 
-  ipcMain.handle("git:add-worktree", async (e, opts = {}) => {
+  /** Same as TUI `/new` worktree — ACP create, Grok chooses the path. */
+  ipcMain.handle("worktree:create", async (e, opts = {}) => {
     const ws = sessionFromEvent(e);
     const root =
       typeof opts.cwd === "string" && opts.cwd
         ? opts.cwd
         : ws?.agent?.cwd || ws?.lastCwd;
-    if (!root) throw new Error("No git repository for worktree add");
-    return addGitWorktree(root, {
-      dir: opts.dir,
-      branch: opts.branch,
-      startPoint: opts.startPoint,
+    if (!root) {
+      throw new Error("Open a project first — worktrees need a live Grok session.");
+    }
+    const agent = agentForWorktreeRpc(root, ws);
+    if (!agent?.createWorktreeFromCurrent) {
+      throw new Error(
+        "Need a live Grok session to create a worktree (same as TUI /new).",
+      );
+    }
+    return agent.createWorktreeFromCurrent({
+      sourceCwd: root,
+      label: opts.label,
     });
-  });
-
-  ipcMain.handle("git:suggest-worktree-dir", async (e, opts = {}) => {
-    const ws = sessionFromEvent(e);
-    const root =
-      typeof opts.cwd === "string" && opts.cwd
-        ? opts.cwd
-        : ws?.agent?.cwd || ws?.lastCwd;
-    if (!root) return { dir: null };
-    const trees = listLinkedWorktrees(root);
-    const mainRoot = trees[0]?.path || root;
-    return {
-      dir: suggestWorktreeDir(
-        mainRoot,
-        opts.branch || "wip",
-        trees.map((t) => t.path),
-      ),
-    };
   });
 
   /** Drop agent + empty-shell title on this window (logout / leave project). */

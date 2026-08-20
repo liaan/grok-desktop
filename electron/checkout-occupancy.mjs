@@ -6,11 +6,8 @@
 import { getGitBranch } from "./git-info.mjs";
 import {
   hasGitMarker,
-  listLinkedWorktrees,
-  listLocalBranchNames,
   normalizeCheckoutPath,
   sameCheckoutPath,
-  suggestWorktreeDir,
 } from "./git-worktrees.mjs";
 
 /**
@@ -41,23 +38,24 @@ export function findOccupyingCheckout(cwd, openRows, excludeWindowId = null) {
 }
 
 /**
- * Snapshot for the duplicate-open prompt (or New Worktree form).
+ * Snapshot for the duplicate-open prompt.
+ * Worktree rows come from ACP `x.ai/git/worktree/list` (opts.acpWorktrees).
  *
  * @param {string} cwd
  * @param {OpenCheckoutRow[]} openRows
- * @param {{ excludeWindowId?: number | null }} [opts]
+ * @param {{
+ *   excludeWindowId?: number | null,
+ *   acpWorktrees?: Array<{
+ *     path: string,
+ *     label?: string | null,
+ *     gitRef?: string | null,
+ *     head?: string | null,
+ *   }>,
+ * }} [opts]
  */
 export async function inspectCheckoutForUi(cwd, openRows, opts = {}) {
   const root = normalizeCheckoutPath(cwd);
   const git = Boolean(root && hasGitMarker(root));
-  const trees = git ? listLinkedWorktrees(root) : [];
-  const branches = git ? listLocalBranchNames(root) : [];
-  const branchInfo = git
-    ? await getGitBranch(root)
-    : { branch: null, detached: false };
-  const checkedOut = new Set(
-    trees.map((t) => t.branch).filter(Boolean),
-  );
   const occupancy = findOccupyingCheckout(
     root,
     openRows,
@@ -67,34 +65,26 @@ export async function inspectCheckoutForUi(cwd, openRows, opts = {}) {
     ? await getGitBranch(occupancy.cwd)
     : { branch: null, detached: false };
 
-  const worktrees = trees.map((t) => ({
+  const worktrees = (opts.acpWorktrees || []).map((t) => ({
     path: t.path,
-    head: t.head,
-    branch: t.branch,
-    detached: t.detached,
-    bare: t.bare,
-    locked: t.locked,
+    head: t.head || null,
+    branch: t.gitRef || t.label || null,
+    detached: false,
+    bare: false,
+    locked: false,
     open: (openRows || []).some((row) => sameCheckoutPath(row.cwd, t.path)),
+    label: t.label || null,
   }));
-
-  const mainRoot = trees[0]?.path || root;
-  const suggestedDir = git
-    ? suggestWorktreeDir(
-        mainRoot,
-        "wip",
-        trees.map((t) => t.path),
-      )
-    : null;
 
   return {
     cwd: root,
     git,
-    currentBranch: branchInfo.branch,
-    detached: branchInfo.detached,
-    branches,
-    checkedOutBranches: [...checkedOut],
+    currentBranch: occupancyBranch.branch,
+    detached: occupancyBranch.detached,
+    branches: [],
+    checkedOutBranches: [],
     worktrees,
-    suggestedDir,
+    suggestedDir: null,
     occupancy: occupancy
       ? {
           windowId: occupancy.windowId,
@@ -111,9 +101,18 @@ export async function inspectCheckoutForUi(cwd, openRows, opts = {}) {
  * @param {string} cwd
  * @param {OpenCheckoutRow[]} openRows
  * @param {number | null} [excludeWindowId]
+ * @param {{ acpWorktrees?: any[] }} [extra]
  */
-export async function buildCheckoutConflict(cwd, openRows, excludeWindowId = null) {
-  const snap = await inspectCheckoutForUi(cwd, openRows, { excludeWindowId });
+export async function buildCheckoutConflict(
+  cwd,
+  openRows,
+  excludeWindowId = null,
+  extra = {},
+) {
+  const snap = await inspectCheckoutForUi(cwd, openRows, {
+    excludeWindowId,
+    acpWorktrees: extra.acpWorktrees,
+  });
   if (!snap.occupancy) return null;
   return {
     conflict: "checkout-open",

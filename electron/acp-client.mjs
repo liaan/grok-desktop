@@ -7,6 +7,7 @@
  * only add the Desktop Preview MCP so the agent can drive the Preview window.
  */
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
@@ -38,6 +39,10 @@ import { compressPromptImage } from "./image-compress.mjs";
 import {
   classifyInboundMessage,
   compactConversationAttempts,
+  worktreeCreateFromSyncAttempts,
+  worktreeListAttempts,
+  parseWorktreeCreateResponse,
+  parseWorktreeListResponse,
   sessionRenameAttempts,
   sessionDeleteAttempts,
   isMcpLiveEventMethod,
@@ -978,6 +983,94 @@ export class GrokAcpClient extends EventEmitter {
     throw new Error(
       `Compress is not available on this Grok CLI connection (${misses.join(" · ") || "no methods accepted"}).`,
     );
+  }
+
+  /**
+   * Same as TUI `/new` worktree: ACP `x.ai/git/worktree/create_from_worktree_sync`.
+   * Grok picks the path under ~/.grok/worktrees — no git CLI in Desktop.
+   * @param {{ sourceCwd?: string, label?: string }} [opts]
+   */
+  async createWorktreeFromCurrent(opts = {}) {
+    if (!this.ready) throw new Error("Agent not connected");
+    const source =
+      String(opts.sourceCwd || this.cwd || "").trim() || this.cwd;
+    if (!source) throw new Error("No project path for worktree create");
+    const newSessionId = `desktop-${
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().slice(0, 12)
+        : Date.now().toString(36)
+    }`;
+    const attempts = worktreeCreateFromSyncAttempts({
+      sourceWorktreePath: source,
+      newSessionId,
+      copyMode: "dirty",
+      label: opts.label,
+    });
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    const misses = [];
+    const longMs = 5 * 60_000;
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: longMs,
+        });
+        debugLog("acp", "worktree-create-ok", { path: attempt.method });
+        return parseWorktreeCreateResponse(raw);
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "worktree-create-try", {
+          path: attempt.method,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    throw new Error(
+      `Worktree create is not available on this Grok CLI (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+  }
+
+  /**
+   * ACP `x.ai/git/worktree/list` (Grok-managed worktrees).
+   * @param {{ repo?: string, includeAll?: boolean }} [opts]
+   */
+  async listWorktrees(opts = {}) {
+    if (!this.ready) return [];
+    const attempts = worktreeListAttempts({
+      repo: opts.repo || this.cwd,
+      includeAll: Boolean(opts.includeAll),
+    });
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: 20_000,
+        });
+        return parseWorktreeListResponse(raw);
+      } catch (err) {
+        if (methodMissing(err)) continue;
+        debugLog("acp", "worktree-list-failed", {
+          error: err?.message || String(err),
+        });
+        return [];
+      }
+    }
+    return [];
   }
 
   /**

@@ -231,6 +231,143 @@ export function sessionDeleteAttempts(opts) {
   ];
 }
 
+/**
+ * Peel grok-build ExtMethodResult `{ result, error }` or a bare payload.
+ * @param {any} raw
+ */
+export function unwrapExtMethodResult(raw) {
+  if (raw == null || typeof raw !== "object") return raw;
+  if (raw.error != null && raw.error !== "") {
+    const err = raw.error;
+    const msg =
+      typeof err === "string"
+        ? err
+        : err?.message || JSON.stringify(err);
+    const e = new Error(msg);
+    e.code = err?.code;
+    throw e;
+  }
+  if (Object.prototype.hasOwnProperty.call(raw, "result")) return raw.result;
+  return raw;
+}
+
+/**
+ * TUI `/new` worktree: `_x.ai/git/worktree/create_from_worktree_sync`.
+ * @param {{
+ *   sourceWorktreePath: string,
+ *   newSessionId: string,
+ *   copyMode?: string,
+ *   label?: string,
+ *   gitRef?: string,
+ * }} opts
+ * @returns {{ method: string, params: object }[]}
+ */
+export function worktreeCreateFromSyncAttempts(opts) {
+  const sourceWorktreePath = String(opts?.sourceWorktreePath || "").trim();
+  const newSessionId = String(opts?.newSessionId || "").trim();
+  const params = {
+    sourceWorktreePath,
+    source_worktree_path: sourceWorktreePath,
+    newSessionId,
+    new_session_id: newSessionId,
+    copyMode: opts?.copyMode || "dirty",
+    copy_mode: opts?.copyMode || "dirty",
+  };
+  const label = String(opts?.label || "").trim();
+  if (label) {
+    params.label = label;
+  }
+  const gitRef = String(opts?.gitRef || "").trim();
+  if (gitRef) {
+    params.gitRef = gitRef;
+    params.git_ref = gitRef;
+  }
+  return [
+    { method: "_x.ai/git/worktree/create_from_worktree_sync", params },
+    { method: "x.ai/git/worktree/create_from_worktree_sync", params },
+  ];
+}
+
+/**
+ * ACP `x.ai/git/worktree/list`.
+ * @param {{ repo?: string, includeAll?: boolean }} [opts]
+ * @returns {{ method: string, params: object }[]}
+ */
+export function worktreeListAttempts(opts = {}) {
+  const repo = String(opts.repo || "").trim();
+  const params = {
+    repo: repo || null,
+    include_all: Boolean(opts.includeAll),
+    includeAll: Boolean(opts.includeAll),
+  };
+  return [
+    { method: "_x.ai/git/worktree/list", params },
+    { method: "x.ai/git/worktree/list", params },
+  ];
+}
+
+/**
+ * @param {any} raw
+ * @returns {{ path: string, sessionId?: string, sourceGitRoot?: string | null }}
+ */
+export function parseWorktreeCreateResponse(raw) {
+  const body = unwrapExtMethodResult(raw);
+  const obj = body && typeof body === "object" ? body : {};
+  const path = String(
+    obj.worktreePath || obj.worktree_path || obj.path || "",
+  ).trim();
+  if (!path) {
+    throw new Error("Worktree create response missing worktreePath");
+  }
+  return {
+    path,
+    sessionId: String(
+      obj.newSessionId || obj.new_session_id || obj.sessionId || "",
+    ).trim() || undefined,
+    sourceGitRoot: obj.sourceGitRoot || obj.source_git_root || null,
+  };
+}
+
+/**
+ * @param {any} raw
+ * @returns {Array<{
+ *   path: string,
+ *   label: string | null,
+ *   gitRef: string | null,
+ *   head: string | null,
+ *   sessionId: string | null,
+ * }>}
+ */
+export function parseWorktreeListResponse(raw) {
+  const body = unwrapExtMethodResult(raw);
+  const rows = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.worktrees)
+      ? body.worktrees
+      : Array.isArray(body?.records)
+        ? body.records
+        : [];
+  return rows
+    .map((rec) => {
+      if (!rec || typeof rec !== "object") return null;
+      const p = String(
+        rec.path || rec.worktreePath || rec.worktree_path || "",
+      ).trim();
+      if (!p) return null;
+      const meta = rec.metadata && typeof rec.metadata === "object"
+        ? rec.metadata
+        : {};
+      return {
+        path: p,
+        label: String(meta.label || rec.label || "").trim() || null,
+        gitRef: rec.git_ref || rec.gitRef || rec.branch || null,
+        head: rec.head_commit || rec.headCommit || rec.head || null,
+        sessionId: rec.session_id || rec.sessionId || null,
+      };
+    })
+    .filter(Boolean);
+}
+
 const MCP_LIVE_METHODS = new Set([
   "x.ai/mcp/server_status",
   "x.ai/mcp/init_progress",

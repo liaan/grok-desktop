@@ -199,7 +199,7 @@ PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **El
 - Desktop **continues** the latest session on open (`session/load` + history from `updates.jsonl`).
 - **New chat** → `session/new`. Sidebar lists chats from disk (`electron/sessions.mjs`).
 - Do not invent a parallel chat store; always use the CLI session layout.
-- **Multi-window same repo:** two windows on the same checkout share files and the current branch. Opening a folder that is already open in another Grok window prompts to switch to that window, open an unused linked worktree, or `git worktree add` a sibling checkout. File → **New Worktree Window…** (sidebar **New worktree…**) creates a worktree from the current git project and opens it in a new window. Recents show an **open** badge when a folder is live in some window.
+- **Multi-window same repo:** two windows on the same checkout share files and the current branch. Opening a folder that is already open in another Grok window prompts to switch, reuse a Grok worktree, or create one via ACP `x.ai/git/worktree/create_from_worktree_sync` (same as TUI `/new` worktree — Grok picks `~/.grok/worktrees/…`). File → **New Worktree Window…** uses that ACP call on the live agent. Do **not** spawn `git worktree add` from Desktop. Recents show an **open** badge when a folder is live in some window.
 
 ---
 

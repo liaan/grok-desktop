@@ -330,6 +330,7 @@ export type WorktreeInfo = {
   bare: boolean;
   locked: boolean;
   open: boolean;
+  label?: string | null;
 };
 
 export type CheckoutOccupancy = {
@@ -495,20 +496,14 @@ declare global {
       } | null>;
       openProjectInNewWindow: (cwd: string) => Promise<{ ok: boolean }>;
       inspectCheckout: (cwd?: string) => Promise<CheckoutInspect>;
-      addWorktree: (opts: {
+      createWorktree: (opts?: {
         cwd?: string;
-        dir: string;
-        branch: string;
-        startPoint?: string;
+        label?: string;
       }) => Promise<{
         path: string;
-        branch: string;
-        createdBranch: boolean;
+        sessionId?: string;
+        sourceGitRoot?: string | null;
       }>;
-      suggestWorktreeDir: (opts: {
-        cwd?: string;
-        branch?: string;
-      }) => Promise<{ dir: string | null }>;
       /** Drop agent on this window; native title returns to empty shell. */
       closeProject: () => Promise<boolean>;
       /** Respawn grok agent and resume the same chat. */

@@ -395,48 +395,31 @@ export default function App() {
   );
 
   const handleCreateWorktree = useCallback(
-    async (opts: {
-      cwd: string;
-      branch: string;
-      dir: string;
-      newWindow: boolean;
-    }) => {
+    async (opts: { cwd: string; newWindow: boolean }) => {
       setWorktreeBusy(true);
       setWorktreeError(null);
       try {
-        const added = await window.grokDesktop.addWorktree({
+        const added = await window.grokDesktop.createWorktree({
           cwd: opts.cwd,
-          dir: opts.dir,
-          branch: opts.branch,
         });
         await openPathAfterWorktree(added.path, opts.newWindow);
       } catch (e: unknown) {
-        setWorktreeError(e instanceof Error ? e.message : String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        if (worktreeDialog) setWorktreeError(msg);
+        else setError(msg);
       } finally {
         setWorktreeBusy(false);
       }
     },
-    [openPathAfterWorktree],
+    [openPathAfterWorktree, worktreeDialog],
   );
 
-  const openNewWorktreeDialog = useCallback(async (sourceCwd: string) => {
-    setWorktreeError(null);
-    try {
-      const inspect = await window.grokDesktop.inspectCheckout(sourceCwd);
-      if (!inspect.git) {
-        setError("This folder is not a git repository — cannot create a worktree.");
-        return;
-      }
-      setWorktreeDialog({
-        kind: "create",
-        sourceCwd,
-        inspect,
-        openInNewWindow: true,
-      });
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
+  const createWorktreeInNewWindow = useCallback(
+    async (sourceCwd: string) => {
+      await handleCreateWorktree({ cwd: sourceCwd, newWindow: true });
+    },
+    [handleCreateWorktree],
+  );
 
   const pendingOpenTried = useRef(false);
   useEffect(() => {
@@ -494,9 +477,9 @@ export default function App() {
         setError("Open a git project first, then create a worktree.");
         return;
       }
-      void openNewWorktreeDialog(project);
+      void createWorktreeInNewWindow(project);
     });
-  }, [project, openNewWorktreeDialog]);
+  }, [project, createWorktreeInNewWindow]);
 
   const handleLogin = async (deviceAuth = false) => {
     const gen = ++loginGen.current;
@@ -1173,7 +1156,7 @@ export default function App() {
             onToggleCollapsed={columns.toggleSidebar}
             onPickProject={() => void pickProject()}
             onNewWorktree={() => {
-              if (project) void openNewWorktreeDialog(project);
+              if (project) void createWorktreeInNewWindow(project);
             }}
             onOpenProject={(cwd) => {
               if (!confirmDiscardFiles()) return;
