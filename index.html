@@ -21,7 +21,7 @@
         font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
       }
       [data-theme="light"] body { background: #f3f3f7; color: #14141c; }
-      /* Overlay — stays until App bootstrap hides it, even after React mounts. */
+      /* Overlay for reloads / fail-safe reveal. First launch uses a native splash. */
       .boot-splash {
         position: fixed;
         inset: 0;

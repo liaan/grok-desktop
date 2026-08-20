@@ -435,6 +435,8 @@ export type FileReadResult = {
 declare global {
   interface Window {
     grokDesktop: {
+      /** First painted frame — main shows the shell and closes the native splash. */
+      windowReady: () => void;
       getInfo: () => Promise<AppInfo>;
       pickProject: () => Promise<string | null>;
       openProject: (

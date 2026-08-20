@@ -4,7 +4,6 @@ import {
   ipcMain,
   dialog,
   shell,
-  nativeTheme,
   Menu,
 } from "electron";
 import path from "node:path";
@@ -115,6 +114,11 @@ import { previewApiAddress, startPreviewApi } from "./preview-api.mjs";
 import { installDesktopPreviewSkill } from "./preview-mcp.mjs";
 import { normalizeAutoCompactAt } from "../shared/auto-compact.mjs";
 import { mergeMcpLiveStatus } from "../shared/mcp-status.mjs";
+import {
+  bootBackground,
+  closeSplash,
+  createSplashWindow,
+} from "./splash.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -284,9 +288,8 @@ function focusWindow(win) {
 }
 
 function newWindowFromMenu() {
-  const win = createWindow();
-  // Re-assert focus after menu tracking ends (one deferred pass is enough).
-  setImmediate(() => focusWindow(win));
+  // Keep the shell hidden until the renderer paints — do not show a blank frame.
+  createWindow();
 }
 
 /**
@@ -489,8 +492,22 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-/** @returns {import('electron').BrowserWindow} */
-function createWindow() {
+/**
+ * webContents → reveal() so `window:ready` from the renderer can show
+ * that specific shell (not a splash, not another window).
+ * @type {WeakMap<import('electron').WebContents, () => void>}
+ */
+const revealByWebContents = new WeakMap();
+
+/**
+ * @param {{ splash?: boolean }} [opts]
+ * @returns {import('electron').BrowserWindow}
+ */
+function createWindow(opts = {}) {
+  const theme = loadState().theme;
+  const useSplash = Boolean(opts.splash);
+  if (useSplash) createSplashWindow(theme);
+
   /** @type {import('electron').BrowserWindowConstructorOptions} */
   const winOpts = {
     width: 1440,
@@ -498,10 +515,10 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: APP_WINDOW_TITLE,
-    // Visible immediately so launch is a branded window, not an empty wait
-    // while Chromium loads the renderer. HTML splash covers until React mounts.
-    show: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0c0c0f" : "#f3f3f7",
+    // Hidden until the renderer has painted real UI. Showing earlier is a
+    // blank native chrome — HTML inside this window cannot paint yet.
+    show: false,
+    backgroundColor: bootBackground(theme),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -549,15 +566,24 @@ function createWindow() {
   });
 
   let revealed = false;
+  let revealFallback = null;
   const reveal = () => {
     if (win.isDestroyed() || revealed) return;
     revealed = true;
+    if (revealFallback) clearTimeout(revealFallback);
     focusWindow(win);
+    if (useSplash) {
+      // Main frame on screen first so closing the splash does not flash desktop.
+      setTimeout(() => closeSplash(), 80);
+    }
   };
-  // Show as soon as the HTML splash is in the DOM — do not wait for the
-  // Vite/React module graph (that is what made launch look like a blank hang).
-  win.webContents.once("dom-ready", reveal);
-  win.once("ready-to-show", reveal);
+  revealByWebContents.set(win.webContents, reveal);
+  win.webContents.once("did-fail-load", reveal);
+  revealFallback = setTimeout(reveal, 15000);
+  win.on("closed", () => {
+    if (revealFallback) clearTimeout(revealFallback);
+    if (useSplash) closeSplash();
+  });
 
   if (isDev) {
     void win.loadURL("http://127.0.0.1:5173");
@@ -597,6 +623,11 @@ function createWindow() {
 }
 
 function registerIpc() {
+  ipcMain.on("window:ready", (e) => {
+    const reveal = revealByWebContents.get(e.sender);
+    if (typeof reveal === "function") reveal();
+  });
+
   ipcMain.handle("app:get-info", async () => {
     const state = loadState();
     const auth = getAuthStatus();
@@ -1449,8 +1480,8 @@ app.whenReady().then(() => {
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
   registerIpc();
-  // Window (HTML splash) before menu/updater so launch is not a blank wait.
-  createWindow();
+  // Native splash first; main window stays hidden until the renderer paints.
+  createWindow({ splash: true });
   installApplicationMenu();
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 
@@ -1501,7 +1532,9 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     // Do not recreate a window mid update-install
     if (isQuittingForUpdate()) return;
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow({ splash: true });
+    }
   });
 });
 
@@ -1514,5 +1547,6 @@ app.on("window-all-closed", () => {
 // electron-updater quitAndInstall so "Restart now" appears to do nothing.
 app.on("before-quit", () => {
   appQuitting = true;
+  closeSplash();
   disposeAgentQuick();
 });

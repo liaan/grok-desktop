@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("grokDesktop", {
+  /** First React paint — main may now show the shell and drop the native splash. */
+  windowReady: () => ipcRenderer.send("window:ready"),
   getInfo: () => ipcRenderer.invoke("app:get-info"),
   pickProject: () => ipcRenderer.invoke("project:pick"),
   openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),

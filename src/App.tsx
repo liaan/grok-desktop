@@ -199,7 +199,7 @@ export default function App() {
         void refreshBackbone(i.lastProject || undefined);
       }
     } catch {
-      /* WelcomeView still renders; splash already dismissed on first paint. */
+      /* WelcomeView still renders; native splash waits for first paint, not this. */
     }
   }, [refreshBackbone, hydrateFromInfo]);
 
