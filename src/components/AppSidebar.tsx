@@ -1,7 +1,12 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import type { AuthStatus, BackboneSummary, SessionSummary } from "../vite-env";
+import type {
+  AuthStatus,
+  BackboneSummary,
+  OpenCheckoutRow,
+  SessionSummary,
+} from "../vite-env";
 import type { ConnState } from "../lib/conn";
-import { basen } from "../lib/path-utils";
+import { basen, samePathKey } from "../lib/path-utils";
 import { formatSessionWhen } from "../lib/time";
 import { usePrivacy } from "../lib/privacy-context";
 import { BrandMark, Spinner } from "./BrandMark";
@@ -20,7 +25,9 @@ export const AppSidebar = memo(function AppSidebar({
   isOpening,
   authBusy,
   onPickProject,
+  onNewWorktree,
   onOpenProject,
+  openCheckouts = [],
   onOpenSession,
   onRenameSession,
   onDeleteSession,
@@ -42,7 +49,9 @@ export const AppSidebar = memo(function AppSidebar({
   isOpening: boolean;
   authBusy: boolean;
   onPickProject: () => void;
+  onNewWorktree?: () => void;
   onOpenProject: (cwd: string) => void;
+  openCheckouts?: OpenCheckoutRow[];
   onOpenSession: (opts: { mode: "new" | "resume"; sessionId?: string }) => void;
   onRenameSession?: (opts: {
     sessionId: string;
@@ -224,6 +233,18 @@ export const AppSidebar = memo(function AppSidebar({
             "Open project…"
           )}
         </button>
+        {onNewWorktree ? (
+          <button
+            className="btn block"
+            type="button"
+            style={{ marginTop: 8 }}
+            disabled={busyGate}
+            title="Create a git worktree and open it in a new window"
+            onClick={onNewWorktree}
+          >
+            New worktree…
+          </button>
+        ) : null}
       </div>
 
       <div className="sidebar-section">
@@ -405,7 +426,12 @@ export const AppSidebar = memo(function AppSidebar({
                 disabled={busyGate}
                 onClick={() => onOpenProject(p)}
               >
-                <span className="name">{basen(p)}</span>
+                <span className="name">
+                  {basen(p)}
+                  {openCheckouts.some((row) => samePathKey(row.cwd, p)) ? (
+                    <span className="open-badge">open</span>
+                  ) : null}
+                </span>
                 <span className="path">{redact(p)}</span>
               </button>
             ))}

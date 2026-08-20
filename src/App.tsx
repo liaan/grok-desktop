@@ -12,6 +12,10 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { StatusBar } from "./components/StatusBar";
 import { PlanApprovalDialog } from "./components/PlanApprovalDialog";
 import { AskUserDialog } from "./components/AskUserDialog";
+import {
+  WorktreeDialog,
+  type WorktreeDialogState,
+} from "./components/WorktreeDialog";
 import { ApprovalsDock } from "./components/ApprovalsDock";
 import { AppSidebar } from "./components/AppSidebar";
 import { ChatTopbar } from "./components/ChatTopbar";
@@ -52,6 +56,7 @@ import type {
   AvailableModel,
   BackboneSummary,
   LoginProgress,
+  OpenCheckoutRow,
   SessionSummary,
   TimelineItem,
 } from "./vite-env";
@@ -102,6 +107,11 @@ export default function App() {
   >(null);
   const [offerAgentRestart, setOfferAgentRestart] = useState(false);
   const [agentCommands, setAgentCommands] = useState<SlashCommand[]>([]);
+  const [openCheckouts, setOpenCheckouts] = useState<OpenCheckoutRow[]>([]);
+  const [worktreeDialog, setWorktreeDialog] =
+    useState<WorktreeDialogState | null>(null);
+  const [worktreeBusy, setWorktreeBusy] = useState(false);
+  const [worktreeError, setWorktreeError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -308,6 +318,10 @@ export default function App() {
       setAgentCommands,
       clearPromptQueue,
       onMissingBinary,
+      onCheckoutConflict: (conflict, cwd) => {
+        setWorktreeError(null);
+        setWorktreeDialog({ kind: "conflict", conflict, pendingCwd: cwd });
+      },
     });
 
   const renameSession = useCallback(
@@ -361,6 +375,81 @@ export default function App() {
     [project, sessionId, conn, openSession],
   );
 
+  const closeWorktreeDialog = useCallback(() => {
+    setWorktreeDialog(null);
+    setWorktreeError(null);
+    setWorktreeBusy(false);
+  }, []);
+
+  const openPathAfterWorktree = useCallback(
+    async (cwd: string, newWindow: boolean) => {
+      if (newWindow) {
+        await window.grokDesktop.openProjectInNewWindow(cwd);
+        closeWorktreeDialog();
+        return;
+      }
+      closeWorktreeDialog();
+      await openProject(cwd, { allowSameCheckout: true });
+    },
+    [closeWorktreeDialog, openProject],
+  );
+
+  const handleCreateWorktree = useCallback(
+    async (opts: {
+      cwd: string;
+      branch: string;
+      dir: string;
+      newWindow: boolean;
+    }) => {
+      setWorktreeBusy(true);
+      setWorktreeError(null);
+      try {
+        const added = await window.grokDesktop.addWorktree({
+          cwd: opts.cwd,
+          dir: opts.dir,
+          branch: opts.branch,
+        });
+        await openPathAfterWorktree(added.path, opts.newWindow);
+      } catch (e: unknown) {
+        setWorktreeError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setWorktreeBusy(false);
+      }
+    },
+    [openPathAfterWorktree],
+  );
+
+  const openNewWorktreeDialog = useCallback(async (sourceCwd: string) => {
+    setWorktreeError(null);
+    try {
+      const inspect = await window.grokDesktop.inspectCheckout(sourceCwd);
+      if (!inspect.git) {
+        setError("This folder is not a git repository — cannot create a worktree.");
+        return;
+      }
+      setWorktreeDialog({
+        kind: "create",
+        sourceCwd,
+        inspect,
+        openInNewWindow: true,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const pendingOpenTried = useRef(false);
+  useEffect(() => {
+    if (!signedIn || pendingOpenTried.current) return;
+    pendingOpenTried.current = true;
+    void window.grokDesktop.takePendingOpen().then((pending) => {
+      if (!pending?.cwd) return;
+      void openProject(pending.cwd, {
+        allowSameCheckout: pending.allowSameCheckout,
+      });
+    });
+  }, [signedIn, openProject]);
+
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
       if (!signedIn) setError("Sign in to Grok first.");
@@ -391,6 +480,23 @@ export default function App() {
       setSettingsSection(null);
     });
   }, []);
+
+  useEffect(() => {
+    void window.grokDesktop.listOpenCheckouts().then(setOpenCheckouts);
+    return window.grokDesktop.on("app:open-checkouts", (payload) => {
+      setOpenCheckouts(Array.isArray(payload) ? payload : []);
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.grokDesktop.on("app:new-worktree", () => {
+      if (!project) {
+        setError("Open a git project first, then create a worktree.");
+        return;
+      }
+      void openNewWorktreeDialog(project);
+    });
+  }, [project, openNewWorktreeDialog]);
 
   const handleLogin = async (deviceAuth = false) => {
     const gen = ++loginGen.current;
@@ -971,6 +1077,30 @@ export default function App() {
     />
   );
 
+  const worktreeOverlay = (
+    <WorktreeDialog
+      state={worktreeDialog}
+      busy={worktreeBusy}
+      error={worktreeError}
+      onCancel={closeWorktreeDialog}
+      onFocusWindow={(windowId) => {
+        void window.grokDesktop.focusProjectWindow(windowId).then((ok) => {
+          if (ok) closeWorktreeDialog();
+          else setWorktreeError("Could not find that window.");
+        });
+      }}
+      onOpenAnyway={(cwd) => {
+        void openPathAfterWorktree(cwd, false);
+      }}
+      onOpenPath={(cwd, newWindow) => {
+        void openPathAfterWorktree(cwd, newWindow);
+      }}
+      onCreate={(opts) => {
+        void handleCreateWorktree(opts);
+      }}
+    />
+  );
+
   if (!project) {
     return (
       <PrivacyProvider privacyMode={privacyMode} home={homeDir}>
@@ -1004,10 +1134,12 @@ export default function App() {
             if (!confirmDiscardFiles()) return;
             void openProject(cwd);
           }}
+          openCheckouts={openCheckouts}
           onOpenSettingsSection={onOpenSettings}
           platform={platform}
           inert={settingsOpen}
         />
+        {worktreeOverlay}
         {settingsDialog}
       </PrivacyProvider>
     );
@@ -1040,10 +1172,14 @@ export default function App() {
             collapsed={columns.sidebarCollapsed}
             onToggleCollapsed={columns.toggleSidebar}
             onPickProject={() => void pickProject()}
+            onNewWorktree={() => {
+              if (project) void openNewWorktreeDialog(project);
+            }}
             onOpenProject={(cwd) => {
               if (!confirmDiscardFiles()) return;
               void openProject(cwd, { mode: "continue" });
             }}
+            openCheckouts={openCheckouts}
             onOpenSession={(opts) => void openSession(opts)}
             onRenameSession={(opts) => renameSession(opts)}
             onDeleteSession={(opts) => deleteSession(opts)}
@@ -1201,6 +1337,7 @@ export default function App() {
         </div>
       </div>
 
+        {worktreeOverlay}
         {settingsDialog}
 
         <PlanApprovalDialog

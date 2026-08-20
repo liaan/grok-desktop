@@ -316,6 +316,46 @@ export type AvailableModel = {
   name: string;
 };
 
+export type OpenCheckoutRow = {
+  windowId: number;
+  cwd: string;
+  title: string;
+};
+
+export type WorktreeInfo = {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  detached: boolean;
+  bare: boolean;
+  locked: boolean;
+  open: boolean;
+};
+
+export type CheckoutOccupancy = {
+  windowId: number;
+  cwd: string;
+  title: string;
+  branch: string | null;
+  detached: boolean;
+};
+
+export type CheckoutInspect = {
+  cwd: string;
+  git: boolean;
+  currentBranch: string | null;
+  detached: boolean;
+  branches: string[];
+  checkedOutBranches: string[];
+  worktrees: WorktreeInfo[];
+  suggestedDir: string | null;
+  occupancy: CheckoutOccupancy | null;
+};
+
+export type CheckoutConflict = CheckoutInspect & {
+  conflict: "checkout-open";
+};
+
 export type OpenProjectResult = {
   cwd: string;
   sessionId: string;
@@ -441,8 +481,34 @@ declare global {
       pickProject: () => Promise<string | null>;
       openProject: (
         cwd: string,
-        opts?: { mode?: "continue" | "new" | "resume"; sessionId?: string },
-      ) => Promise<OpenProjectResult>;
+        opts?: {
+          mode?: "continue" | "new" | "resume";
+          sessionId?: string;
+          allowSameCheckout?: boolean;
+        },
+      ) => Promise<OpenProjectResult | CheckoutConflict>;
+      listOpenCheckouts: () => Promise<OpenCheckoutRow[]>;
+      focusProjectWindow: (windowId: number) => Promise<boolean>;
+      takePendingOpen: () => Promise<{
+        cwd: string;
+        allowSameCheckout?: boolean;
+      } | null>;
+      openProjectInNewWindow: (cwd: string) => Promise<{ ok: boolean }>;
+      inspectCheckout: (cwd?: string) => Promise<CheckoutInspect>;
+      addWorktree: (opts: {
+        cwd?: string;
+        dir: string;
+        branch: string;
+        startPoint?: string;
+      }) => Promise<{
+        path: string;
+        branch: string;
+        createdBranch: boolean;
+      }>;
+      suggestWorktreeDir: (opts: {
+        cwd?: string;
+        branch?: string;
+      }) => Promise<{ dir: string | null }>;
       /** Drop agent on this window; native title returns to empty shell. */
       closeProject: () => Promise<boolean>;
       /** Respawn grok agent and resume the same chat. */
@@ -639,8 +705,13 @@ declare global {
       enablePlugin: (name: string) => Promise<PluginWriteResult>;
       disablePlugin: (name: string) => Promise<PluginWriteResult>;
       installPlugin: (source: string) => Promise<PluginWriteResult>;
+      writeClipboard: (payload: {
+        text: string;
+        html?: string;
+      }) => Promise<boolean>;
       on: (channel: string, handler: (payload: any) => void) => () => void;
     };
+    __grokCopySelectionMarkdown?: () => void;
   }
 }
 

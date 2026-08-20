@@ -1,5 +1,10 @@
-import type { AuthStatus, BackboneSummary, LoginProgress } from "../vite-env";
-import { basen } from "../lib/path-utils";
+import type {
+  AuthStatus,
+  BackboneSummary,
+  LoginProgress,
+  OpenCheckoutRow,
+} from "../vite-env";
+import { basen, samePathKey } from "../lib/path-utils";
 import { BrandMark, Spinner } from "./BrandMark";
 import { AuthGate } from "./AuthGate";
 
@@ -29,6 +34,7 @@ export function WelcomeView({
   onSetApiKey,
   onPickProject,
   onOpenProject,
+  openCheckouts = [],
   onOpenSettingsSection,
   platform,
   inert: shellInert,
@@ -55,6 +61,7 @@ export function WelcomeView({
   onSetApiKey: (key: string) => void;
   onPickProject: () => void;
   onOpenProject: (cwd: string) => void;
+  openCheckouts?: OpenCheckoutRow[];
   onOpenSettingsSection?: (section: "mcp" | "plugins" | "skills") => void;
   platform?: string;
   inert?: boolean;
@@ -140,9 +147,17 @@ export function WelcomeView({
                   className="btn"
                   type="button"
                   disabled={isOpening}
+                  title={
+                    openCheckouts.some((row) => samePathKey(row.cwd, p))
+                      ? "Already open in a Grok window"
+                      : p
+                  }
                   onClick={() => onOpenProject(p)}
                 >
                   {basen(p)}
+                  {openCheckouts.some((row) => samePathKey(row.cwd, p)) ? (
+                    <span className="open-badge">open</span>
+                  ) : null}
                 </button>
               ))}
           </div>

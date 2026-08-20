@@ -6,6 +6,16 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   getInfo: () => ipcRenderer.invoke("app:get-info"),
   pickProject: () => ipcRenderer.invoke("project:pick"),
   openProject: (cwd, opts) => ipcRenderer.invoke("project:open", cwd, opts || {}),
+  listOpenCheckouts: () => ipcRenderer.invoke("project:list-open"),
+  focusProjectWindow: (windowId) =>
+    ipcRenderer.invoke("project:focus-window", windowId),
+  takePendingOpen: () => ipcRenderer.invoke("project:take-pending-open"),
+  openProjectInNewWindow: (cwd) =>
+    ipcRenderer.invoke("window:open-project-in-new", cwd),
+  inspectCheckout: (cwd) => ipcRenderer.invoke("git:inspect-checkout", cwd),
+  addWorktree: (opts) => ipcRenderer.invoke("git:add-worktree", opts || {}),
+  suggestWorktreeDir: (opts) =>
+    ipcRenderer.invoke("git:suggest-worktree-dir", opts || {}),
   /** Drop agent on this window; title returns to empty shell. */
   closeProject: () => ipcRenderer.invoke("project:close"),
   /** Respawn grok agent on this window and resume the same chat. */
@@ -99,6 +109,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   enablePlugin: (name) => ipcRenderer.invoke("plugin:enable", name),
   disablePlugin: (name) => ipcRenderer.invoke("plugin:disable", name),
   installPlugin: (source) => ipcRenderer.invoke("plugin:install", source),
+  writeClipboard: (payload) => ipcRenderer.invoke("clipboard:write", payload || {}),
 
   on: (channel, handler) => {
     const valid = [
@@ -118,6 +129,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:ready",
       "app:open-settings",
       "app:close-settings",
+      "app:open-checkouts",
+      "app:new-worktree",
       "auth:login-progress",
       "preview:changed",
     ];

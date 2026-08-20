@@ -52,6 +52,14 @@ export function attachContextMenu(win) {
       );
     } else if (hasSelection) {
       template.push({ role: "copy" });
+      template.push({
+        label: "Copy as Markdown",
+        click: () => {
+          void win.webContents.executeJavaScript(
+            "window.__grokCopySelectionMarkdown && window.__grokCopySelectionMarkdown()",
+          );
+        },
+      });
     }
 
     if (params.linkURL && /^https?:\/\//i.test(params.linkURL)) {

@@ -79,6 +79,8 @@ function notifyWindowChrome() {
  *   generation: number,
  *   lastCwd: string | null,
  *   lastSessionId: string | null,
+ *   openingCwd: string | null,
+ *   pendingOpenCwd: string | null,
  *   settingsOpen: boolean,
  * }} WindowSession
  */
@@ -93,6 +95,7 @@ function rememberProjectOnWindow(ws, cwd, sessionId) {
   if (!ws || !cwd) return;
   ws.lastCwd = cwd;
   ws.lastSessionId = sessionId || null;
+  broadcastOpenCheckouts();
 }
 
 /** @type {Map<number, WindowSession>} */
@@ -171,6 +174,36 @@ export function send(ws, channel, payload) {
   }
 }
 
+/**
+ * Open project folders across all live windows (agent cwd, last, or in-flight).
+ * @returns {{ windowId: number, cwd: string, title: string }[]}
+ */
+export function collectOpenCheckouts() {
+  /** @type {{ windowId: number, cwd: string, title: string }[]} */
+  const rows = [];
+  for (const ws of windowSessions.values()) {
+    if (ws.disposed || !ws.win || ws.win.isDestroyed()) continue;
+    const cwd = ws.agent?.cwd || ws.lastCwd || ws.openingCwd;
+    if (!cwd) continue;
+    let title = "";
+    try {
+      title = ws.win.getTitle() || "";
+    } catch {
+      /* ignore */
+    }
+    rows.push({ windowId: ws.win.id, cwd, title });
+  }
+  return rows;
+}
+
+/** Push the open-folder list to every shell so recents can show an Open badge. */
+export function broadcastOpenCheckouts() {
+  const checkouts = collectOpenCheckouts();
+  for (const ws of windowSessions.values()) {
+    send(ws, "app:open-checkouts", checkouts);
+  }
+}
+
 export const APP_WINDOW_TITLE = "Grok Desktop";
 
 /**
@@ -240,6 +273,7 @@ export function clearProjectOnWindow(ws) {
   ws.agent = null;
   ws.lastCwd = null;
   ws.lastSessionId = null;
+  ws.openingCwd = null;
   try {
     clearPendingPermissions(ws);
   } catch {
@@ -252,6 +286,7 @@ export function clearProjectOnWindow(ws) {
       () => undefined,
     );
   setWindowTitle(ws, null);
+  broadcastOpenCheckouts();
   return true;
 }
 
@@ -657,11 +692,14 @@ export function disposeWindowSession(ws) {
   ws.agent = null;
   ws.lastCwd = null;
   ws.lastSessionId = null;
+  ws.openingCwd = null;
+  ws.pendingOpenCwd = null;
   try {
     clearPendingPermissions(ws);
   } catch {
     /* ignore */
   }
+  broadcastOpenCheckouts();
 
   // Serialize with ensureAgent so mid-flight start() cannot outlive the window.
   const cleanup = async () => {
@@ -984,6 +1022,8 @@ export function createWindowSession(win) {
     generation: 0,
     lastCwd: null,
     lastSessionId: null,
+    openingCwd: null,
+    pendingOpenCwd: null,
     settingsOpen: false,
   };
   // Main owns native titles; HTML <title> / document.title must not clobber.

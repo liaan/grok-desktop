@@ -1,6 +1,8 @@
 import {
   Fragment,
   memo,
+  useEffect,
+  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -22,6 +24,11 @@ import { formatOptionLabel } from "../lib/timeline";
 import { classifyOptionId } from "../../shared/permission-options.mjs";
 import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
+import {
+  applyFormattedCopy,
+  copyMarkdownRich,
+  installCopySelectionMarkdownHook,
+} from "../lib/copy-formatted";
 
 /** Stable empties so default props do not bust React.memo every parent render. */
 const EMPTY_COMMANDS: SlashCommand[] = [];
@@ -69,21 +76,59 @@ const MD_COMPONENTS = {
   img: MarkdownImage,
 };
 
-function MsgMeta({ role, at }: { role: string; at?: number }) {
+function MsgMeta({
+  role,
+  at,
+  actions,
+}: {
+  role: string;
+  at?: number;
+  actions?: ReactNode;
+}) {
   const clock = formatClock(at);
   return (
     <div className="meta">
       <span className="meta-role">{role}</span>
-      {clock ? (
-        <time
-          className="meta-time"
-          dateTime={at ? new Date(at).toISOString() : undefined}
-          title={formatFullTimestamp(at)}
-        >
-          {clock}
-        </time>
-      ) : null}
+      <div className="meta-end">
+        {clock ? (
+          <time
+            className="meta-time"
+            dateTime={at ? new Date(at).toISOString() : undefined}
+            title={formatFullTimestamp(at)}
+          >
+            {clock}
+          </time>
+        ) : null}
+        {actions}
+      </div>
     </div>
+  );
+}
+
+function CopyReplyButton({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
+  const text = markdown.trim();
+  if (!text) return null;
+
+  return (
+    <button
+      type="button"
+      className="btn ghost btn-sm msg-copy"
+      title="Copy with formatting for Slack, Docs, and Teams. Shift+click copies Markdown."
+      aria-label="Copy reply with formatting"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void copyMarkdownRich(text, { markdownOnly: e.shiftKey })
+          .then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }
 
@@ -204,17 +249,22 @@ const TimelineRow = memo(function TimelineRow({
   }
 
   if (item.kind === "assistant") {
+    const display = redact(item.text);
     return (
       <Fragment>
         {day}
         <article className="msg">
-          <MsgMeta role="Grok" at={item.at} />
+          <MsgMeta
+            role="Grok"
+            at={item.at}
+            actions={<CopyReplyButton markdown={display} />}
+          />
           <div className="body markdown">
             <ReactMarkdown
               remarkPlugins={REMARK_PLUGINS}
               components={MD_COMPONENTS}
             >
-              {redact(item.text)}
+              {display}
             </ReactMarkdown>
           </div>
         </article>
@@ -381,6 +431,18 @@ export const MessageList = memo(function MessageList({
 }) {
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
+
+  useEffect(() => {
+    const onCopy = (e: ClipboardEvent) => {
+      applyFormattedCopy(e);
+    };
+    document.addEventListener("copy", onCopy);
+    const unhook = installCopySelectionMarkdownHook();
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      unhook();
+    };
+  }, []);
 
   if (items.length === 0 && perms.length === 0) {
     return (

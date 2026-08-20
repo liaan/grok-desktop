@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   dialog,
   shell,
@@ -74,8 +75,10 @@ import {
 import {
   APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
+  broadcastOpenCheckouts,
   clearPendingPermissions,
   clearProjectOnWindow,
+  collectOpenCheckouts,
   createWindowSession,
   disposeAgentQuick,
   focusedSession,
@@ -93,6 +96,15 @@ import {
   windowCycleKind,
   windowListMenuItems,
 } from "./window-menu.mjs";
+import {
+  addGitWorktree,
+  listLinkedWorktrees,
+  suggestWorktreeDir,
+} from "./git-worktrees.mjs";
+import {
+  buildCheckoutConflict,
+  inspectCheckoutForUi,
+} from "./checkout-occupancy.mjs";
 import {
   maybeWarmDockerSandbox,
   probeSandbox,
@@ -375,6 +387,14 @@ function installApplicationMenu() {
     ...(opts.accelerator ? { accelerator: opts.accelerator } : {}),
     click: () => newWindowFromMenu(),
   });
+  const newWorktreeItem = () => ({
+    label: "New Worktree Window…",
+    click: () => {
+      const ws = focusedSession();
+      if (!ws) return;
+      send(ws, "app:new-worktree");
+    },
+  });
   const listedWindows = menuListsOpenWindows()
     ? windowListMenuItems(
         appShellWindows()
@@ -403,6 +423,7 @@ function installApplicationMenu() {
               { type: "separator" },
               // Most discoverable place on Mac (same row as Settings)
               newWindowItem(),
+              newWorktreeItem(),
               settingsItem,
               { type: "separator" },
               { role: "services" },
@@ -420,6 +441,7 @@ function installApplicationMenu() {
       label: "File",
       submenu: [
         newWindowItem({ accelerator: "CmdOrCtrl+N" }),
+        newWorktreeItem(),
         { type: "separator" },
         ...(isMac ? [] : [settingsItem, { type: "separator" }]),
         isMac ? { role: "close" } : { role: "quit" },
@@ -471,6 +493,7 @@ function installApplicationMenu() {
       role: "window",
       submenu: [
         newWindowItem(),
+        newWorktreeItem(),
         { type: "separator" },
         { role: "minimize" },
         { role: "zoom" },
@@ -551,7 +574,7 @@ function installApplicationMenu() {
 const revealByWebContents = new WeakMap();
 
 /**
- * @param {{ splash?: boolean }} [opts]
+ * @param {{ splash?: boolean, cwd?: string }} [opts]
  * @returns {import('electron').BrowserWindow}
  */
 function createWindow(opts = {}) {
@@ -586,7 +609,8 @@ function createWindow(opts = {}) {
 
   const win = new BrowserWindow(winOpts);
   // Session owns page-title guard + empty-shell title.
-  createWindowSession(win);
+  const created = createWindowSession(win);
+  if (opts.cwd) created.pendingOpenCwd = String(opts.cwd);
   attachContextMenu(win);
 
   win.on("close", (e) => {
@@ -978,10 +1002,15 @@ function registerIpc() {
   /**
    * Open a project and attach an ACP session on the calling window.
    * @param {string} cwd
-   * @param {{ mode?: 'continue' | 'new' | 'resume', sessionId?: string }} [opts]
+   * @param {{
+   *   mode?: 'continue' | 'new' | 'resume',
+   *   sessionId?: string,
+   *   allowSameCheckout?: boolean,
+   * }} [opts]
    *   - continue (default): resume most recent session for cwd (CLI `-c`)
    *   - new: brand-new session (CLI `/new`)
    *   - resume: load opts.sessionId (CLI `--resume id`)
+   *   - allowSameCheckout: skip the “already open in another window” prompt
    */
   ipcMain.handle("project:open", async (e, cwd, opts = {}) => {
     const ws = sessionFromEvent(e);
@@ -989,15 +1018,112 @@ function registerIpc() {
     if (!cwd || !fs.existsSync(cwd)) {
       throw new Error(`Project path not found: ${cwd}`);
     }
-    return openSessionOnWindow(ws, {
-      cwd,
-      mode: opts?.mode || "continue",
-      sessionId: opts?.sessionId,
-      mostRecent: mostRecentSession,
-      loadState: loadSessionOpenState,
-      listSessions: listSessionsForCwd,
-      remember: rememberProjectSession,
+    if (!opts?.allowSameCheckout) {
+      const conflict = await buildCheckoutConflict(
+        cwd,
+        collectOpenCheckouts(),
+        ws.win.id,
+      );
+      if (conflict) return conflict;
+    }
+    ws.openingCwd = cwd;
+    broadcastOpenCheckouts();
+    try {
+      return await openSessionOnWindow(ws, {
+        cwd,
+        mode: opts?.mode || "continue",
+        sessionId: opts?.sessionId,
+        mostRecent: mostRecentSession,
+        loadState: loadSessionOpenState,
+        listSessions: listSessionsForCwd,
+        remember: rememberProjectSession,
+      });
+    } finally {
+      if (ws.openingCwd === cwd) ws.openingCwd = null;
+      broadcastOpenCheckouts();
+    }
+  });
+
+  ipcMain.handle("project:list-open", async () => collectOpenCheckouts());
+
+  ipcMain.handle("project:focus-window", async (_e, windowId) => {
+    const id = Number(windowId);
+    const other = windowSessions.get(id);
+    if (!other?.win || other.win.isDestroyed()) return false;
+    focusWindow(other.win);
+    return true;
+  });
+
+  ipcMain.handle("project:take-pending-open", async (e) => {
+    const ws = sessionFromEvent(e);
+    if (!ws?.pendingOpenCwd) return null;
+    const pending = ws.pendingOpenCwd;
+    ws.pendingOpenCwd = null;
+    return { cwd: pending, allowSameCheckout: true };
+  });
+
+  ipcMain.handle("window:open-project-in-new", async (_e, cwd) => {
+    if (!cwd || !fs.existsSync(cwd)) {
+      throw new Error(`Project path not found: ${cwd}`);
+    }
+    createWindow({ cwd });
+    return { ok: true };
+  });
+
+  ipcMain.handle("git:inspect-checkout", async (e, cwd) => {
+    const ws = sessionFromEvent(e);
+    const root =
+      typeof cwd === "string" && cwd
+        ? cwd
+        : ws?.agent?.cwd || ws?.lastCwd;
+    if (!root) {
+      return {
+        cwd: "",
+        git: false,
+        currentBranch: null,
+        detached: false,
+        branches: [],
+        checkedOutBranches: [],
+        worktrees: [],
+        suggestedDir: null,
+        occupancy: null,
+      };
+    }
+    return inspectCheckoutForUi(root, collectOpenCheckouts(), {
+      excludeWindowId: ws?.win?.id ?? null,
     });
+  });
+
+  ipcMain.handle("git:add-worktree", async (e, opts = {}) => {
+    const ws = sessionFromEvent(e);
+    const root =
+      typeof opts.cwd === "string" && opts.cwd
+        ? opts.cwd
+        : ws?.agent?.cwd || ws?.lastCwd;
+    if (!root) throw new Error("No git repository for worktree add");
+    return addGitWorktree(root, {
+      dir: opts.dir,
+      branch: opts.branch,
+      startPoint: opts.startPoint,
+    });
+  });
+
+  ipcMain.handle("git:suggest-worktree-dir", async (e, opts = {}) => {
+    const ws = sessionFromEvent(e);
+    const root =
+      typeof opts.cwd === "string" && opts.cwd
+        ? opts.cwd
+        : ws?.agent?.cwd || ws?.lastCwd;
+    if (!root) return { dir: null };
+    const trees = listLinkedWorktrees(root);
+    const mainRoot = trees[0]?.path || root;
+    return {
+      dir: suggestWorktreeDir(
+        mainRoot,
+        opts.branch || "wip",
+        trees.map((t) => t.path),
+      ),
+    };
   });
 
   /** Drop agent + empty-shell title on this window (logout / leave project). */
@@ -1530,6 +1656,18 @@ function registerIpc() {
       throw new Error("Only http(s) URLs are allowed");
     }
     await shell.openExternal(url);
+    return true;
+  });
+
+  ipcMain.handle("clipboard:write", (_e, payload = {}) => {
+    const text = typeof payload.text === "string" ? payload.text : "";
+    const html = typeof payload.html === "string" ? payload.html : "";
+    const max = 8 * 1024 * 1024;
+    if (text.length > max || html.length > max) {
+      throw new Error("Clipboard payload too large");
+    }
+    if (html) clipboard.write({ text, html });
+    else clipboard.writeText(text);
     return true;
   });
 }

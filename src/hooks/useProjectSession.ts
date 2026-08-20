@@ -5,6 +5,8 @@ import {
   type SetStateAction,
 } from "react";
 import { isAuthError, isMissingBinaryError, type ConnState } from "../lib/conn";
+import { isCheckoutConflict } from "../lib/checkout";
+import type { CheckoutConflict, OpenProjectResult } from "../vite-env";
 import { basen } from "../lib/path-utils";
 import { uid } from "../lib/timeline";
 import type {
@@ -56,6 +58,8 @@ export function useProjectSession(opts: {
   clearPromptQueue: () => void;
   /** Leave the project and return to AuthGate install when grok is missing. */
   onMissingBinary?: () => void | Promise<void>;
+  /** Same checkout already open in another window — prompt for a worktree. */
+  onCheckoutConflict?: (conflict: CheckoutConflict, cwd: string) => void;
 }) {
   const {
     auth,
@@ -89,14 +93,12 @@ export function useProjectSession(opts: {
     setAgentCommands,
     clearPromptQueue,
     onMissingBinary,
+    onCheckoutConflict,
   } = opts;
 
   const applyOpenResult = useCallback(
     async (
-      res: Awaited<
-        | ReturnType<typeof window.grokDesktop.openProject>
-        | ReturnType<typeof window.grokDesktop.restartAgent>
-      > & {
+      res: OpenProjectResult & {
         warning?: string | null;
         backgroundTasks?: import("../lib/background-tasks").BackgroundTask[];
         usage?: import("../lib/usage").SessionUsage | null;
@@ -207,6 +209,7 @@ export function useProjectSession(opts: {
       openOpts?: {
         mode?: "continue" | "new" | "resume";
         sessionId?: string;
+        allowSameCheckout?: boolean;
       },
     ) => {
       const status = auth || (await refreshAuth());
@@ -220,16 +223,24 @@ export function useProjectSession(opts: {
       }
 
       openingRef.current = true;
+      const prevConn = project ? "online" : "idle";
       setConn("connecting");
       setOpeningLabel(basen(cwd));
       setError(null);
-      setItems([]);
-      clearSessionScoped();
       try {
         const res = await window.grokDesktop.openProject(cwd, {
           mode: openOpts?.mode || "continue",
           sessionId: openOpts?.sessionId,
+          allowSameCheckout: openOpts?.allowSameCheckout,
         });
+        if (isCheckoutConflict(res)) {
+          setOpeningLabel(null);
+          setConn(prevConn);
+          onCheckoutConflict?.(res, cwd);
+          return;
+        }
+        setItems([]);
+        clearSessionScoped();
         await applyOpenResult(res);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -254,8 +265,10 @@ export function useProjectSession(opts: {
       applyOpenResult,
       busyRef,
       clearSessionScoped,
+      onCheckoutConflict,
       onMissingBinary,
       openingRef,
+      project,
       refreshAuth,
       setConn,
       setError,

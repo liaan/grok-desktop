@@ -36,6 +36,13 @@ function compareKey(p: string): string {
  * Lexical containment matching path.relative semantics (no symlink resolution).
  * `target` is under `root` or equal to it.
  */
+/** True when two UI paths refer to the same folder (no symlink resolve). */
+export function samePathKey(a: string, b: string): boolean {
+  const ca = compareKey(a);
+  const cb = compareKey(b);
+  return Boolean(ca && cb && ca === cb);
+}
+
 export function isLexicallyUnder(root: string, target: string): boolean {
   const r = compareKey(root);
   const t = compareKey(target);
