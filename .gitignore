@@ -6,3 +6,11 @@ out/
 *.log
 .DS_Store
 desktop-state.json
+
+# Windows redirect accidents (`> nul`, stray `file`)
+/nul
+/file
+
+# Local review dumps and scratch scripts
+/reviews/
+/tmp-*.mjs
