@@ -4,12 +4,18 @@ import {
   cancelAllPermissions,
   listPendingPermissionRequests,
   registerPermissionRequest,
+  setOnEnableAlwaysApprove,
   slimPermissionParams,
   settlePendingAllowOnce,
   settlePendingByPolicy,
   settlePendingIf,
+  settlePermission,
 } from "../electron/pending-permissions.mjs";
 import { classifyPermissionRisk } from "../shared/permission-risk.mjs";
+import {
+  ENABLE_ALWAYS_APPROVE_OPTION_ID,
+  selectedPermissionResult,
+} from "../shared/permission-options.mjs";
 
 const OWNER = "test-pending-owner";
 
@@ -32,6 +38,7 @@ function park(reqId, params) {
 
 test.afterEach(() => {
   cancelAllPermissions(undefined, OWNER);
+  setOnEnableAlwaysApprove(null);
 });
 
 test("settlePendingIf filters and skips null outcomes", () => {
@@ -145,6 +152,49 @@ test("slimPermissionParams keeps command when rawInput is truncated", () => {
   assert.ok(slim.toolCall.rawInput._truncated);
   assert.equal(slim.toolCall.rawInput.command, "npm install");
   assert.equal(classifyPermissionRisk(slim), "write");
+});
+
+test("settlePermission enable-always-approve flips yolo via hook", () => {
+  let flipped = 0;
+  setOnEnableAlwaysApprove(() => {
+    flipped += 1;
+  });
+  const yolo = park("p-yolo", {
+    toolCall: { title: "Write file", kind: "edit" },
+    options: [
+      {
+        optionId: ENABLE_ALWAYS_APPROVE_OPTION_ID,
+        name: "Yes, and don't ask again for anything (always-approve mode)",
+        kind: "allow_once",
+      },
+      { optionId: "allow-once", kind: "allow_once" },
+    ],
+  });
+  const once = park("p-once", {
+    toolCall: { title: "Write file", kind: "edit" },
+    options: ONCE_ALWAYS,
+  });
+  assert.equal(
+    settlePermission(
+      "p-once",
+      selectedPermissionResult("allow-once"),
+      OWNER,
+    ),
+    true,
+  );
+  assert.equal(flipped, 0);
+  assert.equal(
+    settlePermission(
+      "p-yolo",
+      selectedPermissionResult(ENABLE_ALWAYS_APPROVE_OPTION_ID),
+      OWNER,
+    ),
+    true,
+  );
+  assert.equal(flipped, 1);
+  assert.equal(yolo[0].outcome.optionId, ENABLE_ALWAYS_APPROVE_OPTION_ID);
+  assert.equal(once[0].outcome.optionId, "allow-once");
+  assert.equal(listPendingPermissionRequests(OWNER).length, 0);
 });
 
 test("slimPermissionParams keeps tool name so MCP writes stay write", () => {

@@ -4,7 +4,16 @@ export type PermOption = {
   kind?: string;
 };
 
-export type OptionClass = "reject" | "allow_once" | "allow_always" | "unknown";
+export type OptionClass =
+  | "reject"
+  | "allow_once"
+  | "allow_always"
+  | "enable_always_approve"
+  | "unknown";
+
+export const ENABLE_ALWAYS_APPROVE_OPTION_ID: "enable-always-approve";
+
+export function isEnableAlwaysApproveOption(id: string): boolean;
 
 export function classifyPermissionOption(
   opt?: PermOption | null,
@@ -40,5 +49,10 @@ export function permissionOutcomeFromUi(
   | { outcome: { outcome: "selected"; optionId: string } }
   | { outcome: { outcome: "cancelled" } }
   | null;
+
+export function permissionButtonClass(
+  cls: OptionClass,
+  opts?: { size?: "sm" },
+): string;
 
 export function extractToolCallId(toolOrParams: unknown): string | null;

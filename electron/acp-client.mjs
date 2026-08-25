@@ -26,9 +26,11 @@ import { desktopPreviewMcpServers } from "./preview-mcp.mjs";
 import { PREVIEW_SESSION_RULE } from "./preview-mcp-protocol.mjs";
 import {
 
+  initializeClientMeta,
   normalizePermissionMode,
   sessionPermissionMeta,
-  yoloModeChangedExtNotification,
+  YOLO_MODE_CHANGED_METHOD,
+  yoloModeChangedParams,
 } from "./permission-mode.mjs";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -46,6 +48,8 @@ import {
   sessionRenameAttempts,
   sessionDeleteAttempts,
   isMcpLiveEventMethod,
+  isMcpElicitCompleteMethod,
+  isMcpElicitMethod,
   mcpAuthTriggerAttempts,
   mcpSessionListAttempts,
   unwrapMcpExtNotification,
@@ -64,6 +68,7 @@ import {
   handleAskUserQuestion,
   handleExitPlanMode,
   handleFolderTrustRequest,
+  handleMcpElicit,
 } from "./acp-ext-methods.mjs";
 import { shouldAutoTrustFolder } from "./desktop-worktrees.mjs";
 import { debugLog } from "./debug-log.mjs";
@@ -400,6 +405,7 @@ export class GrokAcpClient extends EventEmitter {
           version: this.clientVersion,
         },
         clientCapabilities: acpClientCapabilities(),
+        _meta: initializeClientMeta(),
       },
       { timeoutMs: INIT_TIMEOUT_MS },
     );
@@ -625,6 +631,14 @@ export class GrokAcpClient extends EventEmitter {
 
     const c = classifyInboundMessage(msg);
     const mcpEvent = unwrapMcpExtNotification(msg.method, msg.params);
+    if (mcpEvent && isMcpElicitCompleteMethod(mcpEvent.method)) {
+      if (msg.id !== undefined) {
+        this._ensureOnce().beginRequest(msg.id);
+        this._respond(msg.id, {});
+      }
+      return;
+    }
+
     if (mcpEvent && isMcpLiveEventMethod(mcpEvent.method)) {
       this.emit("mcp-status", mcpEvent);
       if (msg.id !== undefined) {
@@ -724,6 +738,21 @@ export class GrokAcpClient extends EventEmitter {
         method?.endsWith("/ask_user_question")
       ) {
         await handleAskUserQuestion(extCtx, id, params);
+        return;
+      }
+
+      // MCP elicitation (form fields or URL consent). Must not -32601 —
+      // the MCP server waits on this reverse-request.
+      if (isMcpElicitMethod(method) || isMcpElicitMethod(params?.method)) {
+        await handleMcpElicit(
+          {
+            ...extCtx,
+            listenerCount: this.listenerCount("mcp-elicit-request"),
+          },
+          id,
+          params,
+          method,
+        );
         return;
       }
 
@@ -1332,10 +1361,8 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   /**
-   * Apply permission mode on the client and push it into the live agent session.
-   * Live path matches TUI/pager: ACP `ext_notification` → `x.ai/yolo_mode_changed`
-   * (`yolo_mode` / `auto_mode` / `permission_mode`). Do **not** use
-   * `session/set_mode` for tool permission — that API is plan/default/ask only.
+   * Apply permission mode on the client and notify the live session via
+   * `_x.ai/yolo_mode_changed` (`_` prefix = extension notification).
    *
    * @param {string} mode
    * @returns {Promise<{
@@ -1353,10 +1380,10 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     try {
-      // Fire-and-forget notification (same as pager); no response expected.
+      // Fire-and-forget notification (same as pager stdio); no response expected.
       this.notify(
-        "ext_notification",
-        yoloModeChangedExtNotification(this.permissionMode),
+        YOLO_MODE_CHANGED_METHOD,
+        yoloModeChangedParams(this.permissionMode),
       );
       return { mode: this.permissionMode, agentSynced: true };
     } catch (err) {

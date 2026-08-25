@@ -13,6 +13,7 @@ import { StatusBar } from "./components/StatusBar";
 import { PlanApprovalDialog } from "./components/PlanApprovalDialog";
 import { AskUserDialog } from "./components/AskUserDialog";
 import { FolderTrustDialog } from "./components/FolderTrustDialog";
+import { McpElicitDialog } from "./components/McpElicitDialog";
 import {
   WorktreeDialog,
   type WorktreeDialogState,
@@ -157,6 +158,7 @@ export default function App() {
     planApproval,
     userQuestion,
     folderTrust,
+    mcpElicit,
     clearSessionScoped,
     revokeWritesThisSession,
     hydrateBackgroundTasks,
@@ -170,6 +172,7 @@ export default function App() {
     onPlanApproval,
     onUserQuestion,
     onFolderTrust,
+    onMcpElicit,
   } = useAgentEvents({
     openingRef,
     setConn,
@@ -1011,7 +1014,7 @@ export default function App() {
 
   const columns = useColumnLayout();
 
-  const overlayOpen = Boolean(planApproval || userQuestion);
+  const overlayOpen = Boolean(planApproval || userQuestion || mcpElicit);
 
   const settingsDialog = (
     <SettingsDialog
@@ -1337,6 +1340,10 @@ export default function App() {
         <FolderTrustDialog
           request={folderTrust}
           onRespond={(reqId, decision) => void onFolderTrust(reqId, decision)}
+        />
+        <McpElicitDialog
+          request={mcpElicit}
+          onRespond={(reqId, decision) => void onMcpElicit(reqId, decision)}
         />
     </PrivacyProvider>
   );

@@ -18,6 +18,11 @@ import {
   sessionDeleteAttempts,
   sessionDeleteRequestParams,
   isMcpLiveEventMethod,
+  isMcpElicitCompleteMethod,
+  isMcpElicitMethod,
+  mcpElicitResponse,
+  parseMcpElicitRequest,
+  unwrapExtParams,
   mcpAuthTriggerAttempts,
   mcpAuthTriggerRequestParams,
   mcpSessionListAttempts,
@@ -299,6 +304,62 @@ test("unwrapMcpExtNotification peels server_status and init_progress", () => {
   assert.equal(direct?.method, "x.ai/mcp/init_progress");
   assert.equal(isMcpLiveEventMethod("x.ai/mcp/server_status"), true);
   assert.equal(isMcpLiveEventMethod("session/update"), false);
+});
+
+test("mcp elicit is a reverse-request, not a live catalog event", () => {
+  assert.equal(isMcpElicitMethod("_x.ai/mcp/elicit"), true);
+  assert.equal(isMcpElicitCompleteMethod("_x.ai/mcp/elicit_complete"), true);
+  assert.equal(isMcpLiveEventMethod("x.ai/mcp/elicit"), false);
+  assert.equal(isMcpLiveEventMethod("x.ai/mcp/elicit_complete"), false);
+  const complete = unwrapMcpExtNotification("_x.ai/mcp/elicit_complete", {
+    sessionId: "s",
+    elicitationId: "el-1",
+  });
+  assert.equal(complete?.method, "x.ai/mcp/elicit_complete");
+  const req = classifyInboundMessage({
+    jsonrpc: "2.0",
+    id: 12,
+    method: "_x.ai/mcp/elicit",
+    params: { sessionId: "s", mode: "form", message: "Need email" },
+  });
+  assert.equal(req.kind, "server-request");
+  assert.equal(req.method, "_x.ai/mcp/elicit");
+});
+
+test("parseMcpElicitRequest and mcpElicitResponse live next to isMcpElicitMethod", () => {
+  const form = parseMcpElicitRequest({
+    sessionId: "s1",
+    requested_schema: { type: "object" },
+  });
+  assert.equal(form.mode, "form");
+  assert.deepEqual(form.requestedSchema, { type: "object" });
+  const nested = unwrapExtParams(
+    "ext_method",
+    { method: "_x.ai/mcp/elicit", params: { mode: "url", url: "https://x" } },
+    isMcpElicitMethod,
+  );
+  assert.equal(parseMcpElicitRequest(nested).mode, "url");
+  assert.deepEqual(mcpElicitResponse("accept", { a: 1 }), {
+    outcome: "accept",
+    content: { a: 1 },
+  });
+  assert.deepEqual(mcpElicitResponse("decline"), { outcome: "decline" });
+  assert.deepEqual(mcpElicitResponse("cancel"), { outcome: "cancel" });
+});
+
+test("parseMcpElicitRequest keeps form schema when url is also set", () => {
+  const form = parseMcpElicitRequest({
+    mode: "form",
+    url: "https://docs.example.com",
+    requestedSchema: { type: "object", properties: { email: { type: "string" } } },
+  });
+  assert.equal(form.mode, "form");
+  assert.equal(form.requestedSchema.type, "object");
+  const inferred = parseMcpElicitRequest({
+    url: "https://example.com/auth",
+  });
+  assert.equal(inferred.mode, "url");
+  assert.equal(inferred.requestedSchema, null);
 });
 
 test("classify session/request_permission as server-request", () => {

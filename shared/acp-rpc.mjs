@@ -382,6 +382,72 @@ const MCP_LIVE_METHODS = new Set([
 /**
  * @param {unknown} method
  */
+export function isMcpElicitMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return m === "x.ai/mcp/elicit" || m.endsWith("/mcp/elicit");
+}
+
+/**
+ * Agent → client notification that a URL elicitation finished (OAuth, etc.).
+ * @param {unknown} method
+ */
+export function isMcpElicitCompleteMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return (
+    m === "x.ai/mcp/elicit_complete" || m.endsWith("/mcp/elicit_complete")
+  );
+}
+
+/**
+ * grok-build `McpElicitExtRequest` (camelCase; snake_case accepted).
+ * @param {any} params
+ */
+export function parseMcpElicitRequest(params) {
+  const p = params && typeof params === "object" ? params : {};
+  const mode = String(p.mode || "").toLowerCase();
+  const url = typeof p.url === "string" ? p.url.trim() : "";
+  const elicitationId = String(p.elicitationId || p.elicitation_id || "").trim();
+  const isUrl = mode === "url" || (!mode && Boolean(url));
+  const schema = isUrl
+    ? null
+    : p.requestedSchema !== undefined
+      ? p.requestedSchema
+      : p.requested_schema !== undefined
+        ? p.requested_schema
+        : null;
+  return {
+    sessionId: String(p.sessionId || p.session_id || "").trim(),
+    toolCallId: String(p.toolCallId || p.tool_call_id || "").trim(),
+    serverName: String(p.serverName || p.server_name || "").trim(),
+    message: String(p.message || ""),
+    mode: isUrl ? "url" : "form",
+    url: isUrl ? url : "",
+    elicitationId: isUrl ? elicitationId : "",
+    requestedSchema: schema,
+  };
+}
+
+/**
+ * grok-build `McpElicitExtResponse` tagged on `outcome`.
+ * @param {unknown} outcome
+ * @param {any} [content]
+ */
+export function mcpElicitResponse(outcome, content) {
+  const o = String(outcome || "cancel")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  if (o === "accept" || o === "accepted") {
+    const body = { outcome: "accept" };
+    if (content != null) body.content = content;
+    return body;
+  }
+  if (o === "decline" || o === "declined") return { outcome: "decline" };
+  return { outcome: "cancel" };
+}
+
+/**
+ * @param {unknown} method
+ */
 export function isMcpLiveEventMethod(method) {
   const m = String(method || "").replace(/^_/, "");
   return MCP_LIVE_METHODS.has(m);
@@ -524,13 +590,15 @@ export function isFolderTrustMethod(method) {
  * Peel `ext_method` wrapping so stdio `_x.ai/…` and nested ExtRequest share params.
  * @param {unknown} method
  * @param {any} params
+ * @param {(method: unknown) => boolean} isMethod
  */
-export function unwrapFolderTrustParams(method, params) {
-  if (isFolderTrustMethod(method)) return params;
+export function unwrapExtParams(method, params, isMethod) {
+  if (typeof isMethod === "function" && isMethod(method)) return params;
   if (
     params &&
     typeof params === "object" &&
-    isFolderTrustMethod(params.method)
+    typeof isMethod === "function" &&
+    isMethod(params.method)
   ) {
     return params.params !== undefined ? params.params : params;
   }

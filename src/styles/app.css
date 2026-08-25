@@ -3087,6 +3087,47 @@ button {
   width: min(520px, 96vw);
 }
 
+.mcp-elicit-dialog {
+  width: min(520px, 96vw);
+}
+
+.mcp-elicit-message {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.mcp-elicit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.mcp-elicit-field-label {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mcp-elicit-field-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mcp-elicit-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.mcp-elicit-error {
+  font-size: 12px;
+  color: var(--warn);
+}
+
 .worktree-dialog {
   width: min(560px, 96vw);
 }

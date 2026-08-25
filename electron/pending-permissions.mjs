@@ -4,6 +4,7 @@
  */
 
 import {
+  isEnableAlwaysApproveOption,
   pickAllowOptionId,
   selectedPermissionResult,
 } from "../shared/permission-options.mjs";
@@ -23,6 +24,33 @@ import {
 
 /** @type {Map<string, PendingPermissionEntry>} */
 const pending = new Map();
+
+/** @type {(() => void) | null} */
+let onEnableAlwaysApprove = null;
+
+/**
+ * Invoked from settlePermission after the current tool is allowed once
+ * with `enable-always-approve`. Main persists desktop-state + yolo.
+ * @param {(() => void) | null | undefined} fn
+ */
+export function setOnEnableAlwaysApprove(fn) {
+  onEnableAlwaysApprove = typeof fn === "function" ? fn : null;
+}
+
+/**
+ * @param {any} outcome
+ */
+function selectedOptionIdFromOutcome(outcome) {
+  if (!outcome || typeof outcome !== "object") return "";
+  if (outcome.optionId != null && outcome.optionId !== "") {
+    return String(outcome.optionId);
+  }
+  const inner = outcome.outcome;
+  if (inner && typeof inner === "object" && inner.optionId != null) {
+    return String(inner.optionId);
+  }
+  return "";
+}
 
 /**
  * Strip huge rawInput so IPC + React stay light. Keep risk fields so
@@ -156,6 +184,13 @@ export function settlePermission(reqId, outcome, ownerId) {
     if (entry.ownerId !== String(ownerId)) return false;
   }
   entry.settle(outcome);
+  if (isEnableAlwaysApproveOption(selectedOptionIdFromOutcome(outcome))) {
+    try {
+      onEnableAlwaysApprove?.();
+    } catch {
+      /* ignore */
+    }
+  }
   return true;
 }
 

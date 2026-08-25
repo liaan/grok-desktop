@@ -21,7 +21,10 @@ import {
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
-import { classifyOptionId } from "../../shared/permission-options.mjs";
+import {
+  classifyOptionId,
+  permissionButtonClass,
+} from "../../shared/permission-options.mjs";
 import { usePrivacy } from "../lib/privacy-context";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 import {
@@ -382,13 +385,11 @@ function PendingApprovalCard({
           <div className="perm-actions">
             {options.map((opt) => {
               const cls = classifyOptionId(opt.optionId, options);
-              const allow =
-                cls === "allow_once" || cls === "allow_always";
               return (
                 <button
                   key={opt.optionId}
                   type="button"
-                  className={allow ? "btn primary" : "btn"}
+                  className={permissionButtonClass(cls)}
                   onClick={() => onPermission(request.reqId, opt.optionId)}
                 >
                   {formatOptionLabel(opt.optionId, opt.name)}

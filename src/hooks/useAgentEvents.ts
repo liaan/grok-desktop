@@ -28,11 +28,16 @@ import {
   extractToolCallId,
   permissionOutcomeFromUi,
 } from "../../shared/permission-options.mjs";
+import type { McpElicitRequest } from "../components/McpElicitDialog";
 
 function isAllowChoice(optionId: string, options?: PermissionRequest["params"]["options"]): boolean {
   if (optionId === "cancelled" || optionId === "cancel") return false;
   const cls = classifyOptionId(optionId, options);
-  return cls === "allow_once" || cls === "allow_always";
+  return (
+    cls === "allow_once" ||
+    cls === "allow_always" ||
+    cls === "enable_always_approve"
+  );
 }
 
 function toolCallIdFromPermission(p: PermissionRequest | undefined): string | null {
@@ -76,6 +81,7 @@ export function useAgentEvents(opts: {
   const [folderTrust, setFolderTrust] = useState<FolderTrustRequest | null>(
     null,
   );
+  const [mcpElicit, setMcpElicit] = useState<McpElicitRequest | null>(null);
   const [sessionUsage, setSessionUsage] = useState<SessionUsage>(emptyUsage);
   const [allowWritesThisSession, setAllowWritesThisSession] =
     useState(false);
@@ -283,11 +289,42 @@ export function useAgentEvents(opts: {
           return null;
         });
       }),
+      window.grokDesktop.on("agent:mcp-elicit-request", (payload) => {
+        const p = payload as {
+          reqId: string;
+          params?: {
+            serverName?: string;
+            message?: string;
+            mode?: "form" | "url";
+            url?: string;
+            elicitationId?: string;
+            requestedSchema?: unknown;
+          };
+        };
+        setMcpElicit({
+          reqId: p.reqId,
+          serverName: p.params?.serverName || "",
+          message: p.params?.message || "",
+          mode: p.params?.mode === "url" ? "url" : "form",
+          url: p.params?.url,
+          elicitationId: p.params?.elicitationId,
+          requestedSchema: p.params?.requestedSchema,
+        });
+      }),
+      window.grokDesktop.on("agent:mcp-elicit-dismiss", (payload) => {
+        const reqId = (payload as { reqId?: string })?.reqId;
+        setMcpElicit((cur) => {
+          if (!cur) return null;
+          if (reqId && cur.reqId !== reqId) return cur;
+          return null;
+        });
+      }),
       window.grokDesktop.on("agent:permissions-cleared", () => {
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
         setFolderTrust(null);
+        setMcpElicit(null);
       }),
       window.grokDesktop.on("agent:writes-session", (payload) => {
         setAllowWritesThisSession(
@@ -308,6 +345,7 @@ export function useAgentEvents(opts: {
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
+        setMcpElicit(null);
       }),
       window.grokDesktop.on("agent:ready", () => {
         /* session id / online only from open IPC */
@@ -361,6 +399,7 @@ export function useAgentEvents(opts: {
     setPlanApproval(null);
     setUserQuestion(null);
     setFolderTrust(null);
+    setMcpElicit(null);
   }, []);
 
   /** Awaited on successful open so a later grant cannot lose a race with revoke. */
@@ -628,6 +667,20 @@ export function useAgentEvents(opts: {
     [],
   );
 
+  const onMcpElicit = useCallback(
+    async (
+      reqId: string,
+      decision:
+        | { outcome: "accept"; content?: Record<string, unknown> }
+        | { outcome: "decline" }
+        | { outcome: "cancel" },
+    ) => {
+      await window.grokDesktop.respondMcpElicit(reqId, decision);
+      setMcpElicit(null);
+    },
+    [],
+  );
+
   return {
     permissions,
     backgroundTasks,
@@ -636,6 +689,7 @@ export function useAgentEvents(opts: {
     planApproval,
     userQuestion,
     folderTrust,
+    mcpElicit,
     clearSessionScoped,
     revokeWritesThisSession,
     hydrateBackgroundTasks,
@@ -649,5 +703,6 @@ export function useAgentEvents(opts: {
     onPlanApproval,
     onUserQuestion,
     onFolderTrust,
+    onMcpElicit,
   };
 }

@@ -57,6 +57,7 @@ import {
 } from "./sessions.mjs";
 import {
   listPendingPermissionRequests,
+  setOnEnableAlwaysApprove,
   settlePendingAllowOnce,
   settlePermission,
 } from "./pending-permissions.mjs";
@@ -76,6 +77,8 @@ import {
   APP_WINDOW_TITLE,
   applyPermissionModeToAllWindows,
   broadcastOpenCheckouts,
+  broadcastPermissionMode,
+  syncPermissionModeLiveToAllWindows,
   clearPendingPermissions,
   clearProjectOnWindow,
   collectOpenCheckouts,
@@ -1281,6 +1284,18 @@ function registerIpc() {
     return settlePermission(reqId, outcome, ownerIdFor(ws));
   });
 
+  setOnEnableAlwaysApprove(() => {
+    const prev = normalizePermissionMode(loadState().permissionMode);
+    const state = loadState();
+    state.permissionMode = "always-approve";
+    delete state.alwaysApprove;
+    saveState(state);
+    broadcastPermissionMode("always-approve");
+    if (prev === "always-approve") return;
+    // Live notify only — do not respawn mid-turn (Settings still restarts).
+    void syncPermissionModeLiveToAllWindows("always-approve");
+  });
+
   /** Mirror open gates after renderer reload / HMR (main is source of truth). */
   ipcMain.handle("agent:list-pending-permissions", async (e) => {
     const ws = sessionFromEvent(e);
@@ -1289,37 +1304,53 @@ function registerIpc() {
     return listPendingPermissionRequests(ownerIdFor(ws));
   });
 
+  /**
+   * @param {Map<string, Function> | undefined} map
+   * @param {string} reqId
+   * @param {any} fallback
+   */
+  const settleParkedIpc = (map, reqId, fallback) => {
+    const settle = map?.get(reqId);
+    if (!settle) return false;
+    settle(fallback);
+    return true;
+  };
+
   ipcMain.handle("agent:plan-approval-respond", async (e, { reqId, decision }) => {
     const ws = sessionFromEvent(e);
-    const settle = ws?.pendingPlanApprovals.get(reqId);
-    if (!settle) return false;
-    settle(decision || { type: "abandoned" });
-    return true;
+    return settleParkedIpc(
+      ws?.pendingPlanApprovals,
+      reqId,
+      decision || { type: "abandoned" },
+    );
   });
 
   ipcMain.handle("agent:user-question-respond", async (e, { reqId, decision }) => {
     const ws = sessionFromEvent(e);
-    const settle = ws?.pendingUserQuestions.get(reqId);
-    if (!settle) return false;
-    settle(decision || { type: "declined" });
-    return true;
+    return settleParkedIpc(
+      ws?.pendingUserQuestions,
+      reqId,
+      decision || { type: "declined" },
+    );
   });
 
   ipcMain.handle("agent:folder-trust-respond", async (e, { reqId, decision }) => {
     const ws = sessionFromEvent(e);
-    const settle = ws?.pendingFolderTrust.get(reqId);
-    if (!settle) return false;
-    settle(decision || { outcome: "reject" });
-    return true;
+    return settleParkedIpc(
+      ws?.pendingFolderTrust,
+      reqId,
+      decision || { outcome: "reject" },
+    );
   });
 
-  /**
-   * Apply global permission mode to every live window agent.
-   * Always ↔ Ask/Auto crosses a process-level CLI flag and must restart
-   * **all** windows (not only the caller).
-   * @param {string} mode
-   * @param {string} prev
-   */
+  ipcMain.handle("agent:mcp-elicit-respond", async (e, { reqId, decision }) => {
+    const ws = sessionFromEvent(e);
+    return settleParkedIpc(
+      ws?.pendingMcpElicits,
+      reqId,
+      decision || { outcome: "cancel" },
+    );
+  });
 
   /** @deprecated prefer agent:set-permission-mode */
   ipcMain.handle("agent:set-always-approve", async (_e, value) => {
@@ -1329,6 +1360,7 @@ function registerIpc() {
     state.permissionMode = mode;
     delete state.alwaysApprove;
     saveState(state);
+    broadcastPermissionMode(mode);
     await applyPermissionModeToAllWindows(mode, prev);
     return mode === "always-approve";
   });
@@ -1340,6 +1372,7 @@ function registerIpc() {
     state.permissionMode = mode;
     delete state.alwaysApprove;
     saveState(state);
+    broadcastPermissionMode(mode);
     return applyPermissionModeToAllWindows(mode, prev);
   });
 

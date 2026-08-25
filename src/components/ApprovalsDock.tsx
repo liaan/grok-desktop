@@ -1,5 +1,8 @@
 import { memo } from "react";
-import { classifyOptionId } from "../../shared/permission-options.mjs";
+import {
+  classifyOptionId,
+  permissionButtonClass,
+} from "../../shared/permission-options.mjs";
 import { formatOptionLabel } from "../lib/timeline";
 import type { PermissionRequest } from "../vite-env";
 
@@ -74,13 +77,11 @@ export const ApprovalsDock = memo(function ApprovalsDock({
               <div className="approvals-dock-actions">
                 {options.map((opt) => {
                   const cls = classifyOptionId(opt.optionId, options);
-                  const allow =
-                    cls === "allow_once" || cls === "allow_always";
                   return (
                     <button
                       key={opt.optionId}
                       type="button"
-                      className={allow ? "btn primary btn-sm" : "btn btn-sm"}
+                      className={permissionButtonClass(cls, { size: "sm" })}
                       onClick={() => onPermission(p.reqId, opt.optionId)}
                     >
                       {formatOptionLabel(opt.optionId, opt.name)}

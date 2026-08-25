@@ -4,9 +4,28 @@
  */
 
 /**
- * @typedef {{ optionId?: string, name?: string, kind?: string }} PermOption
- * @typedef {'reject' | 'allow_once' | 'allow_always' | 'unknown'} OptionClass
+ * grok-build prepends this to Desktop/TUI/Pager prompts. Kind is AllowOnce
+ * so YOLO drain is safe, but selecting it also flips always-approve — never
+ * treat it as the default allow-once pick.
  */
+export const ENABLE_ALWAYS_APPROVE_OPTION_ID = "enable-always-approve";
+
+/**
+ * @typedef {{ optionId?: string, name?: string, kind?: string }} PermOption
+ * @typedef {'reject' | 'allow_once' | 'allow_always' | 'enable_always_approve' | 'unknown'} OptionClass
+ */
+
+/**
+ * Pin the catalog id only. Kind is AllowOnce and the label mentions
+ * always-approve — those must not classify a different option as this one.
+ * @param {string} id
+ */
+export function isEnableAlwaysApproveOption(id) {
+  const optId = String(id || "")
+    .toLowerCase()
+    .replace(/_/g, "-");
+  return optId === ENABLE_ALWAYS_APPROVE_OPTION_ID;
+}
 
 /**
  * @param {PermOption | null | undefined} opt
@@ -18,6 +37,12 @@ export function classifyPermissionOption(opt) {
   const name = String(opt.name || "").toLowerCase();
   const kind = String(opt.kind || "").toLowerCase().replace(/_/g, "-");
   const blob = `${id} ${name} ${kind}`;
+
+  // Global always-approve toggle — before "approve" / "always allow" substring
+  // matches, so auto-picks never send this id as a generic allow-once.
+  if (isEnableAlwaysApproveOption(id)) {
+    return "enable_always_approve";
+  }
 
   // Reject family first (before substring "allow" checks)
   if (
@@ -114,7 +139,7 @@ export function pickAllowOptionId(options, opts = {}) {
     if (cls === "allow_once") once.push(id);
     else if (cls === "allow_always") always.push(id);
     else if (cls === "unknown") unknown.push({ opt, id });
-    // reject skipped
+    // reject + enable_always_approve skipped (never the default allow pick)
   }
 
   if (once.length) return once[0];
@@ -132,9 +157,10 @@ export function pickAllowOptionId(options, opts = {}) {
   // Last resort: first non-reject listed id (may still be wrong catalog)
   for (const opt of options) {
     const id = String(opt?.optionId || "");
-    if (id && classifyPermissionOption(opt) !== "reject") {
+    const cls = classifyPermissionOption(opt);
+    if (id && cls !== "reject" && cls !== "enable_always_approve") {
       // Prefer not always when batch-like safety is default
-      if (!allowAlwaysOk && classifyPermissionOption(opt) === "allow_always") {
+      if (!allowAlwaysOk && cls === "allow_always") {
         continue;
       }
       return id;
@@ -251,6 +277,18 @@ export function permissionOutcomeFromUi(optionId, options, opts = {}) {
   }
 
   return selectedPermissionResult(optionId);
+}
+
+/**
+ * CSS for a permission option button. enable-always-approve is not a
+ * primary allow (same as reject) so auto-looking clicks stay on Allow once.
+ * @param {OptionClass} cls
+ * @param {{ size?: 'sm' }} [opts]
+ */
+export function permissionButtonClass(cls, opts = {}) {
+  const allow = cls === "allow_once" || cls === "allow_always";
+  const sm = opts.size === "sm" ? " btn-sm" : "";
+  return allow ? `btn primary${sm}` : `btn${sm}`;
 }
 
 /**

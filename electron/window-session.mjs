@@ -76,6 +76,7 @@ function notifyWindowChrome() {
  *   pendingPlanApprovals: Map<string, (decision: any) => void>,
  *   pendingUserQuestions: Map<string, (decision: any) => void>,
  *   pendingFolderTrust: Map<string, (decision: any) => void>,
+ *   pendingMcpElicits: Map<string, (decision: any) => void>,
  *   disposed: boolean,
  *   generation: number,
  *   lastCwd: string | null,
@@ -299,6 +300,66 @@ export function makeReqId(prefix) {
 }
 
 /**
+ * Park one agent→UI reverse-request until the renderer settles it (or timeout).
+ * @param {WindowSession} ws
+ * @param {GrokAcpClient} agent
+ * @param {(fn: Function) => Function} ifCurrent
+ * @param {{
+ *   event: string,
+ *   ipcRequest: string,
+ *   ipcDismiss: string,
+ *   map: Map<string, (decision: any) => void>,
+ *   prefix: string,
+ *   timeoutMs: number,
+ *   fallback: any,
+ * }} opts
+ */
+function parkAgentGate(ws, agent, ifCurrent, opts) {
+  const {
+    event,
+    ipcRequest,
+    ipcDismiss,
+    map,
+    prefix,
+    timeoutMs,
+    fallback,
+  } = opts;
+  agent.on(
+    event,
+    ifCurrent(({ params, respond }) => {
+      const reqId = makeReqId(prefix);
+      let settled = false;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let timer = null;
+      const settle = (decision) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        map.delete(reqId);
+        try {
+          respond(decision || fallback);
+        } catch {
+          /* ignore */
+        }
+        if (ws.agent === agent) {
+          send(ws, ipcDismiss, {
+            reqId,
+            timedOut: Boolean(decision?.timedOut),
+          });
+        }
+      };
+      timer = setTimeout(
+        () => settle({ ...fallback, timedOut: true }),
+        timeoutMs,
+      );
+      map.set(reqId, settle);
+      send(ws, ipcRequest, { reqId, params });
+    }),
+  );
+}
+
+/**
  * Clear pending UI gates for one window. Each stored callback is a main-owned
  * settle wrapper that also dismisses the renderer modal.
  * @param {WindowSession} ws
@@ -306,31 +367,22 @@ export function makeReqId(prefix) {
 export function clearPendingPermissions(ws) {
   const owner = ownerIdFor(ws);
   cancelAllPermissions(undefined, owner);
-  const plans = [...ws.pendingPlanApprovals.values()];
-  const asks = [...ws.pendingUserQuestions.values()];
-  const trusts = [...(ws.pendingFolderTrust?.values?.() || [])];
-  ws.pendingPlanApprovals.clear();
-  ws.pendingUserQuestions.clear();
-  ws.pendingFolderTrust?.clear?.();
-  for (const settle of plans) {
-    try {
-      settle({ type: "abandoned" });
-    } catch {
-      /* ignore */
-    }
-  }
-  for (const settle of asks) {
-    try {
-      settle({ type: "declined" });
-    } catch {
-      /* ignore */
-    }
-  }
-  for (const settle of trusts) {
-    try {
-      settle({ outcome: "reject" });
-    } catch {
-      /* ignore */
+  const gates = [
+    { map: ws.pendingPlanApprovals, fallback: { type: "abandoned" } },
+    { map: ws.pendingUserQuestions, fallback: { type: "declined" } },
+    { map: ws.pendingFolderTrust, fallback: { outcome: "reject" } },
+    { map: ws.pendingMcpElicits, fallback: { outcome: "cancel" } },
+  ];
+  for (const { map, fallback } of gates) {
+    if (!map) continue;
+    const settlers = [...map.values()];
+    map.clear();
+    for (const settle of settlers) {
+      try {
+        settle(fallback);
+      } catch {
+        /* ignore */
+      }
     }
   }
   send(ws, "agent:permissions-cleared", {});
@@ -568,108 +620,43 @@ export function ensureAgent(ws, cwd, opts = {}) {
       }),
     );
 
-    agent.on(
-      "plan-approval-request",
-      ifCurrent(({ params, respond }) => {
-        const reqId = makeReqId("plan");
-        let settled = false;
-        /** @type {ReturnType<typeof setTimeout> | null} */
-        let timer = null;
-        const settle = (decision) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          timer = null;
-          ws.pendingPlanApprovals.delete(reqId);
-          try {
-            respond(decision || { type: "abandoned" });
-          } catch {
-            /* ignore */
-          }
-          if (ws.agent === agent) {
-            send(ws, "agent:plan-approval-dismiss", {
-              reqId,
-              timedOut: Boolean(decision?.timedOut),
-            });
-          }
-        };
-        // Main owns timeout so map + UI dismiss go through the same settle path
-        timer = setTimeout(
-          () => settle({ type: "abandoned", timedOut: true }),
-          30 * 60_000,
-        );
-        ws.pendingPlanApprovals.set(reqId, settle);
-        send(ws, "agent:plan-approval-request", { reqId, params });
-      }),
-    );
-
-    agent.on(
-      "folder-trust-request",
-      ifCurrent(({ params, respond }) => {
-        const reqId = makeReqId("trust");
-        let settled = false;
-        /** @type {ReturnType<typeof setTimeout> | null} */
-        let timer = null;
-        const settle = (decision) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          timer = null;
-          ws.pendingFolderTrust.delete(reqId);
-          try {
-            respond(decision || { outcome: "reject" });
-          } catch {
-            /* ignore */
-          }
-          if (ws.agent === agent) {
-            send(ws, "agent:folder-trust-dismiss", {
-              reqId,
-              timedOut: Boolean(decision?.timedOut),
-            });
-          }
-        };
-        timer = setTimeout(
-          () => settle({ outcome: "reject", timedOut: true }),
-          30 * 60_000,
-        );
-        ws.pendingFolderTrust.set(reqId, settle);
-        send(ws, "agent:folder-trust-request", { reqId, params });
-      }),
-    );
-
-    agent.on(
-      "user-question-request",
-      ifCurrent(({ params, respond }) => {
-        const reqId = makeReqId("ask");
-        let settled = false;
-        /** @type {ReturnType<typeof setTimeout> | null} */
-        let timer = null;
-        const settle = (decision) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          timer = null;
-          ws.pendingUserQuestions.delete(reqId);
-          try {
-            respond(decision || { type: "declined" });
-          } catch {
-            /* ignore */
-          }
-          if (ws.agent === agent) {
-            send(ws, "agent:user-question-dismiss", {
-              reqId,
-              timedOut: Boolean(decision?.timedOut),
-            });
-          }
-        };
-        timer = setTimeout(
-          () => settle({ type: "declined", timedOut: true }),
-          10 * 60_000,
-        );
-        ws.pendingUserQuestions.set(reqId, settle);
-        send(ws, "agent:user-question-request", { reqId, params });
-      }),
-    );
+    // Main owns timeout so map + UI dismiss go through the same settle path.
+    parkAgentGate(ws, agent, ifCurrent, {
+      event: "plan-approval-request",
+      ipcRequest: "agent:plan-approval-request",
+      ipcDismiss: "agent:plan-approval-dismiss",
+      map: ws.pendingPlanApprovals,
+      prefix: "plan",
+      timeoutMs: 30 * 60_000,
+      fallback: { type: "abandoned" },
+    });
+    parkAgentGate(ws, agent, ifCurrent, {
+      event: "folder-trust-request",
+      ipcRequest: "agent:folder-trust-request",
+      ipcDismiss: "agent:folder-trust-dismiss",
+      map: ws.pendingFolderTrust,
+      prefix: "trust",
+      timeoutMs: 30 * 60_000,
+      fallback: { outcome: "reject" },
+    });
+    parkAgentGate(ws, agent, ifCurrent, {
+      event: "user-question-request",
+      ipcRequest: "agent:user-question-request",
+      ipcDismiss: "agent:user-question-dismiss",
+      map: ws.pendingUserQuestions,
+      prefix: "ask",
+      timeoutMs: 10 * 60_000,
+      fallback: { type: "declined" },
+    });
+    parkAgentGate(ws, agent, ifCurrent, {
+      event: "mcp-elicit-request",
+      ipcRequest: "agent:mcp-elicit-request",
+      ipcDismiss: "agent:mcp-elicit-dismiss",
+      map: ws.pendingMcpElicits,
+      prefix: "elicit",
+      timeoutMs: 10 * 60_000,
+      fallback: { outcome: "cancel" },
+    });
 
     agent.on(
       "stderr",
@@ -1013,11 +1000,24 @@ export async function applyPermissionModeToAllWindows(mode, prev) {
     return result;
   }
 
+  return syncPermissionModeLiveToAllWindows(mode);
+}
+
+/**
+ * Push permission mode into live agents without respawn. `--always-approve`
+ * still binds on the next ensureAgent; this path is for mid-turn
+ * enable-always-approve (killing grok would abort the current turn).
+ * @param {string} mode
+ */
+export async function syncPermissionModeLiveToAllWindows(mode) {
   let synced = false;
+  /** @type {{ mode: string, agentSynced: boolean, error?: string, restarted?: boolean }} */
+  let result = { mode, agentSynced: false, restarted: false };
   for (const other of windowSessions.values()) {
     if (other.disposed || !other.agent?.setPermissionMode) continue;
     try {
       result = await other.agent.setPermissionMode(mode);
+      result.restarted = false;
       synced = true;
     } catch {
       /* ignore */
@@ -1028,6 +1028,13 @@ export async function applyPermissionModeToAllWindows(mode, prev) {
     flushPendingPermissionsForMode(mode);
   }
   return result;
+}
+
+export function broadcastPermissionMode(mode) {
+  const payload = { mode };
+  for (const ws of windowSessions.values()) {
+    send(ws, "agent:permission-mode", payload);
+  }
 }
 
 /**
@@ -1062,6 +1069,7 @@ export function createWindowSession(win) {
     pendingPlanApprovals: new Map(),
     pendingUserQuestions: new Map(),
     pendingFolderTrust: new Map(),
+    pendingMcpElicits: new Map(),
     disposed: false,
     writesChain: Promise.resolve(),
     generation: 0,

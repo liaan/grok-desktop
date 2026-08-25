@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   normalizePermissionMode,
   type PermissionMode,
@@ -27,6 +27,16 @@ export function useAgentSafety(opts: {
   const [sandboxTerminal, setSandboxTerminal] = useState(true);
   const [sandboxStatus, setSandboxStatus] = useState("");
   const sandboxApplyLock = useRef(false);
+
+  useEffect(() => {
+    const off = window.grokDesktop.on("agent:permission-mode", (payload) => {
+      const mode = normalizePermissionMode(
+        (payload as { mode?: string })?.mode,
+      );
+      setPermissionMode(mode);
+    });
+    return () => off();
+  }, []);
 
   const hydrateFromInfo = useCallback(
     (i: {

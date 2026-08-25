@@ -448,6 +448,8 @@ export function formatOptionLabel(optionId, name) {
   const map = {
     "allow-once": "Allow once",
     "allow-always": "Always allow",
+    "enable-always-approve":
+      "Yes, and don't ask again for anything (always-approve mode)",
     reject: "Reject",
     cancelled: "Cancel",
   };

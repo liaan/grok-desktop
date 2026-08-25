@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:user-question-respond", { reqId, decision }),
   respondFolderTrust: (reqId, decision) =>
     ipcRenderer.invoke("agent:folder-trust-respond", { reqId, decision }),
+  respondMcpElicit: (reqId, decision) =>
+    ipcRenderer.invoke("agent:mcp-elicit-respond", { reqId, decision }),
   setAlwaysApprove: (value) =>
     ipcRenderer.invoke("agent:set-always-approve", value),
   setPermissionMode: (value) =>
@@ -123,6 +125,9 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "agent:user-question-dismiss",
       "agent:folder-trust-request",
       "agent:folder-trust-dismiss",
+      "agent:mcp-elicit-request",
+      "agent:mcp-elicit-dismiss",
+      "agent:permission-mode",
       "agent:permissions-cleared",
       "agent:writes-session",
       "agent:stderr",

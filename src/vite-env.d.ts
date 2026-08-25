@@ -561,6 +561,13 @@ declare global {
         reqId: string,
         decision: { outcome: "trust" | "reject" },
       ) => Promise<boolean>;
+      respondMcpElicit: (
+        reqId: string,
+        decision:
+          | { outcome: "accept"; content?: Record<string, unknown> }
+          | { outcome: "decline" }
+          | { outcome: "cancel" },
+      ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
       setPermissionMode: (
         value: "ask" | "auto" | "always-approve",

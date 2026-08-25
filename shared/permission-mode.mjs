@@ -1,19 +1,7 @@
 /**
- * Single source of truth: Desktop permission modes ↔ agent modes.
- * Used by Electron main and the React renderer (via src/lib re-export).
- *
- * Wire contract (grok-build mvp_agent + pager):
- * - session/new|load `_meta`: `yoloMode` (bool), `autoMode`/`auto_mode` (bool).
- *   Agent does **not** seed auto/yolo from `permissionMode` string alone.
- * - Live toggle: ACP `ext_notification` with method `x.ai/yolo_mode_changed`
- *   and params `{ yolo_mode, auto_mode, permission_mode }` (pager shape).
- * - `session/set_mode` is for plan/default/ask **session** modes, not tool
- *   permission yolo/auto.
- *
- * Desktop UI:
- * - Ask     → client shows every request_permission; agent not yolo/auto
- * - Auto    → agent auto-filters; client still shows escalations
- * - Always  → client auto-allows + agent yolo (`--always-approve` at spawn)
+ * Desktop permission modes ↔ agent yolo/auto.
+ * session/new|load `_meta` seeds `yoloMode` / `autoMode` (not the mode string).
+ * Live toggle: notify `_x.ai/yolo_mode_changed` with those params.
  */
 
 /** @typedef {'ask' | 'auto' | 'always-approve'} DesktopPermissionMode */
@@ -21,8 +9,19 @@
 /** @type {DesktopPermissionMode[]} */
 export const DESKTOP_PERMISSION_MODES = ["ask", "auto", "always-approve"];
 
-/** ACP extension method the agent handles for live yolo/auto (see pager). */
-export const YOLO_MODE_CHANGED_METHOD = "x.ai/yolo_mode_changed";
+/** Product token the agent maps to ClientType::Desktop. */
+export const DESKTOP_CLIENT_IDENTIFIER = "grok-desktop";
+
+/** Underscore prefix so AgentSide routes this as an extension notification. */
+export const YOLO_MODE_CHANGED_METHOD = "_x.ai/yolo_mode_changed";
+
+/**
+ * `initialize` `_meta` so permission prompts include Desktop options
+ * (`enable-always-approve`) and yolo updates match this client's sessions.
+ */
+export function initializeClientMeta() {
+  return { clientIdentifier: DESKTOP_CLIENT_IDENTIFIER };
+}
 
 /**
  * @param {unknown} value
@@ -76,9 +75,17 @@ export function sessionPermissionMeta(mode) {
 }
 
 /**
- * Params body for `x.ai/yolo_mode_changed` (snake_case keys as pager sends).
+ * Params body for `_x.ai/yolo_mode_changed` (snake_case keys as pager sends).
+ * `clientIdentifier` scopes the update to Desktop-owned sessions.
+ * Must be a **JSON object** (pager: `to_raw_value` on a map) — a stringified
+ * body becomes a JSON string RawValue and agent `from_str` never sees keys.
  * @param {unknown} mode
- * @returns {{ yolo_mode: boolean, auto_mode: boolean, permission_mode: string }}
+ * @returns {{
+ *   yolo_mode: boolean,
+ *   auto_mode: boolean,
+ *   permission_mode: string,
+ *   clientIdentifier: string,
+ * }}
  */
 export function yoloModeChangedParams(mode) {
   const m = normalizePermissionMode(mode);
@@ -91,24 +98,7 @@ export function yoloModeChangedParams(mode) {
         : m === "auto"
           ? "auto"
           : "ask",
-  };
-}
-
-/**
- * Full JSON-RPC notification params for `ext_notification`.
- * Inner `params` must be a **JSON object** (pager: `to_raw_value` on a map).
- * A stringified body becomes a JSON string RawValue; agent `from_str` then
- * yields a String Value and never sees `yolo_mode` / `auto_mode` keys.
- * @param {unknown} mode
- * @returns {{
- *   method: string,
- *   params: { yolo_mode: boolean, auto_mode: boolean, permission_mode: string },
- * }}
- */
-export function yoloModeChangedExtNotification(mode) {
-  return {
-    method: YOLO_MODE_CHANGED_METHOD,
-    params: yoloModeChangedParams(mode),
+    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
   };
 }
 

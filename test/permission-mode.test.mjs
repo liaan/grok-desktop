@@ -5,11 +5,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DESKTOP_CLIENT_IDENTIFIER,
   YOLO_MODE_CHANGED_METHOD,
+  initializeClientMeta,
   normalizePermissionMode,
   sessionPermissionMeta,
   toAgentPermissionMode,
-  yoloModeChangedExtNotification,
   yoloModeChangedParams,
 } from "../shared/permission-mode.mjs";
 
@@ -52,45 +53,62 @@ test("yoloModeChangedParams match pager snake_case keys", () => {
     yolo_mode: true,
     auto_mode: false,
     permission_mode: "always-approve",
+    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
   });
   assert.deepEqual(yoloModeChangedParams("auto"), {
     yolo_mode: false,
     auto_mode: true,
     permission_mode: "auto",
+    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
   });
   assert.deepEqual(yoloModeChangedParams("ask"), {
     yolo_mode: false,
     auto_mode: false,
     permission_mode: "ask",
+    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
   });
 });
 
-test("yoloModeChangedExtNotification is ext_notification payload", () => {
-  const n = yoloModeChangedExtNotification("auto");
-  assert.equal(n.method, YOLO_MODE_CHANGED_METHOD);
-  assert.equal(n.method, "x.ai/yolo_mode_changed");
+test("yolo_mode_changed is stdio _x.ai/ notification", () => {
+  assert.equal(YOLO_MODE_CHANGED_METHOD, "_x.ai/yolo_mode_changed");
+  const params = yoloModeChangedParams("auto");
   // Params must be a plain object (pager to_raw_value), not a JSON string —
   // a string RawValue makes agent from_str yield a String Value and drop keys.
-  assert.equal(typeof n.params, "object");
-  assert.notEqual(n.params, null);
-  assert.equal(typeof n.params, "object");
-  assert.equal(Array.isArray(n.params), false);
-  assert.equal(n.params.auto_mode, true);
-  assert.equal(n.params.yolo_mode, false);
-  assert.equal(n.params.permission_mode, "auto");
+  assert.equal(typeof params, "object");
+  assert.notEqual(params, null);
+  assert.equal(Array.isArray(params), false);
+  assert.equal(params.auto_mode, true);
+  assert.equal(params.yolo_mode, false);
+  assert.equal(params.permission_mode, "auto");
+  assert.equal(params.clientIdentifier, "grok-desktop");
 
-  // Full wire envelope: params serializes as a JSON object token, not a quoted string
+  // Full wire envelope: method is the underscore ext name; params is the body.
   const wire = JSON.stringify({
     jsonrpc: "2.0",
-    method: "ext_notification",
-    params: n,
+    method: YOLO_MODE_CHANGED_METHOD,
+    params,
   });
-  assert.match(wire, /"params":\{"yolo_mode":false,"auto_mode":true,"permission_mode":"auto"\}/);
+  assert.match(wire, /"method":"_x.ai\/yolo_mode_changed"/);
+  assert.match(wire, /"yolo_mode":false/);
+  assert.match(wire, /"auto_mode":true/);
+  assert.match(wire, /"permission_mode":"auto"/);
+  assert.match(wire, /"clientIdentifier":"grok-desktop"/);
+  assert.doesNotMatch(
+    wire,
+    /"method":"ext_notification"/,
+    "stdio must not wrap yolo_mode_changed in ext_notification",
+  );
   assert.doesNotMatch(
     wire,
     /"params":"\{/,
     "params must not be a JSON-encoded string on the wire",
   );
+});
+
+test("initializeClientMeta identifies Desktop to the agent", () => {
+  assert.deepEqual(initializeClientMeta(), {
+    clientIdentifier: "grok-desktop",
+  });
 });
 
 test("toAgentPermissionMode labels for hooks/telemetry", () => {

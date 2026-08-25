@@ -1,17 +1,22 @@
 /**
- * Grok ACP client extension methods: plan approval + ask_user_question.
- * Kept out of GrokAcpClient so the client stays a transport + routing shell.
+ * Grok ACP client extension methods: plan approval, ask_user_question,
+ * folder-trust, MCP elicit. Kept out of GrokAcpClient so the client stays
+ * a transport + routing shell.
  *
- * Timeouts for abandon/decline live in electron/main.mjs so the pending map
- * and renderer modals settle on the same path as a UI click.
+ * Timeouts live in parkAgentGate (window-session) so the pending map and
+ * renderer modals settle on the same path as a UI click.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeAskUserAnswersMap } from "./ask-user-answers.mjs";
 import {
   folderTrustResponse,
+  isFolderTrustMethod,
+  isMcpElicitMethod,
+  mcpElicitResponse,
   parseFolderTrustRequest,
-  unwrapFolderTrustParams,
+  parseMcpElicitRequest,
+  unwrapExtParams,
 } from "../shared/acp-rpc.mjs";
 
 /**
@@ -76,18 +81,20 @@ export async function handleExitPlanMode(ctx, id, params) {
     .toLowerCase()
     .replace(/-/g, "_");
   if (type === "approved" || type === "approve" || type === "accepted") {
-    ctx.respond(id, { outcome: "approved", type: "approved" });
+    ctx.respond(id, { outcome: "approved" });
     return;
   }
   if (type === "request_changes" || type === "requestchanges") {
+    // grok-build ExitPlanModeExtResponse: approved | cancelled | abandoned.
+    // Request-changes is cancelled + optional feedback (not a third outcome).
+    const feedback = String(decision?.feedback || decision?.message || "").trim();
     ctx.respond(id, {
-      outcome: "request_changes",
-      type: "request_changes",
-      feedback: String(decision?.feedback || decision?.message || ""),
+      outcome: "cancelled",
+      ...(feedback ? { feedback } : {}),
     });
     return;
   }
-  ctx.respond(id, { outcome: "abandoned", type: "abandoned" });
+  ctx.respond(id, { outcome: "abandoned" });
 }
 
 /**
@@ -156,7 +163,7 @@ export async function handleAskUserQuestion(ctx, id, params) {
  */
 export async function handleFolderTrustRequest(ctx, id, params, method) {
   const parsed = parseFolderTrustRequest(
-    unwrapFolderTrustParams(method, params),
+    unwrapExtParams(method, params, isFolderTrustMethod),
   );
   if (ctx.shouldAutoTrust?.(parsed.cwd, parsed.workspace)) {
     ctx.respond(id, folderTrustResponse("trust"));
@@ -184,4 +191,45 @@ export async function handleFolderTrustRequest(ctx, id, params, method) {
   const outcome =
     decision?.outcome || decision?.type || decision?.decision || "reject";
   ctx.respond(id, folderTrustResponse(outcome));
+}
+
+/**
+ * MCP `x.ai/mcp/elicit` reverse-request. Fail closed with Cancel when no UI
+ * is listening so the MCP server is not stuck on -32601.
+ *
+ * @param {object} ctx
+ * @param {import('node:events').EventEmitter} ctx.emitter
+ * @param {(id: any, result: any, error?: any) => void} ctx.respond
+ * @param {number} [ctx.listenerCount]
+ * @param {number|string} id
+ * @param {any} params
+ * @param {unknown} [method]
+ */
+export async function handleMcpElicit(ctx, id, params, method) {
+  const parsed = parseMcpElicitRequest(
+    unwrapExtParams(method, params, isMcpElicitMethod),
+  );
+
+  if (!ctx.listenerCount) {
+    ctx.respond(id, mcpElicitResponse("cancel"));
+    return;
+  }
+
+  const decision = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (outcome) => {
+      if (settled) return;
+      settled = true;
+      resolve(outcome || { outcome: "cancel" });
+    };
+    ctx.emitter.emit("mcp-elicit-request", {
+      params: parsed,
+      respond: finish,
+    });
+  });
+
+  const outcome = decision?.outcome || decision?.type || "cancel";
+  const content =
+    decision?.content !== undefined ? decision.content : undefined;
+  ctx.respond(id, mcpElicitResponse(outcome, content));
 }
