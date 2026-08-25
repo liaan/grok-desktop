@@ -98,7 +98,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Skills, plugins & MCP **inherited** from `~/.grok` (same as CLI) | Done — invoke skills in chat; **list/toggle in Settings** |
 | Project rules (`AGENTS.md`, etc.) via open folder | Done — agent uses project as cwd (same as CLI) |
 | Open project + recent folders | Done |
-| Multi-window same repo (Grok worktrees) | **Done** — same as TUI `/new` worktree: ACP `x.ai/git/worktree/*`. Opening a folder already open prompts to switch, reuse, or create. File → **New Worktree Window…**. Second Start Menu launch joins this process (new window). |
+| Multi-window same repo (Grok worktrees) | **Done** — same as TUI `/new` worktree: ACP `x.ai/git/worktree/*`. Opening a folder already open prompts to switch, reuse, or create. File → **New Worktree Window…**. Second Start Menu launch joins this process (new window). Grok worktrees auto-trust so project MCP/hooks load (TUI `/hooks-trust`). |
 | Streaming messages, thoughts, plans, tool cards | Done |
 | Tool permission approvals + always-approve | Done |
 | Cancel + mid-turn queue / send-now | Done |

@@ -52,16 +52,20 @@ import {
   createOnceResponder,
   isFsReadMethod,
   isFsWriteMethod,
+  isFolderTrustMethod,
   isPermissionMethod,
   isTerminalMethod,
   jsonRpcErrorCode,
+  acpClientCapabilities,
 } from "../shared/acp-rpc.mjs";
 import { handleAcpPermissionRequest } from "./acp-protocol.mjs";
 import { mapMcpSessionCatalog } from "../shared/mcp-status.mjs";
 import {
   handleAskUserQuestion,
   handleExitPlanMode,
+  handleFolderTrustRequest,
 } from "./acp-ext-methods.mjs";
+import { shouldAutoTrustFolder } from "./desktop-worktrees.mjs";
 import { debugLog } from "./debug-log.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
@@ -395,10 +399,7 @@ export class GrokAcpClient extends EventEmitter {
           name: "grok-desktop",
           version: this.clientVersion,
         },
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-          terminal: true,
-        },
+        clientCapabilities: acpClientCapabilities(),
       },
       { timeoutMs: INIT_TIMEOUT_MS },
     );
@@ -723,6 +724,22 @@ export class GrokAcpClient extends EventEmitter {
         method?.endsWith("/ask_user_question")
       ) {
         await handleAskUserQuestion(extCtx, id, params);
+        return;
+      }
+
+      // Grok worktrees under ~/.grok are a new git root — project MCP is gated
+      // until this reverse-request is answered (TUI /hooks-trust).
+      if (isFolderTrustMethod(method) || isFolderTrustMethod(params?.method)) {
+        await handleFolderTrustRequest(
+          {
+            ...extCtx,
+            listenerCount: this.listenerCount("folder-trust-request"),
+            shouldAutoTrust: shouldAutoTrustFolder,
+          },
+          id,
+          params,
+          method,
+        );
         return;
       }
 

@@ -8,6 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeAskUserAnswersMap } from "./ask-user-answers.mjs";
+import {
+  folderTrustResponse,
+  parseFolderTrustRequest,
+  unwrapFolderTrustParams,
+} from "../shared/acp-rpc.mjs";
 
 /**
  * @param {object} ctx
@@ -134,4 +139,49 @@ export async function handleAskUserQuestion(ctx, id, params) {
     return;
   }
   ctx.respond(id, { outcome: "skip_interview" });
+}
+
+/**
+ * Grok `x.ai/folder_trust/request` — project MCP/hooks stay gated until
+ * `{ outcome: "trust" }`. Fail closed on timeout / decline.
+ *
+ * @param {object} ctx
+ * @param {import('node:events').EventEmitter} ctx.emitter
+ * @param {(id: any, result: any, error?: any) => void} ctx.respond
+ * @param {(cwd: string, workspace: string) => boolean} [ctx.shouldAutoTrust]
+ * @param {number} [ctx.listenerCount]
+ * @param {number|string} id
+ * @param {any} params
+ * @param {unknown} [method]
+ */
+export async function handleFolderTrustRequest(ctx, id, params, method) {
+  const parsed = parseFolderTrustRequest(
+    unwrapFolderTrustParams(method, params),
+  );
+  if (ctx.shouldAutoTrust?.(parsed.cwd, parsed.workspace)) {
+    ctx.respond(id, folderTrustResponse("trust"));
+    return;
+  }
+
+  if (!ctx.listenerCount) {
+    ctx.respond(id, folderTrustResponse("reject"));
+    return;
+  }
+
+  const decision = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (outcome) => {
+      if (settled) return;
+      settled = true;
+      resolve(outcome || { outcome: "reject" });
+    };
+    ctx.emitter.emit("folder-trust-request", {
+      params: parsed,
+      respond: finish,
+    });
+  });
+
+  const outcome =
+    decision?.outcome || decision?.type || decision?.decision || "reject";
+  ctx.respond(id, folderTrustResponse(outcome));
 }

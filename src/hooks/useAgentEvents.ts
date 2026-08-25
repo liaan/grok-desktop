@@ -20,6 +20,7 @@ import {
 } from "../lib/usage";
 import type { PlanApprovalRequest } from "../components/PlanApprovalDialog";
 import type { AskUserRequest } from "../components/AskUserDialog";
+import type { FolderTrustRequest } from "../components/FolderTrustDialog";
 import type { ConnState } from "../lib/conn";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
 import {
@@ -70,6 +71,9 @@ export function useAgentEvents(opts: {
   const [planApproval, setPlanApproval] =
     useState<PlanApprovalRequest | null>(null);
   const [userQuestion, setUserQuestion] = useState<AskUserRequest | null>(
+    null,
+  );
+  const [folderTrust, setFolderTrust] = useState<FolderTrustRequest | null>(
     null,
   );
   const [sessionUsage, setSessionUsage] = useState<SessionUsage>(emptyUsage);
@@ -255,10 +259,35 @@ export function useAgentEvents(opts: {
           return null;
         });
       }),
+      window.grokDesktop.on("agent:folder-trust-request", (payload) => {
+        const p = payload as {
+          reqId: string;
+          params?: {
+            cwd?: string;
+            workspace?: string;
+            configKinds?: string[];
+          };
+        };
+        setFolderTrust({
+          reqId: p.reqId,
+          cwd: p.params?.cwd,
+          workspace: p.params?.workspace,
+          configKinds: p.params?.configKinds,
+        });
+      }),
+      window.grokDesktop.on("agent:folder-trust-dismiss", (payload) => {
+        const reqId = (payload as { reqId?: string })?.reqId;
+        setFolderTrust((cur) => {
+          if (!cur) return null;
+          if (reqId && cur.reqId !== reqId) return cur;
+          return null;
+        });
+      }),
       window.grokDesktop.on("agent:permissions-cleared", () => {
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
+        setFolderTrust(null);
       }),
       window.grokDesktop.on("agent:writes-session", (payload) => {
         setAllowWritesThisSession(
@@ -331,6 +360,7 @@ export function useAgentEvents(opts: {
     setSessionMode(null);
     setPlanApproval(null);
     setUserQuestion(null);
+    setFolderTrust(null);
   }, []);
 
   /** Awaited on successful open so a later grant cannot lose a race with revoke. */
@@ -590,6 +620,14 @@ export function useAgentEvents(opts: {
     [],
   );
 
+  const onFolderTrust = useCallback(
+    async (reqId: string, decision: { outcome: "trust" | "reject" }) => {
+      await window.grokDesktop.respondFolderTrust(reqId, decision);
+      setFolderTrust(null);
+    },
+    [],
+  );
+
   return {
     permissions,
     backgroundTasks,
@@ -597,6 +635,7 @@ export function useAgentEvents(opts: {
     sessionMode,
     planApproval,
     userQuestion,
+    folderTrust,
     clearSessionScoped,
     revokeWritesThisSession,
     hydrateBackgroundTasks,
@@ -609,5 +648,6 @@ export function useAgentEvents(opts: {
     onRevokeWritesThisSession,
     onPlanApproval,
     onUserQuestion,
+    onFolderTrust,
   };
 }

@@ -75,6 +75,7 @@ function notifyWindowChrome() {
  *   stopBackgroundTaskTail: (() => void) | null,
  *   pendingPlanApprovals: Map<string, (decision: any) => void>,
  *   pendingUserQuestions: Map<string, (decision: any) => void>,
+ *   pendingFolderTrust: Map<string, (decision: any) => void>,
  *   disposed: boolean,
  *   generation: number,
  *   lastCwd: string | null,
@@ -307,8 +308,10 @@ export function clearPendingPermissions(ws) {
   cancelAllPermissions(undefined, owner);
   const plans = [...ws.pendingPlanApprovals.values()];
   const asks = [...ws.pendingUserQuestions.values()];
+  const trusts = [...(ws.pendingFolderTrust?.values?.() || [])];
   ws.pendingPlanApprovals.clear();
   ws.pendingUserQuestions.clear();
+  ws.pendingFolderTrust?.clear?.();
   for (const settle of plans) {
     try {
       settle({ type: "abandoned" });
@@ -319,6 +322,13 @@ export function clearPendingPermissions(ws) {
   for (const settle of asks) {
     try {
       settle({ type: "declined" });
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const settle of trusts) {
+    try {
+      settle({ outcome: "reject" });
     } catch {
       /* ignore */
     }
@@ -590,6 +600,40 @@ export function ensureAgent(ws, cwd, opts = {}) {
         );
         ws.pendingPlanApprovals.set(reqId, settle);
         send(ws, "agent:plan-approval-request", { reqId, params });
+      }),
+    );
+
+    agent.on(
+      "folder-trust-request",
+      ifCurrent(({ params, respond }) => {
+        const reqId = makeReqId("trust");
+        let settled = false;
+        /** @type {ReturnType<typeof setTimeout> | null} */
+        let timer = null;
+        const settle = (decision) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          timer = null;
+          ws.pendingFolderTrust.delete(reqId);
+          try {
+            respond(decision || { outcome: "reject" });
+          } catch {
+            /* ignore */
+          }
+          if (ws.agent === agent) {
+            send(ws, "agent:folder-trust-dismiss", {
+              reqId,
+              timedOut: Boolean(decision?.timedOut),
+            });
+          }
+        };
+        timer = setTimeout(
+          () => settle({ outcome: "reject", timedOut: true }),
+          30 * 60_000,
+        );
+        ws.pendingFolderTrust.set(reqId, settle);
+        send(ws, "agent:folder-trust-request", { reqId, params });
       }),
     );
 
@@ -1017,6 +1061,7 @@ export function createWindowSession(win) {
     stopBackgroundTaskTail: null,
     pendingPlanApprovals: new Map(),
     pendingUserQuestions: new Map(),
+    pendingFolderTrust: new Map(),
     disposed: false,
     writesChain: Promise.resolve(),
     generation: 0,

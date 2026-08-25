@@ -557,6 +557,10 @@ declare global {
           | { type: "answered"; answers: Record<string, string> }
           | { type: "declined" },
       ) => Promise<boolean>;
+      respondFolderTrust: (
+        reqId: string,
+        decision: { outcome: "trust" | "reject" },
+      ) => Promise<boolean>;
       setAlwaysApprove: (value: boolean) => Promise<boolean>;
       setPermissionMode: (
         value: "ask" | "auto" | "always-approve",

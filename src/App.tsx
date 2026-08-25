@@ -12,6 +12,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { StatusBar } from "./components/StatusBar";
 import { PlanApprovalDialog } from "./components/PlanApprovalDialog";
 import { AskUserDialog } from "./components/AskUserDialog";
+import { FolderTrustDialog } from "./components/FolderTrustDialog";
 import {
   WorktreeDialog,
   type WorktreeDialogState,
@@ -155,6 +156,7 @@ export default function App() {
     sessionMode,
     planApproval,
     userQuestion,
+    folderTrust,
     clearSessionScoped,
     revokeWritesThisSession,
     hydrateBackgroundTasks,
@@ -167,6 +169,7 @@ export default function App() {
     onRevokeWritesThisSession,
     onPlanApproval,
     onUserQuestion,
+    onFolderTrust,
   } = useAgentEvents({
     openingRef,
     setConn,
@@ -1330,6 +1333,10 @@ export default function App() {
         <AskUserDialog
           request={userQuestion}
           onRespond={(reqId, decision) => void onUserQuestion(reqId, decision)}
+        />
+        <FolderTrustDialog
+          request={folderTrust}
+          onRespond={(reqId, decision) => void onFolderTrust(reqId, decision)}
         />
     </PrivacyProvider>
   );

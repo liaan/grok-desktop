@@ -56,6 +56,17 @@ export function isTooBroadRoot(p) {
   return false;
 }
 
+/**
+ * Grok ACP worktrees are a new git root. Folder-trust would otherwise skip
+ * project MCP/hooks until a prompt. Auto-trust those paths — the user already
+ * created them from a repo they had open.
+ * @param {string} [cwd]
+ * @param {string} [workspace]
+ */
+export function shouldAutoTrustFolder(cwd, workspace) {
+  return isGrokAcpWorktreePath(cwd) || isGrokAcpWorktreePath(workspace);
+}
+
 /** True after realpath if `p` is a directory inside ~/.grok/worktrees (not the bucket). */
 export function isGrokAcpWorktreePath(p) {
   const n = normalizeCheckoutPath(p);

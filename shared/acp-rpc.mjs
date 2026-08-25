@@ -508,6 +508,76 @@ export function isTerminalMethod(method) {
 }
 
 /**
+ * Grok folder-trust reverse-request (stdio `_x.ai/folder_trust/request`).
+ * Client must advertise `clientCapabilities._meta["x.ai/folderTrust"].interactive`.
+ * @param {unknown} method
+ */
+export function isFolderTrustMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return (
+    m === "x.ai/folder_trust/request" ||
+    m.endsWith("/folder_trust/request")
+  );
+}
+
+/**
+ * Peel `ext_method` wrapping so stdio `_x.ai/…` and nested ExtRequest share params.
+ * @param {unknown} method
+ * @param {any} params
+ */
+export function unwrapFolderTrustParams(method, params) {
+  if (isFolderTrustMethod(method)) return params;
+  if (
+    params &&
+    typeof params === "object" &&
+    isFolderTrustMethod(params.method)
+  ) {
+    return params.params !== undefined ? params.params : params;
+  }
+  return params;
+}
+
+/**
+ * @param {any} params
+ */
+export function parseFolderTrustRequest(params) {
+  const p = params && typeof params === "object" ? params : {};
+  const kinds = Array.isArray(p.configKinds)
+    ? p.configKinds
+    : Array.isArray(p.config_kinds)
+      ? p.config_kinds
+      : [];
+  return {
+    sessionId: String(p.sessionId || p.session_id || "").trim(),
+    cwd: String(p.cwd || "").trim(),
+    workspace: String(p.workspace || p.cwd || "").trim(),
+    configKinds: kinds.map((k) => String(k || "").trim()).filter(Boolean),
+  };
+}
+
+/**
+ * Wire response. Only `"trust"` unblocks project MCP/hooks; anything else is reject.
+ * @param {unknown} outcome
+ */
+export function folderTrustResponse(outcome) {
+  const o = String(outcome || "")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  return { outcome: o === "trust" ? "trust" : "reject" };
+}
+
+/** Initialize `clientCapabilities` including Grok folder-trust prompt. */
+export function acpClientCapabilities() {
+  return {
+    fs: { readTextFile: true, writeTextFile: true },
+    terminal: true,
+    _meta: {
+      "x.ai/folderTrust": { interactive: true },
+    },
+  };
+}
+
+/**
  * JSON-RPC 2.0 error codes must be integers. Node fs/spawn use string codes
  * (ENOENT, EACCES); never pass those through on the wire — agents can hang.
  * @param {unknown} code

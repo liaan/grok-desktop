@@ -24,6 +24,7 @@ import {
   extraAllowedRootsFor,
   isGrokAcpWorktreePath,
   isPrimaryDesktopInstance,
+  shouldAutoTrustFolder,
   isTooBroadRoot,
   listAcpWorktrees,
   listAndRegisterAcpWorktrees,
@@ -236,6 +237,9 @@ test("isTooBroadRoot / isGrokAcpWorktreePath allowlist", (t) => {
   assert.equal(isGrokAcpWorktreePath(wt), true);
   assert.equal(isGrokAcpWorktreePath(src), false);
   assert.equal(isGrokAcpWorktreePath(path.join(home, "worktrees")), false);
+  assert.equal(shouldAutoTrustFolder(wt), true);
+  assert.equal(shouldAutoTrustFolder(src), false);
+  assert.equal(shouldAutoTrustFolder(src, wt), true);
 });
 
 test("registerValidatedFamily live cwd is the ACP worktree", (t) => {

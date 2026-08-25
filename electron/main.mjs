@@ -1305,6 +1305,14 @@ function registerIpc() {
     return true;
   });
 
+  ipcMain.handle("agent:folder-trust-respond", async (e, { reqId, decision }) => {
+    const ws = sessionFromEvent(e);
+    const settle = ws?.pendingFolderTrust.get(reqId);
+    if (!settle) return false;
+    settle(decision || { outcome: "reject" });
+    return true;
+  });
+
   /**
    * Apply global permission mode to every live window agent.
    * Always ↔ Ask/Auto crosses a process-level CLI flag and must restart
