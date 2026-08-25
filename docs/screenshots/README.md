@@ -8,6 +8,7 @@ Product shots for the GitHub README (theme-matched HTML mocks of the real UI).
 | `welcome.png` | Sign-in / welcome |
 | `approvals.png` | Tool permission card |
 | `preview.png` | Detachable Preview window (address bar + guest page) |
+| `worktree.png` | Same-checkout prompt — switch, reuse, or create a Grok worktree |
 
 ## Regenerate
 

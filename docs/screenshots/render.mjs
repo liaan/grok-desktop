@@ -41,6 +41,7 @@ const shots = [
   { html: "mock-approvals.html", out: "approvals.png", w: 1200, h: 800 },
   { html: "mock-welcome.html", out: "welcome.png", w: 1100, h: 860 },
   { html: "mock-preview.html", out: "preview.png", w: 1240, h: 840 },
+  { html: "mock-worktree.html", out: "worktree.png", w: 1240, h: 840 },
 ];
 
 for (const s of shots) {

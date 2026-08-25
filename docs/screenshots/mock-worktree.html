@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Grok Desktop — worktree</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f3f7;
+      --bg-elevated: #ffffff;
+      --bg-soft: #e8e8ef;
+      --border: #d4d4e0;
+      --border-soft: #e2e2ec;
+      --text: #14141c;
+      --text-muted: #5a5a6e;
+      --accent: #7c3aed;
+      --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background:
+        radial-gradient(ellipse 80% 50% at 70% -10%, rgba(167, 139, 250, 0.22), transparent 50%),
+        linear-gradient(180deg, #e4e8f4 0%, #d5dde8 100%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    .stage {
+      position: relative;
+      width: 1120px;
+      height: 720px;
+    }
+    .window {
+      width: 100%;
+      height: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #c8c8d6;
+      box-shadow: 0 30px 80px rgba(40, 40, 70, 0.16);
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      background: var(--bg);
+    }
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, #fafafc 0%, #f0f0f5 100%);
+      padding: 16px;
+    }
+    .brand { font-size: 15px; font-weight: 650; margin-bottom: 18px; }
+    .brand span { display: block; font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 3px; }
+    .sec-h {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+    .rec {
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--text-muted);
+    }
+    .rec.on { background: #eee9ff; color: var(--accent); font-weight: 600; }
+    .badge {
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #059669;
+      margin-left: 6px;
+    }
+    .main { display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      background: #fafafc;
+    }
+    .topbar-title { font-size: 15px; font-weight: 650; }
+    .cwd { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+    .welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--text-muted);
+    }
+    .welcome h2 { margin: 0; color: var(--text); font-size: 20px; }
+    .scrim {
+      position: absolute;
+      inset: 0;
+      background: rgba(20, 20, 36, 0.38);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      border-radius: 14px;
+    }
+    .dialog {
+      width: min(560px, 100%);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(20, 20, 40, 0.28);
+      display: flex;
+      flex-direction: column;
+    }
+    .hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .hdr h2 { margin: 0; font-size: 16px; font-weight: 650; }
+    .ghost {
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 16px;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+    }
+    .body { padding: 8px 16px 16px; }
+    .lead { margin: 8px 0 10px; font-size: 13px; line-height: 1.45; }
+    .lead code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg-soft);
+      padding: 1px 6px;
+      border-radius: 5px;
+    }
+    .path {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      word-break: break-all;
+      margin: 0 0 10px;
+    }
+    .muted { margin: 0 0 8px; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+    .muted code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--bg-soft);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .existing { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .existing-label {
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .existing-btn {
+      text-align: left;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .existing-btn .name { display: block; font-size: 13px; font-weight: 600; }
+    .existing-btn .path {
+      display: block;
+      margin: 2px 0 0;
+      font-size: 11px;
+    }
+    .footer {
+      padding: 12px 16px 16px;
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+      border-top: 1px solid var(--border-soft);
+    }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+      border-color: #6d28d9;
+      color: white;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="window">
+      <aside class="sidebar">
+        <div class="brand">Grok Desktop<span>dealeronline-web</span></div>
+        <p class="sec-h">Recent</p>
+        <div class="rec on">dealeronline-web <span class="badge">open</span></div>
+        <div class="rec">grok-desktop</div>
+        <div class="rec">ops-control</div>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <div class="topbar-title">Open a project</div>
+          <div class="cwd">Same folder is already in another window</div>
+        </div>
+        <div class="welcome">
+          <h2>Open project…</h2>
+          <p>Recent folders, or create a Grok worktree.</p>
+        </div>
+      </main>
+    </div>
+    <div class="scrim">
+      <div class="dialog">
+        <div class="hdr">
+          <h2>This folder is already open</h2>
+          <button class="ghost" type="button" aria-label="Cancel">✕</button>
+        </div>
+        <div class="body">
+          <p class="lead">
+            Another Grok window is already using <strong>dealeronline-web</strong>
+            on <code>feat/checkout</code>. Two windows on the same checkout share
+            files and the same branch.
+          </p>
+          <p class="path">G:\src\dealeronline-web</p>
+          <p class="muted">
+            Create a Grok worktree (same as TUI <code>/new</code> with a worktree).
+            Grok picks the path under <code>~/.grok/worktrees</code> — no branch or
+            folder to type.
+          </p>
+          <div class="existing">
+            <div class="existing-label">Existing Grok worktrees (not open)</div>
+            <div class="existing-btn">
+              <span class="name">2026-08-25-wt · feat/listings</span>
+              <span class="path">~\.grok\worktrees\dealeronline-web\2026-08-25-wt</span>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">Open anyway</button>
+          <button class="btn" type="button">Switch to open window</button>
+          <button class="btn primary" type="button">Create worktree</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

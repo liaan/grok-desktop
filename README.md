@@ -19,10 +19,12 @@ Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding a
 <p align="center">
 
 ![Detachable Preview window: address bar, viewport, Snapshot — drag to another screen](docs/screenshots/preview.png)
+&nbsp;
+![This folder is already open: switch window, reuse a Grok worktree, or create one](docs/screenshots/worktree.png)
 
 </p>
 
-<p align="center"><sub>Day theme · browser sign-in · tool approvals · detachable Preview window</sub></p>
+<p align="center"><sub>Day theme · browser sign-in · tool approvals · detachable Preview · Grok worktrees</sub></p>
 
 ## Install for the team (no npm)
 
