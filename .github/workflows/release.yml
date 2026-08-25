@@ -179,6 +179,18 @@ jobs:
               mv "$f" "${f%-Mac-x64.dmg}-Mac-Intel.dmg"
             done
           fi
+          # AppImage ${arch} is x86_64; team notes / README use Linux-x64.
+          # Keep latest-linux.yml in lockstep so in-app update still finds the file.
+          if ls GrokDesktop-*-Linux-x86_64.AppImage 1>/dev/null 2>&1; then
+            for f in GrokDesktop-*-Linux-x86_64.AppImage; do
+              mv "$f" "${f%-Linux-x86_64.AppImage}-Linux-x64.AppImage"
+            done
+            if [ -f latest-linux.yml ]; then
+              tmp=$(mktemp)
+              sed 's/-Linux-x86_64.AppImage/-Linux-x64.AppImage/g' latest-linux.yml > "$tmp"
+              mv "$tmp" latest-linux.yml
+            fi
+          fi
           echo "=== Release files ==="
           ls -la
 

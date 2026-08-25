@@ -115,7 +115,7 @@
         }
       ],
       "category": "Development",
-      "artifactName": "GrokDesktop-${version}-Linux-${arch}.${ext}"
+      "artifactName": "GrokDesktop-${version}-Linux-x64.${ext}"
     }
   }
 }
