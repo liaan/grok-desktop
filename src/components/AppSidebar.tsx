@@ -239,7 +239,7 @@ export const AppSidebar = memo(function AppSidebar({
             type="button"
             style={{ marginTop: 8 }}
             disabled={busyGate}
-            title="Create a git worktree and open it in a new window"
+            title="Create a Grok worktree and open it in a new window"
             onClick={onNewWorktree}
           >
             New worktree…

@@ -4,6 +4,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { buildGrokEnv } from "./grok-home.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,7 +18,7 @@ function gitExecOpts(cwd, extra = {}) {
     timeout: extra.timeout ?? 4000,
     maxBuffer: extra.maxBuffer ?? 64 * 1024,
     windowsHide: true,
-    env: process.env,
+    env: buildGrokEnv(),
     encoding: "utf8",
   };
 }

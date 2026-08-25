@@ -326,9 +326,6 @@ export type WorktreeInfo = {
   path: string;
   head: string | null;
   branch: string | null;
-  detached: boolean;
-  bare: boolean;
-  locked: boolean;
   open: boolean;
   label?: string | null;
 };
@@ -346,10 +343,7 @@ export type CheckoutInspect = {
   git: boolean;
   currentBranch: string | null;
   detached: boolean;
-  branches: string[];
-  checkedOutBranches: string[];
   worktrees: WorktreeInfo[];
-  suggestedDir: string | null;
   occupancy: CheckoutOccupancy | null;
 };
 

@@ -96,11 +96,18 @@ import {
   windowCycleKind,
   windowListMenuItems,
 } from "./window-menu.mjs";
-import { sameCheckoutPath } from "./git-worktrees.mjs";
 import {
-  buildCheckoutConflict,
-  inspectCheckoutForUi,
-} from "./checkout-occupancy.mjs";
+  agentForWorktreeRpc,
+  commitFamilyAfterOpen,
+  configureDesktopInstance,
+  createAcpWorktree,
+  inspectProjectCheckout,
+  isPrimaryDesktopInstance,
+  planProjectOpen,
+  resolveWorktreeCreateCwd,
+  wireSecondInstance,
+  wireWorktreePathGate,
+} from "./desktop-worktrees.mjs";
 import {
   maybeWarmDockerSandbox,
   probeSandbox,
@@ -203,6 +210,7 @@ function loadState() {
     merged.allowPrerelease = Boolean(merged.allowPrerelease);
     merged.externalEditor = normalizeExternalEditor(merged.externalEditor);
     merged.autoCompactAt = normalizeAutoCompactAt(merged.autoCompactAt);
+    delete merged.worktreeSources;
     return merged;
   } catch {
     return {
@@ -304,27 +312,6 @@ function focusWindow(win) {
 function newWindowFromMenu() {
   // Keep the shell hidden until the renderer paints — do not show a blank frame.
   createWindow();
-}
-
-/**
- * Live ACP agent whose cwd is this checkout (or any live agent as fallback).
- * Worktree create/list must go through that agent — not `git` from Desktop.
- * @param {string} cwd
- * @param {import('./window-session.mjs').WindowSession | null} [prefer]
- */
-function agentForWorktreeRpc(cwd, prefer = null) {
-  if (prefer?.agent?.ready && prefer.agent.cwd) return prefer.agent;
-  if (cwd) {
-    for (const other of windowSessions.values()) {
-      if (other.disposed || !other.agent?.ready || !other.agent.cwd) continue;
-      if (sameCheckoutPath(other.agent.cwd, cwd)) return other.agent;
-    }
-  }
-  for (const other of windowSessions.values()) {
-    if (other.disposed || !other.agent?.ready || !other.agent.cwd) continue;
-    return other.agent;
-  }
-  return null;
 }
 
 /**
@@ -1035,29 +1022,18 @@ function registerIpc() {
     if (!cwd || !fs.existsSync(cwd)) {
       throw new Error(`Project path not found: ${cwd}`);
     }
-    if (!opts?.allowSameCheckout) {
-      const agent = agentForWorktreeRpc(cwd, ws);
-      /** @type {any[]} */
-      let acpWorktrees = [];
-      if (agent?.listWorktrees) {
-        try {
-          acpWorktrees = await agent.listWorktrees({ repo: cwd });
-        } catch {
-          acpWorktrees = [];
-        }
-      }
-      const conflict = await buildCheckoutConflict(
-        cwd,
-        collectOpenCheckouts(),
-        ws.win.id,
-        { acpWorktrees },
-      );
-      if (conflict) return conflict;
-    }
+    const agent = agentForWorktreeRpc(cwd, ws, windowSessions.values());
     ws.openingCwd = cwd;
     broadcastOpenCheckouts();
     try {
-      return await openSessionOnWindow(ws, {
+      const plan = await planProjectOpen(cwd, {
+        agent,
+        openRows: collectOpenCheckouts(),
+        excludeWindowId: ws.win.id,
+        allowSameCheckout: Boolean(opts?.allowSameCheckout),
+      });
+      if (plan.conflict) return plan.conflict;
+      const result = await openSessionOnWindow(ws, {
         cwd,
         mode: opts?.mode || "continue",
         sessionId: opts?.sessionId,
@@ -1066,6 +1042,8 @@ function registerIpc() {
         listSessions: listSessionsForCwd,
         remember: rememberProjectSession,
       });
+      await commitFamilyAfterOpen(cwd, ws.agent, plan.acpWorktrees);
+      return result;
     } finally {
       if (ws.openingCwd === cwd) ws.openingCwd = null;
       broadcastOpenCheckouts();
@@ -1104,53 +1082,34 @@ function registerIpc() {
       typeof cwd === "string" && cwd
         ? cwd
         : ws?.agent?.cwd || ws?.lastCwd;
-    if (!root) {
-      return {
-        cwd: "",
-        git: false,
-        currentBranch: null,
-        detached: false,
-        branches: [],
-        checkedOutBranches: [],
-        worktrees: [],
-        suggestedDir: null,
-        occupancy: null,
-      };
-    }
-    const agent = agentForWorktreeRpc(root, ws);
-    /** @type {any[]} */
-    let acpWorktrees = [];
-    if (agent?.listWorktrees) {
-      try {
-        acpWorktrees = await agent.listWorktrees({ repo: root });
-      } catch {
-        acpWorktrees = [];
-      }
-    }
-    return inspectCheckoutForUi(root, collectOpenCheckouts(), {
+    if (!root) return inspectProjectCheckout("");
+    const agent = agentForWorktreeRpc(root, ws, windowSessions.values());
+    return inspectProjectCheckout(root, {
+      agent,
+      openRows: collectOpenCheckouts(),
       excludeWindowId: ws?.win?.id ?? null,
-      acpWorktrees,
     });
   });
 
   /** Same as TUI `/new` worktree — ACP create, Grok chooses the path. */
   ipcMain.handle("worktree:create", async (e, opts = {}) => {
     const ws = sessionFromEvent(e);
-    const root =
-      typeof opts.cwd === "string" && opts.cwd
-        ? opts.cwd
-        : ws?.agent?.cwd || ws?.lastCwd;
-    if (!root) {
-      throw new Error("Open a project first — worktrees need a live Grok session.");
-    }
-    const agent = agentForWorktreeRpc(root, ws);
-    if (!agent?.createWorktreeFromCurrent) {
+    const sessionCwd = ws?.agent?.cwd || ws?.lastCwd;
+    const targetCwd = resolveWorktreeCreateCwd(
+      opts.cwd,
+      sessionCwd,
+      collectOpenCheckouts(),
+    );
+    if (!targetCwd) {
       throw new Error(
-        "Need a live Grok session to create a worktree (same as TUI /new).",
+        sessionCwd
+          ? "Worktree create is limited to the open project."
+          : "Open a project first — worktrees need a live Grok session.",
       );
     }
-    return agent.createWorktreeFromCurrent({
-      sourceCwd: root,
+    const agent = agentForWorktreeRpc(targetCwd, ws, windowSessions.values());
+    return createAcpWorktree(agent, {
+      sourceCwd: targetCwd,
       label: opts.label,
     });
   });
@@ -1701,7 +1660,19 @@ function registerIpc() {
   });
 }
 
+// One process, many windows. Start Menu / second launch must not start a
+// fresh occupancy map (that skipped the “already open” prompt).
+wireWorktreePathGate();
+configureDesktopInstance(app);
+const isPrimaryInstance = isPrimaryDesktopInstance(app);
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  wireSecondInstance(app, () => newWindowFromMenu());
+}
+
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return;
   setDesktopStateLoader(loadState);
   setAllowPrerelease(Boolean(loadState().allowPrerelease));
   registerIpc();

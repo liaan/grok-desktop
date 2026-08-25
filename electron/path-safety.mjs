@@ -5,19 +5,32 @@
  * symlink inside the project cannot point ACP fs/terminal paths outside.
  *
  * Linked git worktrees of the open project’s repository are also allowed
- * (sibling checkouts from `git worktree add`) without enabling full
- * “Allow outside project”.
+ * (`git worktree list --porcelain`) without enabling full “Allow outside
+ * project”. Grok ACP worktree family extra roots (standalone clones under
+ * ~/.grok/worktrees) apply only on the ACP `allowGrokHome` path — renderer
+ * IPC stays the open project + porcelain.
  *
  * Agent tools (ACP fs/* + terminal cwd) also always allow GROK_HOME (~/.grok)
  * so skills, agents, personas, sessions, and MCP config remain readable without
  * turning on “Allow outside project” or disabling the terminal sandbox.
- * Renderer IPC stays project-only (does not use allowGrokHome).
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { grokHomeDir } from "./grok-home.mjs";
 import { listLinkedWorktreeRoots } from "./git-worktrees.mjs";
+
+/** @type {(root: string) => string[]} */
+let extraAllowedRootsForRoot = (_root) => [];
+
+/**
+ * Extra allowed roots (Grok ACP worktree family). Containment helper only —
+ * callers own the map.
+ * @param {(root: string) => string[]} [fn]
+ */
+export function setExtraAllowedRootsFor(fn) {
+  extraAllowedRootsForRoot = typeof fn === "function" ? fn : () => [];
+}
 
 /**
  * Expand leading `~` / `~/` to the user home (POSIX + Windows-friendly).
@@ -87,12 +100,23 @@ function isUnder(rootAbs, targetAbs) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
+function extraFamilyRoots(root) {
+  try {
+    const extra = extraAllowedRootsForRoot(root);
+    return Array.isArray(extra) ? extra.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Allowed roots: open project + linked git worktrees of the same repo.
+ * Allowed roots: open project + porcelain-linked git worktrees.
+ * Pass `includeFamily` for ACP tools so Grok worktree extra roots apply.
  * @param {string} root
+ * @param {{ includeFamily?: boolean }} [opts]
  * @returns {string[]}
  */
-function allowedRoots(root) {
+function allowedRoots(root, opts = {}) {
   const resolvedRoot = path.resolve(root);
   /** @type {string[]} */
   const roots = [resolvedRoot];
@@ -104,6 +128,14 @@ function allowedRoots(root) {
   }
   for (const wt of listLinkedWorktreeRoots(resolvedRoot)) {
     roots.push(wt);
+  }
+  if (opts.includeFamily) {
+    for (const fam of extraFamilyRoots(resolvedRoot)) {
+      roots.push(fam);
+      for (const wt of listLinkedWorktreeRoots(fam)) {
+        roots.push(wt);
+      }
+    }
   }
   // de-dupe
   const seen = new Set();
@@ -241,7 +273,7 @@ export function assertPathInProjectOrGrokHome(root, target) {
     ? path.resolve(expanded)
     : path.resolve(resolvedRoot, expanded);
 
-  if (isUnderAnyRoot(allowedRoots(resolvedRoot), resolved)) {
+  if (isUnderAnyRoot(allowedRoots(resolvedRoot, { includeFamily: true }), resolved)) {
     return resolved;
   }
   if (isUnderAnyRoot(grokHomeRoots(), resolved)) {
@@ -251,7 +283,7 @@ export function assertPathInProjectOrGrokHome(root, target) {
   throw new Error(
     `Path is outside the open project and GROK_HOME: ${resolved} ` +
       `(project: ${resolvedRoot}, GROK_HOME: ${path.resolve(grokHomeDir())}). ` +
-      `Skills/agents under ~/.grok are always allowed; enable “Allow outside project” for other host paths.`,
+      `Skills/agents under ~/.grok and Grok worktrees of this repo are always allowed; enable “Allow outside project” for other host paths.`,
   );
 }
 

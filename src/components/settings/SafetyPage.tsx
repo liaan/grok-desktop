@@ -67,11 +67,12 @@ export function SafetyPage({
           <span className="settings-label">Allow outside project</span>
           <span className="settings-desc">
             When off (recommended), ACP file ops and terminal cwd must stay
-            inside the open project or a <strong>linked git worktree</strong> of
-            this repo (sibling checkouts from <code>git worktree add</code>).
-            Independent of terminal sandbox. File browser stays project-scoped
-            either way. Turn on only for paths that are not worktrees of this
-            repo.
+            inside the open project, a <strong>linked git worktree</strong> of
+            this repo, or a Grok worktree of this repo (
+            <code>~/.grok/worktrees</code>). File browser stays the open
+            folder and linked git worktrees — not the Grok worktree family.
+            Independent of terminal sandbox. Turn on only for unrelated host
+            paths.
           </span>
         </div>
         <input

@@ -38,6 +38,20 @@ export function findOccupyingCheckout(cwd, openRows, excludeWindowId = null) {
 }
 
 /**
+ * Empty inspect payload (no project path).
+ */
+export function emptyCheckoutInspect() {
+  return {
+    cwd: "",
+    git: false,
+    currentBranch: null,
+    detached: false,
+    worktrees: [],
+    occupancy: null,
+  };
+}
+
+/**
  * Snapshot for the duplicate-open prompt.
  * Worktree rows come from ACP `x.ai/git/worktree/list` (opts.acpWorktrees).
  *
@@ -55,23 +69,26 @@ export function findOccupyingCheckout(cwd, openRows, excludeWindowId = null) {
  */
 export async function inspectCheckoutForUi(cwd, openRows, opts = {}) {
   const root = normalizeCheckoutPath(cwd);
-  const git = Boolean(root && hasGitMarker(root));
+  if (!root) return emptyCheckoutInspect();
+  const git = Boolean(hasGitMarker(root));
   const occupancy = findOccupyingCheckout(
     root,
     openRows,
     opts.excludeWindowId ?? null,
   );
-  const occupancyBranch = occupancy
-    ? await getGitBranch(occupancy.cwd)
-    : { branch: null, detached: false };
+
+  let currentBranch = null;
+  let detached = false;
+  if (git) {
+    const cur = await getGitBranch(root);
+    currentBranch = cur.branch;
+    detached = cur.detached;
+  }
 
   const worktrees = (opts.acpWorktrees || []).map((t) => ({
     path: t.path,
     head: t.head || null,
     branch: t.gitRef || t.label || null,
-    detached: false,
-    bare: false,
-    locked: false,
     open: (openRows || []).some((row) => sameCheckoutPath(row.cwd, t.path)),
     label: t.label || null,
   }));
@@ -79,43 +96,17 @@ export async function inspectCheckoutForUi(cwd, openRows, opts = {}) {
   return {
     cwd: root,
     git,
-    currentBranch: occupancyBranch.branch,
-    detached: occupancyBranch.detached,
-    branches: [],
-    checkedOutBranches: [],
+    currentBranch,
+    detached,
     worktrees,
-    suggestedDir: null,
     occupancy: occupancy
       ? {
           windowId: occupancy.windowId,
           cwd: occupancy.cwd,
           title: occupancy.title || "",
-          branch: occupancyBranch.branch,
-          detached: occupancyBranch.detached,
+          branch: currentBranch,
+          detached,
         }
       : null,
-  };
-}
-
-/**
- * @param {string} cwd
- * @param {OpenCheckoutRow[]} openRows
- * @param {number | null} [excludeWindowId]
- * @param {{ acpWorktrees?: any[] }} [extra]
- */
-export async function buildCheckoutConflict(
-  cwd,
-  openRows,
-  excludeWindowId = null,
-  extra = {},
-) {
-  const snap = await inspectCheckoutForUi(cwd, openRows, {
-    excludeWindowId,
-    acpWorktrees: extra.acpWorktrees,
-  });
-  if (!snap.occupancy) return null;
-  return {
-    conflict: "checkout-open",
-    ...snap,
   };
 }

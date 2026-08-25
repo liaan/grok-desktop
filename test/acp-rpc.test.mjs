@@ -164,16 +164,58 @@ test("worktree ACP helpers match TUI create_from_worktree_sync", () => {
   assert.equal(worktreeListAttempts({ repo: "/repo" })[0].method, "_x.ai/git/worktree/list");
 
   const created = parseWorktreeCreateResponse({
-    result: { worktreePath: "/home/u/.grok/worktrees/repo/wt-1", newSessionId: "desktop-abc" },
+    result: {
+      worktreePath: "/home/u/.grok/worktrees/repo/wt-1",
+      newSessionId: "desktop-abc",
+      sourceGitRoot: "/repo",
+    },
     error: null,
   });
   assert.equal(created.path, "/home/u/.grok/worktrees/repo/wt-1");
+  assert.equal(created.sourceGitRoot, "/repo");
+  const createdSnake = parseWorktreeCreateResponse({
+    result: {
+      worktree_path: "/home/u/.grok/worktrees/repo/wt-2",
+      source_git_root: "/repo",
+    },
+    error: null,
+  });
+  assert.equal(createdSnake.sourceGitRoot, "/repo");
+  assert.equal(
+    parseWorktreeCreateResponse({
+      result: { worktreePath: "/home/u/.grok/worktrees/repo/wt-3" },
+      error: null,
+    }).sourceGitRoot,
+    null,
+  );
 
   const listed = parseWorktreeListResponse([
-    { path: "/home/u/.grok/worktrees/repo/wt-1", git_ref: "HEAD", metadata: { label: "fix" } },
+    {
+      path: "/home/u/.grok/worktrees/repo/wt-1",
+      git_ref: "HEAD",
+      source_repo: "/repo",
+      metadata: { label: "fix" },
+    },
   ]);
   assert.equal(listed[0].label, "fix");
   assert.equal(listed[0].gitRef, "HEAD");
+  assert.equal(listed[0].sourceRepo, "/repo");
+  const listedCamel = parseWorktreeListResponse({
+    worktrees: [
+      {
+        path: "/home/u/.grok/worktrees/repo/wt-2",
+        sourceRepo: "/repo",
+        label: "other",
+      },
+    ],
+  });
+  assert.equal(listedCamel[0].sourceRepo, "/repo");
+  assert.equal(listedCamel[0].label, "other");
+  assert.equal(
+    parseWorktreeListResponse([{ path: "/home/u/.grok/worktrees/repo/wt-3" }])[0]
+      .sourceRepo,
+    null,
+  );
 
   assert.equal(unwrapExtMethodResult({ result: { ok: true }, error: null }).ok, true);
   assert.throws(() => unwrapExtMethodResult({ error: "nope" }), /nope/);

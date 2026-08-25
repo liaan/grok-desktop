@@ -324,7 +324,8 @@ export function parseWorktreeCreateResponse(raw) {
     sessionId: String(
       obj.newSessionId || obj.new_session_id || obj.sessionId || "",
     ).trim() || undefined,
-    sourceGitRoot: obj.sourceGitRoot || obj.source_git_root || null,
+    sourceGitRoot:
+      String(obj.sourceGitRoot || obj.source_git_root || "").trim() || null,
   };
 }
 
@@ -363,6 +364,8 @@ export function parseWorktreeListResponse(raw) {
         gitRef: rec.git_ref || rec.gitRef || rec.branch || null,
         head: rec.head_commit || rec.headCommit || rec.head || null,
         sessionId: rec.session_id || rec.sessionId || null,
+        sourceRepo:
+          String(rec.source_repo || rec.sourceRepo || "").trim() || null,
       };
     })
     .filter(Boolean);

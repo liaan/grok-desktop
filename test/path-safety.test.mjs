@@ -3,6 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,8 +13,14 @@ import {
   isUnderGrokHome,
   resolveProjectPath,
   grokHomeRoots,
+  setExtraAllowedRootsFor,
 } from "../electron/path-safety.mjs";
 import { grokHomeDir } from "../electron/grok-home.mjs";
+import {
+  clearWorktreeRootCache,
+  listLinkedWorktreeRoots,
+  sameCheckoutPath,
+} from "../electron/git-worktrees.mjs";
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "grok-desktop-path-"));
 const project = path.join(tmpRoot, "project");
@@ -111,6 +118,95 @@ test("assertPathInProjectOrGrokHome rejects unrelated host paths", () => {
       ),
     /outside the open project and GROK_HOME/,
   );
+});
+
+test("extra family roots apply only with allowGrokHome", (t) => {
+  const extra = fs.mkdtempSync(path.join(os.tmpdir(), "grok-extra-"));
+  t.after(() => fs.rmSync(extra, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(extra, "x.txt"), "x");
+  setExtraAllowedRootsFor((root) =>
+    path.resolve(root) === path.resolve(project) ? [extra] : [],
+  );
+  t.after(() => setExtraAllowedRootsFor(() => []));
+  assert.throws(
+    () => assertPathInProject(project, path.join(extra, "x.txt")),
+    /outside the open project/,
+  );
+  const p = resolveProjectPath(project, path.join(extra, "x.txt"), {
+    allowGrokHome: true,
+  });
+  assert.equal(p, path.join(extra, "x.txt"));
+});
+
+test("extra family provider throw is ignored; reset drops extras", (t) => {
+  const extra = fs.mkdtempSync(path.join(os.tmpdir(), "grok-extra2-"));
+  t.after(() => fs.rmSync(extra, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(extra, "x.txt"), "x");
+  setExtraAllowedRootsFor(() => {
+    throw new Error("boom");
+  });
+  assert.equal(assertPathInProject(project, "ok.txt"), path.join(project, "ok.txt"));
+  assert.throws(
+    () =>
+      resolveProjectPath(project, path.join(extra, "x.txt"), {
+        allowGrokHome: true,
+      }),
+    /outside/,
+  );
+  setExtraAllowedRootsFor((root) =>
+    path.resolve(root) === path.resolve(project) ? [extra] : [],
+  );
+  resolveProjectPath(project, path.join(extra, "x.txt"), { allowGrokHome: true });
+  setExtraAllowedRootsFor(() => []);
+  assert.throws(
+    () =>
+      resolveProjectPath(project, path.join(extra, "x.txt"), {
+        allowGrokHome: true,
+      }),
+    /outside/,
+  );
+});
+
+test("linked git worktrees are allowed via porcelain without extra roots", async (t) => {
+  const git = spawnSync("git", ["--version"], {
+    windowsHide: true,
+    encoding: "utf8",
+  });
+  if (git.status !== 0) {
+    t.skip("git not on PATH");
+    return;
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "grok-ps-wt-"));
+  const repo = path.join(tmp, "app");
+  const sibling = path.join(tmp, "app-feat");
+  fs.mkdirSync(repo);
+  const run = (args, cwd = repo) => {
+    const r = spawnSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(r.status, 0, r.stderr || r.stdout);
+  };
+  const inited = spawnSync("git", ["init", "-b", "main"], {
+    cwd: repo,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (inited.status !== 0) run(["init"]);
+  run(["config", "user.email", "wt@example.com"]);
+  run(["config", "user.name", "Worktree Test"]);
+  fs.writeFileSync(path.join(repo, "ok.txt"), "hi\n");
+  run(["add", "ok.txt"]);
+  run(["commit", "-m", "init"]);
+  run(["worktree", "add", "-b", "feat", sibling]);
+  fs.writeFileSync(path.join(sibling, "feat.txt"), "feat");
+  clearWorktreeRootCache(repo);
+  const roots = listLinkedWorktreeRoots(repo, { refresh: true });
+  assert.ok(roots.some((r) => sameCheckoutPath(r, sibling)));
+  setExtraAllowedRootsFor(() => []);
+  const p = assertPathInProject(repo, path.join(sibling, "feat.txt"));
+  assert.equal(p, path.join(sibling, "feat.txt"));
 });
 
 test("grokHomeRoots includes resolved GROK_HOME", () => {

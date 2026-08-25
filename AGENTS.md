@@ -39,6 +39,7 @@ grok-desktop/
     main.mjs          # Window, IPC, agent lifecycle
     preload.cjs       # contextBridge (must stay CJS)
     acp-client.mjs    # spawn grok + JSON-RPC ACP
+    desktop-worktrees.mjs  # occupancy, ACP worktrees, single-instance
     auth.mjs          # login / logout via CLI
     backbone.mjs      # grok inspect (skills, MCP summary)
     grok-home.mjs     # resolve grok binary + GROK_HOME
@@ -199,7 +200,7 @@ PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **El
 - Desktop **continues** the latest session on open (`session/load` + history from `updates.jsonl`).
 - **New chat** → `session/new`. Sidebar lists chats from disk (`electron/sessions.mjs`).
 - Do not invent a parallel chat store; always use the CLI session layout.
-- **Multi-window same repo:** two windows on the same checkout share files and the current branch. Opening a folder that is already open in another Grok window prompts to switch, reuse a Grok worktree, or create one via ACP `x.ai/git/worktree/create_from_worktree_sync` (same as TUI `/new` worktree — Grok picks `~/.grok/worktrees/…`). File → **New Worktree Window…** uses that ACP call on the live agent. Do **not** spawn `git worktree add` from Desktop. Recents show an **open** badge when a folder is live in some window.
+- **Multi-window same repo:** two windows on the same checkout share files and the current branch. Opening a folder that is already open in another Grok window prompts to switch, reuse a Grok worktree, or create one via ACP `x.ai/git/worktree/create_from_worktree_sync` (same as TUI `/new` worktree). Grok owns the location: `~/.grok/worktrees/…` — not the repo’s `.grok` (that is project config; copies there would still sit outside a worktree cwd). Path gates treat the source checkout and those Grok worktrees as one family so skills can read both. A second Start Menu launch joins the existing process (new window); occupancy is in-process. Do **not** spawn `git worktree add` from Desktop. Recents show an **open** badge when a folder is live in some window.
 
 ---
 
@@ -214,14 +215,16 @@ PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **El
 
 Canonical helpers: `electron/path-safety.mjs` (`assertPathInProject`, `resolveProjectPath`). Paths are checked **lexically** and with **`realpath`** (symlinks inside the project that point outside are rejected). New write targets realpath the nearest existing ancestor.
 
-**Linked git worktrees** of the open project’s repository are also allowed when the gate is on (via `git worktree list` — see `electron/git-worktrees.mjs`). Sibling checkouts from `git worktree add ../foo` therefore work for ACP `fs/*` and terminal cwd without enabling full host access. Unrelated paths still need **Allow outside project**.
+**Linked git worktrees** of the open project’s repository are also allowed when the gate is on (via `git worktree list` — see `electron/git-worktrees.mjs`). Sibling checkouts from `git worktree add ../foo` therefore work for ACP `fs/*` and terminal cwd without enabling full host access.
+
+**Grok ACP worktrees** (`~/.grok/worktrees/…`) are standalone clones — they do **not** appear in porcelain. Desktop pairs them with the source checkout from validated ACP list/create (in-memory family in `electron/desktop-worktrees.mjs`). Extra family roots apply only on the ACP `allowGrokHome` path, not renderer IPC. Unrelated paths still need **Allow outside project**.
 
 | Surface | Gated by “Allow outside project”? | Behavior |
 |---------|-----------------------------------|----------|
-| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(..., { allowOutside, allowGrokHome: true })` — **project + worktrees + `GROK_HOME` (`~/.grok` skills/agents/personas/sessions) always OK**; other host paths need Allow outside |
-| ACP `terminal/create` cwd | Yes | Same helper (project / worktrees / `GROK_HOME`) |
+| ACP `fs/read_text_file` / `fs/write_text_file` | Yes (default off = blocked) | `resolveProjectPath(..., { allowOutside, allowGrokHome: true })` — **project + porcelain worktrees + Grok ACP family + `GROK_HOME`** always OK; other host paths need Allow outside |
+| ACP `terminal/create` cwd | Yes | Same helper (project / porcelain / Grok family / `GROK_HOME`) |
 | Terminal **sandbox** jail | Independent | Home jail **except** open project + **`GROK_HOME` bind** (skills still readable); rest of `$HOME` blocked |
-| Renderer IPC (`fs:read-file`, `fs:list-dir`, shell open/show) | **No — always project-scoped** | Requires an open project; cannot leave the folder even if the agent may |
+| Renderer IPC (`fs:read-file`, `fs:list-dir`, shell open/show) | **No — always project-scoped** | Open project + porcelain linked worktrees only; not the in-memory Grok family, not a GROK_HOME dump |
 
 Stored in `desktop-state.json` as `allowOutsideProject`. UI confirm when turning on.
 

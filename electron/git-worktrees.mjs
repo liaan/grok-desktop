@@ -1,11 +1,16 @@
 /**
- * Discover git worktree roots linked to the open project repository.
- * Used so ACP fs/terminal path gates allow sibling worktrees without
- * turning on full “Allow outside project”.
+ * Discover git worktree roots linked to the open project repository
+ * (`git worktree list --porcelain`). Used so ACP fs/terminal path gates
+ * allow sibling git worktrees without turning on “Allow outside project”.
+ *
+ * Grok ACP worktrees under ~/.grok/worktrees are standalone clones — they
+ * do not appear here. Pairing those with the source checkout is owned by
+ * desktop-worktrees.mjs (ACP list/create).
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { buildGrokEnv } from "./grok-home.mjs";
 
 /** @type {Map<string, { at: number, roots: string[] }>} */
 const cache = new Map();
@@ -55,18 +60,25 @@ export function normalizeCheckoutPath(p) {
 }
 
 /**
+ * Identity key for a checkout (realpath + Windows case-fold).
+ * @param {string} p
+ * @returns {string}
+ */
+export function checkoutKey(p) {
+  const n = normalizeCheckoutPath(p);
+  if (!n) return "";
+  return process.platform === "win32" ? n.toLowerCase() : n;
+}
+
+/**
  * Same working tree (realpath + Windows case-fold).
  * @param {string} a
  * @param {string} b
  */
 export function sameCheckoutPath(a, b) {
-  const na = normalizeCheckoutPath(a);
-  const nb = normalizeCheckoutPath(b);
-  if (!na || !nb) return false;
-  if (process.platform === "win32") {
-    return na.toLowerCase() === nb.toLowerCase();
-  }
-  return na === nb;
+  const ka = checkoutKey(a);
+  const kb = checkoutKey(b);
+  return Boolean(ka && kb && ka === kb);
 }
 
 /**
@@ -99,34 +111,20 @@ export function parseWorktreePorcelain(text) {
  */
 export function listLinkedWorktreeRoots(projectRoot, opts = {}) {
   if (!projectRoot || typeof projectRoot !== "string") return [];
-  const key = path.resolve(projectRoot);
+  const resolved = path.resolve(projectRoot);
+  const key = checkoutKey(resolved) || resolved;
   const now = Date.now();
   if (!opts.refresh) {
     const hit = cache.get(key);
     if (hit && now - hit.at < CACHE_TTL_MS) return hit.roots;
   }
 
-  if (!hasGitMarker(key)) {
+  if (!hasGitMarker(resolved)) {
     cache.set(key, { at: now, roots: [] });
     return [];
   }
 
-  let result;
-  try {
-    result = spawnSync(
-      "git",
-      ["-C", key, "worktree", "list", "--porcelain"],
-      {
-        encoding: "utf8",
-        timeout: 8_000,
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-  } catch {
-    cache.set(key, { at: now, roots: [] });
-    return [];
-  }
+  const result = gitSync(["-C", resolved, "worktree", "list", "--porcelain"]);
 
   if (result.status !== 0) {
     cache.set(key, { at: now, roots: [] });
@@ -142,10 +140,10 @@ export function listLinkedWorktreeRoots(projectRoot, opts = {}) {
   /** @type {string[]} */
   const unique = [];
   for (const r of roots) {
-    const n = path.resolve(r);
+    const n = checkoutKey(r) || path.resolve(r);
     if (seen.has(n)) continue;
     seen.add(n);
-    unique.push(n);
+    unique.push(path.resolve(r));
   }
 
   cache.set(key, { at: now, roots: unique });
@@ -157,67 +155,11 @@ export function listLinkedWorktreeRoots(projectRoot, opts = {}) {
  * @param {string} [projectRoot]
  */
 export function clearWorktreeRootCache(projectRoot) {
-  if (projectRoot) cache.delete(path.resolve(projectRoot));
-  else cache.clear();
-}
-
-/**
- * @typedef {{
- *   path: string,
- *   head: string | null,
- *   branch: string | null,
- *   detached: boolean,
- *   bare: boolean,
- *   locked: boolean,
- * }} WorktreeEntry
- */
-
-/**
- * Parse `git worktree list --porcelain` into entries (path, HEAD, branch).
- * @param {string} text
- * @returns {WorktreeEntry[]}
- */
-export function parseWorktreePorcelainEntries(text) {
-  /** @type {WorktreeEntry[]} */
-  const entries = [];
-  /** @type {WorktreeEntry | null} */
-  let cur = null;
-  const flush = () => {
-    if (cur?.path) entries.push(cur);
-    cur = null;
-  };
-  for (const line of String(text || "").split(/\r?\n/)) {
-    if (line.startsWith("worktree ")) {
-      flush();
-      const p = line.slice("worktree ".length).trim();
-      cur = {
-        path: p ? path.resolve(p) : "",
-        head: null,
-        branch: null,
-        detached: false,
-        bare: false,
-        locked: false,
-      };
-      continue;
-    }
-    if (!cur) continue;
-    if (line.startsWith("HEAD ")) {
-      cur.head = line.slice("HEAD ".length).trim() || null;
-    } else if (line.startsWith("branch ")) {
-      const ref = line.slice("branch ".length).trim();
-      cur.branch = ref.replace(/^refs\/heads\//, "") || null;
-    } else if (line === "detached") {
-      cur.detached = true;
-    } else if (line === "bare") {
-      cur.bare = true;
-    } else if (line.startsWith("locked")) {
-      cur.locked = true;
-    } else if (line === "") {
-      flush();
-    }
-  }
-  flush();
-  return entries;
+  if (projectRoot) {
+    const resolved = path.resolve(projectRoot);
+    cache.delete(checkoutKey(resolved) || resolved);
+    cache.delete(resolved);
+  } else cache.clear();
 }
 
 /**
@@ -231,6 +173,7 @@ function gitSync(args, opts = {}) {
       timeout: opts.timeout ?? 8_000,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: buildGrokEnv(),
     });
   } catch (err) {
     return {
@@ -240,170 +183,4 @@ function gitSync(args, opts = {}) {
       error: err,
     };
   }
-}
-
-/**
- * Full worktree list for the repo at `projectRoot` (including the main
- * checkout). Empty when not a git repo or git missing.
- * @param {string} projectRoot
- * @returns {WorktreeEntry[]}
- */
-export function listLinkedWorktrees(projectRoot) {
-  if (!projectRoot || typeof projectRoot !== "string") return [];
-  const key = path.resolve(projectRoot);
-  if (!hasGitMarker(key)) return [];
-
-  const result = gitSync(["-C", key, "worktree", "list", "--porcelain"]);
-  if (result.status !== 0) return [];
-
-  /** @type {WorktreeEntry[]} */
-  const unique = [];
-  for (const entry of parseWorktreePorcelainEntries(result.stdout || "")) {
-    const n = normalizeCheckoutPath(entry.path);
-    if (!n) continue;
-    if (unique.some((e) => sameCheckoutPath(e.path, n))) continue;
-    unique.push({ ...entry, path: n });
-  }
-  return unique;
-}
-
-/**
- * Folder-name fragment from a branch (`feat/foo` → `feat-foo`).
- * @param {string} branch
- */
-export function slugifyBranchForDir(branch) {
-  const s = String(branch || "")
-    .trim()
-    .replace(/[/\\]+/g, "-")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-.]+|[-.]+$/g, "");
-  return s.slice(0, 60) || "work";
-}
-
-/**
- * Sibling directory next to the main worktree: `{repo}-{branch-slug}`.
- * Skips paths that already exist or are listed in `existingPaths`.
- * @param {string} mainRoot
- * @param {string} branchName
- * @param {string[]} [existingPaths]
- */
-export function suggestWorktreeDir(mainRoot, branchName, existingPaths = []) {
-  const root = path.resolve(mainRoot);
-  const parent = path.dirname(root);
-  const base = path.basename(root);
-  const slug = slugifyBranchForDir(branchName);
-  const taken = (p) => {
-    try {
-      if (fs.existsSync(p)) return true;
-    } catch {
-      /* ignore */
-    }
-    return existingPaths.some((e) => sameCheckoutPath(e, p));
-  };
-  let dir = path.join(parent, `${base}-${slug}`);
-  let n = 2;
-  while (taken(dir)) {
-    dir = path.join(parent, `${base}-${slug}-${n}`);
-    n += 1;
-    if (n > 99) break;
-  }
-  return dir;
-}
-
-/**
- * Local branch short names (`git for-each-ref refs/heads`).
- * @param {string} cwd
- * @returns {string[]}
- */
-export function listLocalBranchNames(cwd) {
-  if (!cwd || typeof cwd !== "string" || !hasGitMarker(cwd)) return [];
-  const result = gitSync([
-    "-C",
-    path.resolve(cwd),
-    "for-each-ref",
-    "--format=%(refname:short)",
-    "refs/heads",
-  ]);
-  if (result.status !== 0) return [];
-  return String(result.stdout || "")
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/**
- * @param {string} cwd
- * @param {string} branch
- * @returns {string | null} git error or null if ok
- */
-export function checkBranchName(cwd, branch) {
-  const name = String(branch || "").trim();
-  if (!name) return "Branch name is required.";
-  const result = gitSync(
-    ["-C", path.resolve(cwd), "check-ref-format", "--branch", name],
-    { timeout: 4_000 },
-  );
-  if (result.status !== 0) {
-    const err = String(result.stderr || result.stdout || "").trim();
-    return err || `Invalid branch name: ${name}`;
-  }
-  return null;
-}
-
-/**
- * Create a linked worktree. New branch (`-b`) when `branch` does not exist;
- * otherwise attach to that existing branch (git refuses if it is already
- * checked out in another worktree).
- *
- * @param {string} cwd  any worktree of the repo
- * @param {{ dir: string, branch: string, startPoint?: string }} opts
- * @returns {{ path: string, branch: string, createdBranch: boolean }}
- */
-export function addGitWorktree(cwd, opts) {
-  const root = path.resolve(cwd);
-  const branch = String(opts?.branch || "").trim();
-  const dir = path.resolve(String(opts?.dir || "").trim());
-  if (!hasGitMarker(root)) {
-    throw new Error("Not a git repository — cannot create a worktree.");
-  }
-  const invalid = checkBranchName(root, branch);
-  if (invalid) throw new Error(invalid);
-  if (!dir) throw new Error("Worktree folder is required.");
-  if (fs.existsSync(dir)) {
-    throw new Error(`Worktree folder already exists: ${dir}`);
-  }
-
-  const existing = listLocalBranchNames(root);
-  const branchExists = existing.includes(branch);
-  const trees = listLinkedWorktrees(root);
-  const checkedOut = trees.find((t) => t.branch === branch && !t.detached);
-  if (branchExists && checkedOut) {
-    throw new Error(
-      `Branch ${branch} is already checked out at ${checkedOut.path}. Pick a new branch name.`,
-    );
-  }
-
-  /** @type {string[]} */
-  const args = ["-C", root, "worktree", "add"];
-  if (!branchExists) {
-    args.push("-b", branch, dir);
-    const start = String(opts?.startPoint || "").trim();
-    if (start) args.push(start);
-  } else {
-    args.push(dir, branch);
-  }
-
-  const result = gitSync(args, { timeout: 60_000 });
-  if (result.status !== 0) {
-    const err = String(result.stderr || result.stdout || "").trim();
-    throw new Error(err || "git worktree add failed");
-  }
-
-  clearWorktreeRootCache();
-  return {
-    path: normalizeCheckoutPath(dir),
-    branch,
-    createdBranch: !branchExists,
-  };
 }

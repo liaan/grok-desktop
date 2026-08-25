@@ -1046,8 +1046,12 @@ export class GrokAcpClient extends EventEmitter {
    */
   async listWorktrees(opts = {}) {
     if (!this.ready) return [];
+    const repo =
+      opts.repo == null || String(opts.repo).trim() === ""
+        ? undefined
+        : String(opts.repo).trim();
     const attempts = worktreeListAttempts({
-      repo: opts.repo || this.cwd,
+      repo,
       includeAll: Boolean(opts.includeAll),
     });
     const methodMissing = (err) => {

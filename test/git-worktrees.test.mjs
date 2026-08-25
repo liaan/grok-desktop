@@ -1,5 +1,5 @@
 /**
- * Worktree porcelain parse, path compare, and sibling-dir suggestions.
+ * Worktree porcelain parse, path compare, linked-root list.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,14 +8,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  addGitWorktree,
+  checkoutKey,
+  clearWorktreeRootCache,
+  listLinkedWorktreeRoots,
   parseWorktreePorcelain,
-  parseWorktreePorcelainEntries,
   sameCheckoutPath,
-  slugifyBranchForDir,
-  suggestWorktreeDir,
 } from "../electron/git-worktrees.mjs";
-import { findOccupyingCheckout } from "../electron/checkout-occupancy.mjs";
 
 const FIXTURE = [
   "worktree /repos/app",
@@ -40,14 +38,13 @@ test("parseWorktreePorcelain: paths only, order preserved", () => {
   );
 });
 
-test("parseWorktreePorcelainEntries: branch / detached", () => {
-  const entries = parseWorktreePorcelainEntries(FIXTURE);
-  assert.equal(entries.length, 3);
-  assert.equal(entries[0].branch, "main");
-  assert.equal(entries[0].detached, false);
-  assert.equal(entries[1].branch, "feat/login");
-  assert.equal(entries[2].detached, true);
-  assert.equal(entries[2].branch, null);
+test("checkoutKey matches sameCheckoutPath identity", () => {
+  if (process.platform === "win32") {
+    assert.equal(checkoutKey("C:\\Repos\\App\\"), checkoutKey("c:/repos/app"));
+  } else {
+    assert.equal(checkoutKey("/repos/app/"), checkoutKey("/repos/app"));
+    assert.notEqual(checkoutKey("/repos/app"), checkoutKey("/repos/App"));
+  }
 });
 
 test("sameCheckoutPath folds Windows case and trailing sep", () => {
@@ -64,31 +61,6 @@ test("sameCheckoutPath folds Windows case and trailing sep", () => {
   assert.equal(sameCheckoutPath("", "/repos/app"), false);
 });
 
-test("findOccupyingCheckout skips the calling window", () => {
-  const rows = [
-    { windowId: 1, cwd: "/repos/app", title: "app · Grok" },
-    { windowId: 2, cwd: "/repos/other", title: "other · Grok" },
-  ];
-  assert.equal(findOccupyingCheckout("/repos/app", rows, 1), null);
-  const hit = findOccupyingCheckout("/repos/app", rows, 2);
-  assert.ok(hit);
-  assert.equal(hit.windowId, 1);
-  assert.equal(findOccupyingCheckout("/repos/app-feat", rows, 2), null);
-});
-
-test("slugifyBranchForDir and suggestWorktreeDir", () => {
-  assert.equal(slugifyBranchForDir("feat/login"), "feat-login");
-  assert.equal(slugifyBranchForDir("  "), "work");
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "grok-wt-sug-"));
-  const main = path.join(tmp, "app");
-  fs.mkdirSync(main);
-  const first = suggestWorktreeDir(main, "feat/login");
-  assert.equal(path.basename(first), "app-feat-login");
-  fs.mkdirSync(first);
-  const second = suggestWorktreeDir(main, "feat/login", [first]);
-  assert.equal(path.basename(second), "app-feat-login-2");
-});
-
 function haveGit() {
   const r = spawnSync("git", ["--version"], {
     windowsHide: true,
@@ -97,50 +69,72 @@ function haveGit() {
   return r.status === 0;
 }
 
-test("addGitWorktree creates a sibling checkout on a new branch", async (t) => {
+function git(cwd, args) {
+  const r = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  return r;
+}
+
+function initRepo(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const inited = spawnSync("git", ["init", "-b", "main"], {
+    cwd: dir,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (inited.status !== 0) git(dir, ["init"]);
+  git(dir, ["config", "user.email", "wt@example.com"]);
+  git(dir, ["config", "user.name", "Worktree Test"]);
+  fs.writeFileSync(path.join(dir, "README.md"), "hi\n");
+  git(dir, ["add", "README.md"]);
+  git(dir, ["commit", "-m", "init"]);
+}
+
+test("listLinkedWorktreeRoots includes git worktree add paths", async (t) => {
   if (!haveGit()) {
     t.skip("git not on PATH");
     return;
   }
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "grok-wt-add-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "grok-wt-link-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const repo = path.join(tmp, "app");
-  fs.mkdirSync(repo);
-  const git = (args) => {
-    const r = spawnSync("git", args, {
-      cwd: repo,
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    assert.equal(r.status, 0, r.stderr || r.stdout);
-    return r;
-  };
-  const inited = spawnSync("git", ["init", "-b", "main"], {
-    cwd: repo,
-    encoding: "utf8",
-    windowsHide: true,
-  });
-  if (inited.status !== 0) git(["init"]);
-  git(["config", "user.email", "wt@example.com"]);
-  git(["config", "user.name", "Worktree Test"]);
-  fs.writeFileSync(path.join(repo, "README.md"), "hi\n");
-  git(["add", "README.md"]);
-  git(["commit", "-m", "init"]);
+  const sibling = path.join(tmp, "app-feat");
+  initRepo(repo);
+  git(repo, ["worktree", "add", "-b", "feat/login", sibling]);
 
-  const added = addGitWorktree(repo, {
-    dir: path.join(tmp, "app-feat-login"),
-    branch: "feat/login",
-  });
-  assert.equal(added.createdBranch, true);
-  assert.equal(added.branch, "feat/login");
-  assert.ok(fs.existsSync(path.join(added.path, "README.md")));
-  assert.ok(fs.existsSync(path.join(added.path, ".git")));
+  clearWorktreeRootCache(repo);
+  const roots = listLinkedWorktreeRoots(repo, { refresh: true });
+  assert.ok(roots.some((r) => sameCheckoutPath(r, repo)));
+  assert.ok(roots.some((r) => sameCheckoutPath(r, sibling)));
+});
 
-  assert.throws(
-    () =>
-      addGitWorktree(repo, {
-        dir: path.join(tmp, "app-feat-login-again"),
-        branch: "feat/login",
-      }),
-    /already checked out/,
+test("standalone clone is not a linked git worktree", async (t) => {
+  if (!haveGit()) {
+    t.skip("git not on PATH");
+    return;
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "grok-wt-copy-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const repo = path.join(tmp, "app");
+  const copy = path.join(tmp, "standalone");
+  initRepo(repo);
+  fs.cpSync(repo, copy, { recursive: true });
+
+  clearWorktreeRootCache(repo);
+  const roots = listLinkedWorktreeRoots(repo, { refresh: true });
+  assert.ok(roots.some((r) => sameCheckoutPath(r, repo)));
+  assert.equal(
+    roots.some((r) => sameCheckoutPath(r, copy)),
+    false,
+    "Grok-style standalone copies must not appear in porcelain",
+  );
+  const copyList = listLinkedWorktreeRoots(copy, { refresh: true });
+  assert.equal(
+    copyList.some((r) => sameCheckoutPath(r, repo)),
+    false,
   );
 });

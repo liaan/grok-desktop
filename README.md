@@ -98,7 +98,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Skills, plugins & MCP **inherited** from `~/.grok` (same as CLI) | Done — invoke skills in chat; **list/toggle in Settings** |
 | Project rules (`AGENTS.md`, etc.) via open folder | Done — agent uses project as cwd (same as CLI) |
 | Open project + recent folders | Done |
-| Multi-window same repo (Grok worktrees) | **Done** — same as TUI `/new` worktree: ACP `x.ai/git/worktree/*`. Opening a folder already open prompts to switch, reuse, or create. File → **New Worktree Window…** |
+| Multi-window same repo (Grok worktrees) | **Done** — same as TUI `/new` worktree: ACP `x.ai/git/worktree/*`. Opening a folder already open prompts to switch, reuse, or create. File → **New Worktree Window…**. Second Start Menu launch joins this process (new window). |
 | Streaming messages, thoughts, plans, tool cards | Done |
 | Tool permission approvals + always-approve | Done |
 | Cancel + mid-turn queue / send-now | Done |
@@ -137,7 +137,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
 | Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | Agent `session/set_mode` + `_meta.yoloMode` / `permissionMode` on session start |
 | Reasoning effort (`/effort`) | Topbar **Effort** dropdown (Low / Medium / High / X-High) | Agent `--reasoning-effort` on spawn + live `session/set_model` `_meta.reasoningEffort` |
-| **Project-root safety** | On by default (Settings: “Allow outside project” off) | Open project + **linked git worktrees** of that repo are allowed; turn on only for unrelated host paths. Independent of terminal sandbox. |
+| **Project-root safety** | On by default (Settings: “Allow outside project” off) | Open project + **linked git worktrees** of that repo. Agent fs/terminal also allow **Grok worktrees** of this repo (`~/.grok/worktrees`). File browser stays project + porcelain. Turn on only for unrelated host paths. Independent of terminal sandbox. |
 | **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |
 | **Preview window** | Topbar **Preview**, `/preview [url\|close]`, or ask the agent to open a URL | Desktop attaches its own Preview MCP; **Restart agent** if those tools are missing |
 
@@ -153,6 +153,7 @@ Optional environment variables:
 | `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox (default `buildpack-deps:noble-scm`, must include `git`) |
 | `GROK_DESKTOP_ALLOW_DOCKER_SANDBOX` | Set `1` to allow Docker tool sandbox on Windows (off by default — hangs on bind mounts) |
 | `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
+| `GROK_DESKTOP_MULTI_INSTANCE` | Set `1` to skip the single-instance lock (second launch starts a separate process) |
 | `GROK_DESKTOP_DEBUG` | Set `1` to enable desktop-debug.log (tools/hooks/terminals) |
 | `GROK_DESKTOP_TERMINAL_TIMEOUT_MS` | Kill hung tool shells after N ms (default `900000` = 15 min; `0` = off) |
 
