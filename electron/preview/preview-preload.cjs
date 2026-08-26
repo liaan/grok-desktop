@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("previewChrome", {
   snapshot: () => ipcRenderer.invoke("preview:chrome-snapshot"),
   screenshot: () => ipcRenderer.invoke("preview:chrome-screenshot"),
   openExternal: () => ipcRenderer.invoke("preview:chrome-open-external"),
+  network: () => ipcRenderer.invoke("preview:chrome-network"),
+  networkEntry: (id) => ipcRenderer.invoke("preview:chrome-network-entry", id),
+  networkClear: () => ipcRenderer.invoke("preview:chrome-network-clear"),
+  networkPreserve: (on) =>
+    ipcRenderer.invoke("preview:chrome-network-preserve", on),
   onState: (handler) => {
     const listener = (_e, payload) => handler(payload);
     ipcRenderer.on("preview:state", listener);
@@ -19,5 +24,10 @@ contextBridge.exposeInMainWorld("previewChrome", {
     const listener = (_e, theme) => handler(theme);
     ipcRenderer.on("preview:theme", listener);
     return () => ipcRenderer.removeListener("preview:theme", listener);
+  },
+  onNetwork: (handler) => {
+    const listener = (_e, payload) => handler(payload);
+    ipcRenderer.on("preview:network", listener);
+    return () => ipcRenderer.removeListener("preview:network", listener);
   },
 });

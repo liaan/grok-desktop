@@ -38,6 +38,19 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "preview_network",
+    description:
+      "Read the Preview request waterfall (status, type, size, timing, initiator). Debug lazy-load, 404s, cache. afterLoad: true keeps only requests after window load.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filter: { type: "string" },
+        afterLoad: { type: "boolean" },
+        limit: { type: "number" },
+      },
+    },
+  },
+  {
     name: "preview_state",
     description: "Current Preview window URL, title, and whether it is open.",
     inputSchema: { type: "object", properties: {} },
@@ -163,6 +176,10 @@ async function callTool(name, args) {
         `Viewport JPEG ${data.width}×${data.height}, ${data.bytes} bytes, ~${data.tokens} tokens if kept in context.`,
         extra,
       );
+    }
+    case "preview_network": {
+      const data = await callApi("POST", "/network", args || {});
+      return textResult(data.text || JSON.stringify(data));
     }
     case "preview_state": {
       const data = await callApi("GET", "/state");

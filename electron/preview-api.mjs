@@ -13,6 +13,7 @@ import {
   screenshotPreview,
   setPreviewViewport,
   snapshotPreview,
+  snapshotPreviewNetwork,
   VIEWPORTS,
 } from "./preview-window.mjs";
 
@@ -118,6 +119,19 @@ export async function dispatchPreviewApi(req) {
       throw new Error(`Unknown viewport: ${id}`);
     }
     return setPreviewViewport(id);
+  }
+  if (
+    (method === "GET" || method === "POST") &&
+    (path === "/network" || path === "/network/log")
+  ) {
+    if (!previewPublicState().open) {
+      throw new Error("Preview is not open. Call preview_open first.");
+    }
+    return snapshotPreviewNetwork({
+      filter: body.filter,
+      afterLoad: Boolean(body.afterLoad),
+      limit: body.limit,
+    });
   }
   const err = new Error(`Not found: ${method} ${path}`);
   err.statusCode = 404;

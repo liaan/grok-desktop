@@ -41,6 +41,14 @@
         <button type="button" id="shot" title="Viewport JPEG (only when you need pixels)">
           Screenshot
         </button>
+        <button
+          type="button"
+          id="net"
+          title="Request waterfall — lazy-load, 404s, cache"
+        >
+          Network
+          <span id="net-badge" class="net-badge" hidden></span>
+        </button>
         <button type="button" id="ext" title="Open in system browser">↗</button>
       </div>
     </header>
@@ -52,6 +60,69 @@
         <button type="button" id="panel-close" aria-label="Close panel">×</button>
       </div>
       <pre id="panel-body"></pre>
+    </aside>
+    <aside id="network" class="network" hidden>
+      <div class="net-grip" id="net-grip" title="Drag to resize"></div>
+      <div class="net-toolbar">
+        <strong>Network</strong>
+        <span id="net-summary" class="meta"></span>
+        <input
+          id="net-filter"
+          type="search"
+          placeholder="Filter"
+          aria-label="Filter requests"
+        />
+        <select id="net-type" aria-label="Resource type">
+          <option value="all">All</option>
+          <option value="doc">Doc</option>
+          <option value="css">CSS</option>
+          <option value="js">JS</option>
+          <option value="img">Img</option>
+          <option value="media">Media</option>
+          <option value="font">Font</option>
+          <option value="xhr">XHR</option>
+          <option value="other">Other</option>
+        </select>
+        <label class="net-check" title="Only requests that started after window load">
+          <input type="checkbox" id="net-late" />
+          After load
+        </label>
+        <label class="net-check" title="Keep rows when the page navigates">
+          <input type="checkbox" id="net-preserve" />
+          Preserve
+        </label>
+        <button type="button" id="net-clear">Clear</button>
+        <button type="button" id="net-close" aria-label="Close network">×</button>
+      </div>
+      <div class="net-split">
+        <div class="net-table-wrap">
+          <table class="net-table">
+            <thead>
+              <tr>
+                <th class="col-name">Name</th>
+                <th class="col-status">Status</th>
+                <th class="col-type">Type</th>
+                <th class="col-size">Size</th>
+                <th class="col-time">Time</th>
+                <th class="col-water">
+                  Waterfall
+                  <div class="wf-scale" id="wf-scale"></div>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="net-rows"></tbody>
+          </table>
+        </div>
+        <div id="net-detail" class="net-detail" hidden>
+          <div class="net-detail-head">
+            <strong id="net-detail-title">Request</strong>
+            <button type="button" id="net-detail-close" aria-label="Close detail">
+              ×
+            </button>
+          </div>
+          <pre id="net-detail-body"></pre>
+        </div>
+      </div>
     </aside>
     <script src="./preview.js"></script>
   </body>

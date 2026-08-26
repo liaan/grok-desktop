@@ -57,6 +57,7 @@ test("desktop-preview skill names the Preview MCP tools", () => {
   assert.match(skill, /desktop-preview__preview_open/);
   assert.match(skill, /desktop-preview__preview_fill/);
   assert.match(skill, /preview_fill_form/);
+  assert.match(skill, /desktop-preview__preview_network/);
   assert.match(skill, /PowerShell/);
   assert.match(skill, /cloakbrowser/i);
 });

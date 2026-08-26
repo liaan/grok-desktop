@@ -20,6 +20,11 @@ import {
   PAGE_SNAPSHOT_SCRIPT,
 } from "./preview-snapshot.mjs";
 import { previewActionScript } from "./preview-interact.mjs";
+import {
+  PreviewNetworkLog,
+  formatNetworkDump,
+  ingestWebRequest,
+} from "./preview-network.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,11 +50,19 @@ let broadcast = null;
 
 let toolbarHeight = TOOLBAR_FALLBACK;
 let sideWidth = 0;
+let bottomHeight = 0;
 let viewportId = "fluid";
 let lastUrl = "about:blank";
 let lastTitle = "";
 let loading = false;
 let ipcReady = false;
+
+/** @type {PreviewNetworkLog} */
+let networkLog = new PreviewNetworkLog();
+let detachNetwork = () => {};
+let networkHint = "";
+/** @type {ReturnType<typeof setTimeout> | null} */
+let netTimer = null;
 
 function themeFromState() {
   const t = readState?.()?.theme;
@@ -167,13 +180,158 @@ export function previewPublicState() {
   };
 }
 
+function emitNetwork() {
+  const payload = {
+    ...networkLog.snapshot(),
+    error: networkHint || "",
+  };
+  try {
+    chromeWc()?.send("preview:network", payload);
+  } catch {
+    /* chrome may be gone */
+  }
+}
+
+function emitNetworkSoon() {
+  if (netTimer) return;
+  netTimer = setTimeout(() => {
+    netTimer = null;
+    emitNetwork();
+  }, 100);
+}
+
+/**
+ * CDP Network + Page on the guest. One debugger client — do not open
+ * guest DevTools while this is attached (Electron allows one attach).
+ * @param {import('electron').WebContents} wc
+ */
+function attachGuestNetwork(wc) {
+  detachNetwork();
+  networkLog = new PreviewNetworkLog();
+  networkHint = "";
+  const dbg = wc.debugger;
+  const onMessage = (_event, method, params) => {
+    networkLog.handleCdp(method, params);
+    emitNetworkSoon();
+  };
+  const onDetach = (_event, reason) => {
+    if (reason && reason !== "target closed" && reason !== "canceled") {
+      attachWebRequestFallback(wc.session);
+    }
+    emitNetworkSoon();
+  };
+  try {
+    if (!dbg.isAttached()) dbg.attach("1.3");
+    dbg.on("message", onMessage);
+    dbg.on("detach", onDetach);
+    void dbg
+      .sendCommand("Network.enable", { maxPostDataSize: 0 })
+      .then(async () => {
+        try {
+          await dbg.sendCommand("Page.enable");
+          await dbg.sendCommand("Page.setLifecycleEventsEnabled", {
+            enabled: true,
+          });
+        } catch {
+          /* Page events optional — did-finish-load is the fallback */
+        }
+      })
+      .catch(() => {
+        try {
+          if (dbg.isAttached()) dbg.detach();
+        } catch {
+          /* ignore */
+        }
+        attachWebRequestFallback(wc.session);
+        emitNetworkSoon();
+      });
+  } catch {
+    attachWebRequestFallback(wc.session);
+  }
+
+  const onDomReady = () => {
+    if (networkLog.dclTs == null) networkLog.markDomContentLoaded();
+    emitNetworkSoon();
+  };
+  const onFinish = () => {
+    if (networkLog.loadTs == null) networkLog.markLoad();
+    emitNetworkSoon();
+  };
+  wc.on("dom-ready", onDomReady);
+  wc.on("did-finish-load", onFinish);
+
+  detachNetwork = () => {
+    wc.removeListener("dom-ready", onDomReady);
+    wc.removeListener("did-finish-load", onFinish);
+    detachWebRequest(wc.session);
+    try {
+      dbg.removeListener("message", onMessage);
+    } catch {
+      /* ignore */
+    }
+    try {
+      dbg.removeListener("detach", onDetach);
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (dbg.isAttached()) dbg.detach();
+    } catch {
+      /* ignore */
+    }
+    detachNetwork = () => {};
+  };
+}
+
+function attachWebRequestFallback(ses) {
+  if (!ses?.webRequest) return;
+  detachWebRequest(ses);
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    try {
+      ingestWebRequest(networkLog, "start", details);
+      emitNetworkSoon();
+    } finally {
+      callback?.({});
+    }
+  });
+  ses.webRequest.onCompleted((details) => {
+    ingestWebRequest(networkLog, "done", details);
+    emitNetworkSoon();
+  });
+  ses.webRequest.onErrorOccurred((details) => {
+    ingestWebRequest(networkLog, "error", details);
+    emitNetworkSoon();
+  });
+}
+
+function detachWebRequest(ses) {
+  try {
+    ses?.webRequest.onBeforeRequest(null);
+    ses?.webRequest.onCompleted(null);
+    ses?.webRequest.onErrorOccurred(null);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function snapshotPreviewNetwork(opts = {}) {
+  if (!guestWc()) throw new Error("Preview is not open");
+  const snap = networkLog.snapshot();
+  return {
+    ...snap,
+    text: formatNetworkDump(snap, opts),
+    error: networkHint || "",
+  };
+}
+
 function layoutGuest() {
   if (!isLive() || !guestView) return;
   const [cw, ch] = previewWin.getContentSize();
   const top = Math.max(36, toolbarHeight);
   const side = Math.max(0, Math.min(sideWidth, Math.floor(cw * 0.5)));
+  const bottom = Math.max(0, Math.min(bottomHeight, Math.floor(ch * 0.72)));
   const availW = Math.max(0, cw - side);
-  const availH = Math.max(0, ch - top);
+  const availH = Math.max(0, ch - top - bottom);
   const spec = VIEWPORTS[viewportId] || VIEWPORTS.fluid;
   let x = 0;
   let y = top;
@@ -328,11 +486,19 @@ export async function openPreviewWindow(opts = {}) {
     win.on("move", persistSoon);
     win.on("closed", () => {
       persistNow();
+      detachNetwork();
+      if (netTimer) {
+        clearTimeout(netTimer);
+        netTimer = null;
+      }
       previewWin = null;
       guestView = null;
       lastTitle = "";
       lastUrl = "about:blank";
       loading = false;
+      networkLog = new PreviewNetworkLog();
+      networkHint = "";
+      bottomHeight = 0;
       emitChrome();
       try {
         broadcast?.(previewPublicState());
@@ -345,6 +511,7 @@ export async function openPreviewWindow(opts = {}) {
     await win.loadFile(chromeFile, { query: { theme: themeFromState() } });
     guestView = createGuest();
     win.contentView.addChildView(guestView);
+    attachGuestNetwork(guestView.webContents);
     win.show();
     win.focus();
   } else {
@@ -536,8 +703,12 @@ export function registerPreviewIpc(hooks) {
         : 0;
     if (Number.isFinite(height) && height > 24) toolbarHeight = height;
     sideWidth = Number.isFinite(side) && side > 0 ? side : 0;
+    const bottom =
+      typeof payload === "object" && payload ? Number(payload.bottom) : 0;
+    bottomHeight = Number.isFinite(bottom) && bottom > 0 ? bottom : 0;
     layoutGuest();
     emitChrome();
+    emitNetwork();
     return previewPublicState();
   });
 
@@ -593,5 +764,29 @@ export function registerPreviewIpc(hooks) {
     if (!parsed.ok || parsed.href === "about:blank") return false;
     await shell.openExternal(parsed.href);
     return true;
+  });
+
+  ipcMain.handle("preview:chrome-network", async (e) => {
+    if (!fromChrome(e)) return { rows: [], error: "Preview chrome only" };
+    return { ...networkLog.snapshot(), error: networkHint || "" };
+  });
+
+  ipcMain.handle("preview:chrome-network-entry", async (e, id) => {
+    if (!fromChrome(e)) return null;
+    return networkLog.detail(String(id || ""));
+  });
+
+  ipcMain.handle("preview:chrome-network-clear", async (e) => {
+    if (!fromChrome(e)) return { rows: [], error: "Preview chrome only" };
+    networkLog.clear();
+    const payload = { ...networkLog.snapshot(), error: networkHint || "" };
+    emitNetwork();
+    return payload;
+  });
+
+  ipcMain.handle("preview:chrome-network-preserve", async (e, on) => {
+    if (!fromChrome(e)) return false;
+    networkLog.setPreserveLog(Boolean(on));
+    return networkLog.preserveLog;
   });
 }

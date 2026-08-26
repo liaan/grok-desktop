@@ -23,6 +23,7 @@ You are running inside **Grok Desktop**. The user can see a detachable Preview w
    - `desktop-preview__preview_interact` `{ "action": "fill", "ref": "e3", "value": "x" }`
    - `desktop-preview__preview_press` `{ "key": "Enter" }`
 4. Snapshot again to read the result. Use `preview_screenshot` only for layout/CSS.
+5. For loading / lazy-load / missing assets / 404s: `desktop-preview__preview_network`. Pass `{ "afterLoad": true }` to see only requests that started after window load (the lazy ones). Filter with `{ "filter": "img" }` (or js / css / xhr).
 
 Grok namespaces MCP tools as `server__tool`. Search for `desktop-preview` if a tool is not listed.
 

@@ -141,7 +141,7 @@ export function WelcomeView({
               )}
             </button>
             {signedIn &&
-              recentProjects.slice(0, 3).map((p) => (
+              recentProjects.slice(0, 6).map((p) => (
                 <button
                   key={p}
                   className="btn"

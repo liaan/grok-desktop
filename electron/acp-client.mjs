@@ -60,6 +60,7 @@ import {
   isPermissionMethod,
   isTerminalMethod,
   jsonRpcErrorCode,
+  formatAcpError,
   acpClientCapabilities,
 } from "../shared/acp-rpc.mjs";
 import { handleAcpPermissionRequest } from "./acp-protocol.mjs";
@@ -692,9 +693,14 @@ export class GrokAcpClient extends EventEmitter {
       this.pending.delete(c.id);
       if (p.timer) clearTimeout(p.timer);
       if (c.error) {
-        p.reject(
-          Object.assign(new Error(c.error.message || "ACP error"), c.error),
-        );
+        const err = new Error(formatAcpError(c.error));
+        if (typeof c.error.code === "number") err.code = c.error.code;
+        debugLog("acp", "rpc-error", {
+          id: c.id,
+          code: c.error.code,
+          message: err.message,
+        });
+        p.reject(err);
       } else {
         p.resolve(c.result);
       }

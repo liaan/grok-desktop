@@ -37,6 +37,10 @@ test("reads and preview browse are safe", () => {
     classifyPermissionRisk(perm({ title: "preview_open" })),
     "safe",
   );
+  assert.equal(
+    classifyPermissionRisk(perm({ title: "preview_network" })),
+    "safe",
+  );
 });
 
 test("namespaced desktop-preview__preview_snapshot is safe", () => {

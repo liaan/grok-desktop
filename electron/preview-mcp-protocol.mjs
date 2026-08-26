@@ -33,6 +33,30 @@ export const PREVIEW_MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "preview_network",
+    description:
+      "Read the Preview window request waterfall (URL, status, type, size, timing, initiator). Use this to debug lazy-load, missing assets, 404s, and cache — requests after window load are marked. Prefer this over guessing from a screenshot. Qualified name: desktop-preview__preview_network.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filter: {
+          type: "string",
+          description:
+            "all | doc | css | js | img | media | font | xhr | other",
+        },
+        afterLoad: {
+          type: "boolean",
+          description:
+            "Only requests that started after the window load event (lazy / deferred).",
+        },
+        limit: {
+          type: "number",
+          description: "Max rows in the text dump (default 80, max 120).",
+        },
+      },
+    },
+  },
+  {
     name: "preview_state",
     description:
       "Current Preview window URL, title, and whether it is open. Qualified name: desktop-preview__preview_state.",
@@ -200,6 +224,14 @@ async function callTool(name, args) {
         `Viewport JPEG ${data.width}×${data.height}, ${data.bytes} bytes, ~${data.tokens} tokens if kept in context.`,
         extra,
       );
+    }
+    case "preview_network": {
+      const data = await dispatchPreviewApi({
+        method: "POST",
+        path: "/network",
+        body: args || {},
+      });
+      return textResult(data.text || JSON.stringify(data));
     }
     case "preview_state": {
       const data = await dispatchPreviewApi({ method: "GET", path: "/state" });
@@ -370,4 +402,5 @@ export const PREVIEW_SESSION_RULE = [
   "To test login: snapshot, then preview_fill_form with the username/password refs, or fill each field and preview_click the submit button.",
   "Never test a login or form with PowerShell, Invoke-WebRequest, curl, CSRF token scraping, or a raw HTTP POST. That bypasses the UI the user asked to see.",
   "Never use cloakbrowser, Docker Chromium, Playwright, or web_fetch to preview a page in Grok Desktop.",
+  "For loading, lazy-load, 404s, or missing assets use desktop-preview__preview_network (afterLoad: true for requests after window load).",
 ].join(" ");

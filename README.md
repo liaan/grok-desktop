@@ -114,7 +114,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
 | Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
 | Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
-| Detachable **Preview** window (you or the agent open / snapshot / click / fill) | **Done** — topbar **Preview**, `/preview [url\|close]`, or ask the agent to show a URL |
+| Detachable **Preview** window (you or the agent open / snapshot / click / fill / network waterfall) | **Done** — topbar **Preview**, `/preview [url\|close]`, or ask the agent to show a URL |
 
 ## Requirements
 
@@ -155,7 +155,7 @@ Optional environment variables:
 | `GROK_DESKTOP_SANDBOX_IMAGE` | Docker image for terminal sandbox (default `buildpack-deps:noble-scm`, must include `git`) |
 | `GROK_DESKTOP_ALLOW_DOCKER_SANDBOX` | Set `1` to allow Docker tool sandbox on Windows (off by default — hangs on bind mounts) |
 | `GROK_DESKTOP_WSL_DISTRO` | Preferred WSL distro for Windows terminal sandbox |
-| `GROK_DESKTOP_MULTI_INSTANCE` | Set `1` to skip the single-instance lock (second launch starts a separate process) |
+| `GROK_DESKTOP_MULTI_INSTANCE` | Set `1` to skip the single-instance lock (second launch starts a separate process). Unpackaged `npm run dev` already skips joining an installed app |
 | `GROK_DESKTOP_DEBUG` | Set `1` to enable desktop-debug.log (tools/hooks/terminals) |
 | `GROK_DESKTOP_TERMINAL_TIMEOUT_MS` | Kill hung tool shells after N ms (default `900000` = 15 min; `0` = off) |
 
@@ -168,6 +168,8 @@ A second Electron window you can drag to another screen. Use it to look at local
 - Topbar **Preview** (empty window, then load a URL from the address bar)
 - Composer: `/preview https://localhost:5173` or `/preview close`
 - Ask in chat: “preview this URL” / “show the login page” — the agent should call Desktop’s Preview MCP (`desktop-preview__preview_open`, then snapshot / click / fill)
+
+**Network waterfall:** toolbar **Network** (always recording). Status, type, size, timing bars, initiator. **After load** isolates lazy/deferred requests. The agent can call `desktop-preview__preview_network` (`afterLoad: true` for post-load only).
 
 **If the agent says Preview tools are missing:** Settings → **Restart agent** so Desktop can attach the Preview MCP. That MCP is part of this app (not something you add under `~/.grok`).
 

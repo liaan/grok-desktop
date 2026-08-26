@@ -16,10 +16,12 @@ export function toAgentPermissionMode(
 
 export const DESKTOP_CLIENT_IDENTIFIER: "grok-desktop";
 
+export const ACP_CLIENT_IDENTIFIER: "grok-pager";
+
 export const YOLO_MODE_CHANGED_METHOD: "_x.ai/yolo_mode_changed";
 
 export function initializeClientMeta(): {
-  clientIdentifier: "grok-desktop";
+  clientIdentifier: "grok-pager";
 };
 
 export function sessionPermissionMeta(mode: unknown): {
@@ -32,7 +34,7 @@ export function yoloModeChangedParams(mode: unknown): {
   yolo_mode: boolean;
   auto_mode: boolean;
   permission_mode: string;
-  clientIdentifier: "grok-desktop";
+  clientIdentifier: "grok-pager";
 };
 
 export function permissionModeLabel(mode: DesktopPermissionMode): string;

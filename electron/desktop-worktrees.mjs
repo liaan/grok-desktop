@@ -468,14 +468,19 @@ export function configureDesktopInstance(app) {
 }
 
 /**
- * One process, many windows. `GROK_DESKTOP_MULTI_INSTANCE=1` skips the lock.
- * @param {{ requestSingleInstanceLock?: () => boolean }} app
+ * One process, many windows. Packaged Start Menu launches join.
+ * Unpackaged (`npm run dev`) must not join an installed instance — that
+ * silently runs old code (welcome recents, Preview chrome, …).
+ * `GROK_DESKTOP_MULTI_INSTANCE=1` also skips the lock.
+ * @param {{
+ *   isPackaged?: boolean,
+ *   requestSingleInstanceLock?: () => boolean,
+ * }} app
  */
 export function isPrimaryDesktopInstance(app) {
-  return (
-    process.env.GROK_DESKTOP_MULTI_INSTANCE === "1" ||
-    Boolean(app.requestSingleInstanceLock?.())
-  );
+  if (process.env.GROK_DESKTOP_MULTI_INSTANCE === "1") return true;
+  if (app?.isPackaged === false) return true;
+  return Boolean(app.requestSingleInstanceLock?.());
 }
 
 /**

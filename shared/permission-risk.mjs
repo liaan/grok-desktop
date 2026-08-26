@@ -59,6 +59,7 @@ const SAFE_NAME_EXACT = new Set([
   "preview_open",
   "preview_snapshot",
   "preview_screenshot",
+  "preview_network",
   "preview_state",
   "preview_close",
 ]);
@@ -104,6 +105,7 @@ const SAFE_NAME_PREFIXES = [
   "preview_open",
   "preview_snapshot",
   "preview_screenshot",
+  "preview_network",
   "preview_state",
   "preview_close",
 ];

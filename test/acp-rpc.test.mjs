@@ -35,6 +35,7 @@ import {
   buildJsonRpcResult,
   buildJsonRpcError,
   jsonRpcErrorCode,
+  formatAcpError,
 } from "../shared/acp-rpc.mjs";
 import { createAcpClientRuntime } from "../electron/acp-protocol.mjs";
 import {
@@ -525,6 +526,37 @@ test("jsonRpcErrorCode coerces Node string codes to integers", () => {
   assert.equal(errMsg.error.message, "missing");
 });
 
+test("formatAcpError surfaces JSON-RPC data under Internal error", () => {
+  assert.equal(formatAcpError(null), "ACP error");
+  assert.equal(formatAcpError("boom"), "boom");
+  assert.equal(
+    formatAcpError({ message: "Internal error" }),
+    "Internal error",
+  );
+  assert.equal(
+    formatAcpError({
+      code: -32603,
+      message: "Internal error",
+      data: "API error (status 403 Forbidden): Grok Build is coming soon. You don't have access now.",
+    }),
+    "Internal error: API error (status 403 Forbidden): Grok Build is coming soon. You don't have access now.",
+  );
+  assert.equal(
+    formatAcpError({
+      message: "Internal error",
+      data: { message: "session failed to respond" },
+    }),
+    "Internal error: session failed to respond",
+  );
+  assert.equal(
+    formatAcpError({
+      message: "Internal error: session failed to respond",
+      data: "session failed to respond",
+    }),
+    "Internal error: session failed to respond",
+  );
+});
+
 test("fs/read other errors use numeric JSON-RPC codes (not Node string codes)", async () => {
   /** @type {object[]} */
   const out = [];
@@ -805,7 +837,7 @@ test("auto mode still parks write permissions", async () => {
 });
 
 test("auto mode silent-allows preview_snapshot and preview_open", async () => {
-  for (const title of ["preview_snapshot", "preview_open"]) {
+  for (const title of ["preview_snapshot", "preview_open", "preview_network"]) {
     /** @type {object[]} */
     const out = [];
     let parked = false;

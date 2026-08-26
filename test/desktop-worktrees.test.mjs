@@ -542,6 +542,34 @@ test("isPrimaryDesktopInstance uses the Electron lock when env unset", () => {
   }
 });
 
+test("unpackaged skips the lock so npm run dev does not join an install", () => {
+  const prev = process.env.GROK_DESKTOP_MULTI_INSTANCE;
+  delete process.env.GROK_DESKTOP_MULTI_INSTANCE;
+  try {
+    let called = false;
+    assert.equal(
+      isPrimaryDesktopInstance({
+        isPackaged: false,
+        requestSingleInstanceLock: () => {
+          called = true;
+          return false;
+        },
+      }),
+      true,
+    );
+    assert.equal(called, false);
+    assert.equal(
+      isPrimaryDesktopInstance({
+        isPackaged: true,
+        requestSingleInstanceLock: () => false,
+      }),
+      false,
+    );
+  } finally {
+    if (prev !== undefined) process.env.GROK_DESKTOP_MULTI_INSTANCE = prev;
+  }
+});
+
 test("AUMID is the packaged app id", () => {
   assert.equal(DESKTOP_APP_USER_MODEL_ID, "com.karman.grok-desktop");
 });

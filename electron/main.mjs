@@ -1232,7 +1232,12 @@ function registerIpc() {
       const agent = sessionFromEvent(e)?.agent;
       if (!agent?.ready)
         throw new Error("Agent not connected. Open a project first.");
-      return agent.prompt(text, { images, imageQuality });
+      try {
+        return await agent.prompt(text, { images, imageQuality });
+      } catch (err) {
+        // IPC clones Error.message only — keep the formatted ACP reason.
+        throw new Error(err?.message || String(err));
+      }
     },
   );
 
@@ -1701,8 +1706,9 @@ function registerIpc() {
   });
 }
 
-// One process, many windows. Start Menu / second launch must not start a
-// fresh occupancy map (that skipped the “already open” prompt).
+// One process, many windows. Packaged Start Menu / second launch must not
+// start a fresh occupancy map (that skipped the “already open” prompt).
+// Unpackaged (npm run dev) skips the lock so it does not join an install.
 wireWorktreePathGate();
 configureDesktopInstance(app);
 const isPrimaryInstance = isPrimaryDesktopInstance(app);

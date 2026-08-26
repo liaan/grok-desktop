@@ -9,18 +9,27 @@
 /** @type {DesktopPermissionMode[]} */
 export const DESKTOP_PERMISSION_MODES = ["ask", "auto", "always-approve"];
 
-/** Product token the agent maps to ClientType::Desktop. */
+/** Desired product token once the cloud allowlists Grok Desktop. */
 export const DESKTOP_CLIENT_IDENTIFIER = "grok-desktop";
+
+/**
+ * Identity sent on ACP `initialize` / `_x.ai/yolo_mode_changed`.
+ * The agent copies this to `x-grok-client-identifier`. `grok-desktop`
+ * currently 403s ("Grok Build is coming soon") even on grok 1.0.10.
+ * `grok-pager` is the TUI product (allowlisted) and still gets
+ * enable-always-approve on permission prompts.
+ */
+export const ACP_CLIENT_IDENTIFIER = "grok-pager";
 
 /** Underscore prefix so AgentSide routes this as an extension notification. */
 export const YOLO_MODE_CHANGED_METHOD = "_x.ai/yolo_mode_changed";
 
 /**
- * `initialize` `_meta` so permission prompts include Desktop options
+ * `initialize` `_meta` so permission prompts include TUI/Desktop options
  * (`enable-always-approve`) and yolo updates match this client's sessions.
  */
 export function initializeClientMeta() {
-  return { clientIdentifier: DESKTOP_CLIENT_IDENTIFIER };
+  return { clientIdentifier: ACP_CLIENT_IDENTIFIER };
 }
 
 /**
@@ -98,7 +107,7 @@ export function yoloModeChangedParams(mode) {
         : m === "auto"
           ? "auto"
           : "ask",
-    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
+    clientIdentifier: ACP_CLIENT_IDENTIFIER,
   };
 }
 

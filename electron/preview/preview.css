@@ -43,6 +43,7 @@ body {
 .bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 10px;
   background: var(--bar);
@@ -171,6 +172,287 @@ button:disabled {
   padding: 10px 12px 16px;
   overflow: auto;
   font: 12px/1.45 "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  user-select: text;
+  flex: 1 1 auto;
+}
+
+button.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.net-badge {
+  display: inline-block;
+  margin-left: 4px;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 650;
+}
+
+.net-badge.is-pending {
+  background: #e8a87c;
+  color: #1a1208;
+}
+
+.network {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 240px;
+  background: var(--bar);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 6;
+}
+
+.net-grip {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.net-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+
+.net-toolbar .meta {
+  color: var(--muted);
+  font-size: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#net-filter {
+  width: 140px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 8px;
+  font: inherit;
+}
+
+#net-type {
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 4px;
+}
+
+.net-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.net-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.net-table-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+}
+
+.net-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.net-table th,
+.net-table td {
+  padding: 3px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.net-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bar);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  z-index: 1;
+}
+
+.col-name {
+  width: 26%;
+  user-select: text;
+}
+
+.col-status {
+  width: 56px;
+}
+
+.col-type {
+  width: 58px;
+}
+
+.col-size,
+.col-time {
+  width: 72px;
+}
+
+.col-water {
+  width: auto;
+}
+
+.net-table tbody tr {
+  cursor: pointer;
+}
+
+.net-table tbody tr:hover {
+  background: var(--hover);
+}
+
+.net-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.net-table tbody tr.is-fail td.col-status {
+  color: var(--danger);
+}
+
+.net-table tbody tr.is-late .col-name {
+  color: var(--accent);
+}
+
+.net-table tbody tr.is-pending {
+  opacity: 0.8;
+}
+
+.wf-scale {
+  position: relative;
+  height: 12px;
+  margin-top: 2px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.wf-scale span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+}
+
+.wf-scale i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.wf {
+  position: relative;
+  height: 14px;
+}
+
+.wf-bar {
+  position: absolute;
+  top: 2px;
+  height: 10px;
+  border-radius: 2px;
+  min-width: 2px;
+  opacity: 0.88;
+}
+
+.wf-bar.is-pending {
+  opacity: 0.5;
+}
+
+.wf-bar.g-doc {
+  background: #5b9cf5;
+}
+.wf-bar.g-css {
+  background: #c586c0;
+}
+.wf-bar.g-js {
+  background: #e8c547;
+}
+.wf-bar.g-img,
+.wf-bar.g-media {
+  background: #4caf8a;
+}
+.wf-bar.g-font {
+  background: #e07a3d;
+}
+.wf-bar.g-xhr,
+.wf-bar.g-ws {
+  background: #e8a87c;
+}
+.wf-bar.g-other {
+  background: #8a8a9a;
+}
+.wf-bar.is-fail {
+  background: var(--danger);
+}
+
+.net-detail {
+  flex: 0 0 280px;
+  width: 280px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.net-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.net-detail-head strong {
+  flex: 1 1 auto;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#net-detail-body {
+  margin: 0;
+  padding: 8px 10px 14px;
+  overflow: auto;
+  font: 11px/1.45 "Cascadia Code", Consolas, monospace;
   white-space: pre-wrap;
   user-select: text;
   flex: 1 1 auto;

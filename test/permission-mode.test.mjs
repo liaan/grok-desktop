@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DESKTOP_CLIENT_IDENTIFIER,
+  ACP_CLIENT_IDENTIFIER,
   YOLO_MODE_CHANGED_METHOD,
   initializeClientMeta,
   normalizePermissionMode,
@@ -53,19 +53,19 @@ test("yoloModeChangedParams match pager snake_case keys", () => {
     yolo_mode: true,
     auto_mode: false,
     permission_mode: "always-approve",
-    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
+    clientIdentifier: ACP_CLIENT_IDENTIFIER,
   });
   assert.deepEqual(yoloModeChangedParams("auto"), {
     yolo_mode: false,
     auto_mode: true,
     permission_mode: "auto",
-    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
+    clientIdentifier: ACP_CLIENT_IDENTIFIER,
   });
   assert.deepEqual(yoloModeChangedParams("ask"), {
     yolo_mode: false,
     auto_mode: false,
     permission_mode: "ask",
-    clientIdentifier: DESKTOP_CLIENT_IDENTIFIER,
+    clientIdentifier: ACP_CLIENT_IDENTIFIER,
   });
 });
 
@@ -80,7 +80,7 @@ test("yolo_mode_changed is stdio _x.ai/ notification", () => {
   assert.equal(params.auto_mode, true);
   assert.equal(params.yolo_mode, false);
   assert.equal(params.permission_mode, "auto");
-  assert.equal(params.clientIdentifier, "grok-desktop");
+  assert.equal(params.clientIdentifier, "grok-pager");
 
   // Full wire envelope: method is the underscore ext name; params is the body.
   const wire = JSON.stringify({
@@ -92,7 +92,7 @@ test("yolo_mode_changed is stdio _x.ai/ notification", () => {
   assert.match(wire, /"yolo_mode":false/);
   assert.match(wire, /"auto_mode":true/);
   assert.match(wire, /"permission_mode":"auto"/);
-  assert.match(wire, /"clientIdentifier":"grok-desktop"/);
+  assert.match(wire, /"clientIdentifier":"grok-pager"/);
   assert.doesNotMatch(
     wire,
     /"method":"ext_notification"/,
@@ -105,9 +105,10 @@ test("yolo_mode_changed is stdio _x.ai/ notification", () => {
   );
 });
 
-test("initializeClientMeta identifies Desktop to the agent", () => {
+test("initializeClientMeta uses pager identity until desktop is allowlisted", () => {
+  assert.equal(ACP_CLIENT_IDENTIFIER, "grok-pager");
   assert.deepEqual(initializeClientMeta(), {
-    clientIdentifier: "grok-desktop",
+    clientIdentifier: "grok-pager",
   });
 });
 

@@ -658,6 +658,46 @@ export function jsonRpcErrorCode(code, fallback = -32000) {
 }
 
 /**
+ * JSON-RPC errors from `grok agent stdio` often use message `"Internal error"`
+ * with the real reason in `data` (API 403, "session failed to respond", …).
+ * Electron IPC only clones `Error.message`, so format before throwing across
+ * `ipcMain.handle`.
+ * @param {unknown} error
+ * @returns {string}
+ */
+export function formatAcpError(error) {
+  if (error == null) return "ACP error";
+  if (typeof error === "string") {
+    const s = error.trim();
+    return s || "ACP error";
+  }
+  const obj = typeof error === "object" ? error : { message: String(error) };
+  const msg = String(obj.message || obj.msg || "").trim();
+  const data = obj.data;
+  let detail = "";
+  if (typeof data === "string") {
+    detail = data.trim();
+  } else if (data && typeof data === "object") {
+    const nested = data.message ?? data.error ?? data.detail ?? data.reason;
+    if (nested != null && String(nested).trim()) {
+      detail = String(nested).trim();
+    } else {
+      try {
+        detail = JSON.stringify(data);
+      } catch {
+        detail = "";
+      }
+    }
+  } else if (data != null) {
+    detail = String(data).trim();
+  }
+  if (!msg && !detail) return "ACP error";
+  if (!detail) return msg || "ACP error";
+  if (!msg || detail === msg || msg.includes(detail)) return msg || detail;
+  return `${msg}: ${detail}`;
+}
+
+/**
  * Build a JSON-RPC success response (same id as the request).
  * @param {string|number} id
  * @param {any} [result]
