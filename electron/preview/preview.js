@@ -349,10 +349,8 @@ shot.addEventListener("click", async () => {
   try {
     const res = await api.screenshot();
     const kb = Math.round((res.bytes || 0) / 1024);
-    showPanel(
-      "Screenshot",
-      `${res.width}×${res.height} JPEG · ${kb} KB · ~${res.tokens} tokens if sent to the model`,
-      `Viewport capture only (not full page).\nThis is the expensive path — prefer Snapshot for structure.\n\ndata:${res.mimeType};base64,${res.data.slice(0, 48)}…`,
+    showHint(
+      `Handed to chat · ${res.width}×${res.height} · ${kb} KB · ~${res.tokens} tokens`,
     );
   } catch (err) {
     showHint(err?.message || String(err));

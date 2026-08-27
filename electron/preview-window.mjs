@@ -14,7 +14,11 @@ import {
 } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { estimateImageTokens, normalizePreviewUrl } from "./preview-url.mjs";
+import {
+  estimateImageTokens,
+  formatPreviewCapturePrompt,
+  normalizePreviewUrl,
+} from "./preview-url.mjs";
 import {
   formatPreviewSnapshot,
   PAGE_SNAPSHOT_SCRIPT,
@@ -47,6 +51,11 @@ let persist = null;
 let readState = null;
 /** @type {((payload: Record<string, unknown>) => void) | null} */
 let broadcast = null;
+/** Chat window that opened Preview — user screenshots go here, not MCP. */
+/** @type {import('electron').BrowserWindow | null} */
+let ownerWin = null;
+/** @type {((win: import('electron').BrowserWindow) => boolean) | null} */
+let ownerHasProject = null;
 
 let toolbarHeight = TOOLBAR_FALLBACK;
 let sideWidth = 0;
@@ -454,8 +463,14 @@ function createGuest() {
  * @param {import('electron').BrowserWindow | null} [opts.owner]
  * @param {string} [opts.url]
  */
+function ownerWindow() {
+  if (ownerWin && !ownerWin.isDestroyed()) return ownerWin;
+  return null;
+}
+
 export async function openPreviewWindow(opts = {}) {
   const owner = opts.owner || null;
+  if (owner && !owner.isDestroyed()) ownerWin = owner;
   const state = readState?.() || {};
   viewportId = VIEWPORTS[state.previewViewport] ? state.previewViewport : "fluid";
 
@@ -493,6 +508,7 @@ export async function openPreviewWindow(opts = {}) {
       }
       previewWin = null;
       guestView = null;
+      ownerWin = null;
       lastTitle = "";
       lastUrl = "about:blank";
       loading = false;
@@ -573,9 +589,23 @@ export async function navigatePreview(rawUrl) {
   return previewPublicState();
 }
 
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Wait until the guest stops loading. No extra delay when already idle. */
+export async function waitForPreviewSettled(timeoutMs = 8000) {
+  if (!loading) return;
+  const start = Date.now();
+  while (loading && Date.now() - start < timeoutMs) {
+    await waitMs(50);
+  }
+}
+
 export async function snapshotPreview() {
   const wc = guestWc();
   if (!wc) throw new Error("Preview is not open");
+  await waitForPreviewSettled();
   const raw = await wc.executeJavaScript(PAGE_SNAPSHOT_SCRIPT, true);
   const text = formatPreviewSnapshot(raw || {});
   return {
@@ -611,6 +641,40 @@ export async function runPreviewAction(action) {
     throw err;
   }
   return result || { ok: true };
+}
+
+/**
+ * Capture the viewport and deliver it to the owning chat window.
+ * The agent cannot do this itself — the human presses Send screenshot.
+ */
+export async function sendPreviewCaptureToChat() {
+  const owner = ownerWindow();
+  if (!owner?.webContents || owner.webContents.isDestroyed()) {
+    throw new Error("Open a project chat first, then send the screenshot.");
+  }
+  if (ownerHasProject && !ownerHasProject(owner)) {
+    throw new Error("Open a project chat first, then send the screenshot.");
+  }
+  const shot = await screenshotPreview();
+  const payload = {
+    data: shot.data,
+    mimeType: shot.mimeType,
+    width: shot.width,
+    height: shot.height,
+    bytes: shot.bytes,
+    tokens: shot.tokens,
+    url: lastUrl,
+    title: lastTitle,
+    text: formatPreviewCapturePrompt({ url: lastUrl, title: lastTitle }),
+  };
+  owner.webContents.send("preview:viewport-capture", payload);
+  return {
+    sent: true,
+    width: shot.width,
+    height: shot.height,
+    bytes: shot.bytes,
+    tokens: shot.tokens,
+  };
 }
 
 export async function screenshotPreview() {
@@ -657,6 +721,7 @@ function debounce(fn, ms) {
  * @param {(patch: Record<string, unknown>) => void} hooks.savePatch
  * @param {() => import('electron').BrowserWindow | null} hooks.getOwner
  * @param {(state: Record<string, unknown>) => void} hooks.broadcast
+ * @param {(win: import('electron').BrowserWindow) => boolean} [hooks.ownerHasProject]
  */
 export function registerPreviewIpc(hooks) {
   if (ipcReady) return;
@@ -664,6 +729,8 @@ export function registerPreviewIpc(hooks) {
   readState = hooks.loadState;
   persist = (patch) => hooks.savePatch(patch);
   broadcast = hooks.broadcast;
+  ownerHasProject =
+    typeof hooks.ownerHasProject === "function" ? hooks.ownerHasProject : null;
 
   ipcMain.handle("preview:open", async (e, opts = {}) => {
     const owner =
@@ -683,8 +750,6 @@ export function registerPreviewIpc(hooks) {
   ipcMain.handle("preview:navigate", async (_e, url) => navigatePreview(url));
 
   ipcMain.handle("preview:snapshot", async () => snapshotPreview());
-
-  ipcMain.handle("preview:screenshot", async () => screenshotPreview());
 
   ipcMain.handle("preview:set-viewport", async (_e, id) => {
     viewportId = VIEWPORTS[id] ? id : "fluid";
@@ -754,7 +819,7 @@ export function registerPreviewIpc(hooks) {
 
   ipcMain.handle("preview:chrome-screenshot", async (e) => {
     if (!fromChrome(e)) throw new Error("Preview chrome only");
-    return screenshotPreview();
+    return sendPreviewCaptureToChat();
   });
 
   ipcMain.handle("preview:chrome-open-external", async (e) => {

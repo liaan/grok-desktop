@@ -140,6 +140,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       "app:new-worktree",
       "auth:login-progress",
       "preview:changed",
+      "preview:viewport-capture",
     ];
     if (!valid.includes(channel)) return () => {};
     const listener = (_event, payload) => handler(payload);

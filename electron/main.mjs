@@ -1678,6 +1678,10 @@ function registerIpc() {
       const ws = sessionFromEvent(e);
       return ws?.win && !ws.win.isDestroyed() ? ws.win : null;
     },
+    ownerHasProject: (win) => {
+      const ws = windowSessions.get(win.id);
+      return Boolean(ws?.agent?.cwd || ws?.lastCwd);
+    },
     broadcast: (payload) => {
       for (const ws of windowSessions.values()) {
         send(ws, "preview:changed", payload);

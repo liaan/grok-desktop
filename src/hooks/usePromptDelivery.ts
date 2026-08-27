@@ -8,14 +8,18 @@ import {
   type SetStateAction,
 } from "react";
 import type { ComposerSubmit, QueuedPrompt } from "../components/Composer";
-import type { PendingImage } from "../lib/pending-images";
+import {
+  previewCaptureRefuseError,
+  previewCaptureToSubmit,
+  type PendingImage,
+} from "../lib/pending-images";
 import { isAuthError, type ConnState } from "../lib/conn";
 import { finalizeOpenTools, uid } from "../lib/timeline";
 import type { TimelineImage, TimelineItem } from "../vite-env";
 
 /**
  * Mid-turn queue + session/prompt delivery (CLI-style Enter / Ctrl+Enter).
- * Owns promptQueue state; App only wires Composer + pinToBottom.
+ * Capture uses this path so a running turn queues the JPEG like composer Enter.
  */
 export function usePromptDelivery(opts: {
   project: string | null;
@@ -248,6 +252,30 @@ export function usePromptDelivery(opts: {
       deliverPrompt,
     ],
   );
+
+  const submitPreviewCapture = useCallback(
+    (payload: {
+      data?: unknown;
+      mimeType?: unknown;
+      text?: unknown;
+    }) => {
+      const parsed = previewCaptureToSubmit(payload);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+      void submitFromComposer(parsed.submit).then((ok) => {
+        if (!ok) setError(previewCaptureRefuseError(project));
+      });
+    },
+    [project, submitFromComposer, setError],
+  );
+
+  useEffect(() => {
+    return window.grokDesktop.on("preview:viewport-capture", (payload) => {
+      submitPreviewCapture(payload);
+    });
+  }, [submitPreviewCapture]);
 
   const sendQueuedNow = useCallback(
     (id?: string) => {

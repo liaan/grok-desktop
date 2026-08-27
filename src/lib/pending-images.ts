@@ -120,6 +120,12 @@ export function revokePendingImagePreview(img: PendingImage) {
   }
 }
 
+export {
+  pendingImageFromBase64,
+  previewCaptureRefuseError,
+  previewCaptureToSubmit,
+} from "../../shared/preview-capture.mjs";
+
 export async function fileToPendingImage(
   file: Blob,
   name?: string,

@@ -6,73 +6,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app } from "electron";
 import { grokHomeDir } from "./grok-home.mjs";
 import { previewApiAddress } from "./preview-api.mjs";
+import { previewMcpHttpServers } from "./preview-mcp-tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_MARKER = "managed-by: grok-desktop-preview";
 
-export function previewMcpScriptPath() {
-  const bundled = path.join(__dirname, "preview-mcp-server.mjs");
-  try {
-    if (app?.isPackaged) {
-      const dest = path.join(app.getPath("userData"), "preview-mcp-server.mjs");
-      fs.copyFileSync(bundled, dest);
-      return dest;
-    }
-  } catch {
-    /* fall through */
-  }
-  return bundled;
-}
-
-function stdioCommand() {
-  const node =
-    process.env.npm_node_execpath ||
-    process.env.NODE_BINARY ||
-    "";
-  if (node && fs.existsSync(node)) {
-    return { command: node, extraEnv: [] };
-  }
-  return {
-    command: process.execPath,
-    extraEnv: [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }],
-  };
-}
-
 /**
  * ACP MCP entries. Empty when the loopback API is not up yet.
- * HTTP is in-process (no spawn). Stdio is a fallback the agent can still start.
+ * HTTP only (in-process). A second stdio server used to duplicate every tool.
  * @returns {object[]}
  */
 export function desktopPreviewMcpServers() {
-  const api = previewApiAddress();
-  if (!api) return [];
-  const script = previewMcpScriptPath();
-  const stdio = stdioCommand();
-  const apiEnv = [
-    { name: "GROK_DESKTOP_PREVIEW_API", value: api.url },
-    { name: "GROK_DESKTOP_PREVIEW_TOKEN", value: api.token },
-    ...stdio.extraEnv,
-  ];
-  return [
-    {
-      type: "http",
-      name: "desktop-preview",
-      url: `${api.url}/mcp`,
-      headers: [
-        { name: "Authorization", value: `Bearer ${api.token}` },
-      ],
-    },
-    {
-      type: "stdio",
-      name: "desktop-preview-stdio",
-      command: stdio.command,
-      args: [script],
-      env: apiEnv,
-    },
-  ];
+  return previewMcpHttpServers(previewApiAddress());
 }
 
 /**

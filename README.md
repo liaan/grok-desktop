@@ -167,7 +167,7 @@ A second Electron window you can drag to another screen. Use it to look at local
 
 - Topbar **Preview** (empty window, then load a URL from the address bar)
 - Composer: `/preview https://localhost:5173` or `/preview close`
-- Ask in chat: “preview this URL” / “show the login page” — the agent should call Desktop’s Preview MCP (`desktop-preview__preview_open`, then snapshot / click / fill)
+- Ask in chat: “preview this URL” / “show the login page” — the agent opens Preview and reads a **text snapshot** (copy, controls). For layout/CSS, frame the issue (Size / zoom) and press **Send screenshot** so the capture goes into chat.
 
 **Network waterfall:** toolbar **Network** (always recording). Status, type, size, timing bars, initiator. **After load** isolates lazy/deferred requests. The agent can call `desktop-preview__preview_network` (`afterLoad: true` for post-load only).
 

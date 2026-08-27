@@ -4,18 +4,41 @@
  */
 import http from "node:http";
 import crypto from "node:crypto";
-import {
-  closePreviewWindow,
-  navigatePreview,
-  openPreviewWindow,
-  previewPublicState,
-  runPreviewAction,
-  screenshotPreview,
-  setPreviewViewport,
-  snapshotPreview,
-  snapshotPreviewNetwork,
-  VIEWPORTS,
-} from "./preview-window.mjs";
+
+/** @type {typeof import("./preview-window.mjs") | null} */
+let previewWinApi = null;
+
+async function previewWindowApi() {
+  if (!previewWinApi) previewWinApi = await import("./preview-window.mjs");
+  return previewWinApi;
+}
+
+/** Known loopback routes. `/screenshot` is intentionally absent (chrome Send only). */
+export function previewApiRecognizes(method, path) {
+  const m = String(method || "GET").toUpperCase();
+  const p = String(path || "/");
+  if (m === "GET" && (p === "/health" || p === "/state")) return true;
+  if (
+    m === "POST" &&
+    (p === "/open" ||
+      p === "/close" ||
+      p === "/navigate" ||
+      p === "/snapshot" ||
+      p === "/click" ||
+      p === "/fill" ||
+      p === "/press" ||
+      p === "/viewport")
+  ) {
+    return true;
+  }
+  if (
+    (m === "GET" || m === "POST") &&
+    (p === "/network" || p === "/network/log")
+  ) {
+    return true;
+  }
+  return false;
+}
 
 /** @type {http.Server | null} */
 let server = null;
@@ -46,6 +69,24 @@ export async function dispatchPreviewApi(req) {
   const path = String(req.path || "/");
   const body = req.body && typeof req.body === "object" ? req.body : {};
 
+  if (!previewApiRecognizes(method, path)) {
+    const err = new Error(`Not found: ${method} ${path}`);
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const {
+    closePreviewWindow,
+    navigatePreview,
+    openPreviewWindow,
+    previewPublicState,
+    runPreviewAction,
+    setPreviewViewport,
+    snapshotPreview,
+    snapshotPreviewNetwork,
+    VIEWPORTS,
+  } = await previewWindowApi();
+
   if (method === "GET" && path === "/health") {
     return { ok: true, ...previewPublicState() };
   }
@@ -71,12 +112,6 @@ export async function dispatchPreviewApi(req) {
       throw new Error("Preview is not open. Call preview_open first.");
     }
     return snapshotPreview();
-  }
-  if (method === "POST" && path === "/screenshot") {
-    if (!previewPublicState().open) {
-      throw new Error("Preview is not open. Call preview_open first.");
-    }
-    return screenshotPreview();
   }
   if (method === "POST" && path === "/click") {
     if (!previewPublicState().open) {

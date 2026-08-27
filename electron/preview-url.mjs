@@ -49,6 +49,15 @@ export function isAllowedPreviewHref(href) {
   return normalizePreviewUrl(href).ok;
 }
 
+/** Caption for a user-sent Preview viewport JPEG in chat. */
+export function formatPreviewCapturePrompt(raw = {}) {
+  const href = String(raw?.url || "").trim();
+  if (href && href !== "about:blank") {
+    return `Preview viewport capture (${href}).`;
+  }
+  return "Preview viewport capture.";
+}
+
 /** Rough text-token estimate (same 4-char heuristic as most UIs). */
 export function estimateTextTokens(text) {
   const n = String(text || "").length;
