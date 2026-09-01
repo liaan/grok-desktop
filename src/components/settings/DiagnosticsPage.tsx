@@ -1,13 +1,17 @@
 export function DiagnosticsPage({
   debugLogging,
   debugLogPath,
+  crashLogPath,
   onSetDebugLogging,
   onOpenDebugLog,
+  onOpenCrashLog,
 }: {
   debugLogging: boolean;
   debugLogPath: string;
+  crashLogPath: string;
   onSetDebugLogging: (next: boolean) => void;
   onOpenDebugLog: () => void;
+  onOpenCrashLog: () => void;
 }) {
   return (
     <section className="settings-section">
@@ -38,6 +42,21 @@ export function DiagnosticsPage({
         </div>
         <button type="button" className="btn" onClick={() => onOpenDebugLog()}>
           Open log
+        </button>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-text">
+          <span className="settings-label">Crash log</span>
+          <span className="settings-desc">
+            Always on. Records main-process exceptions, renderer/GPU exits, and
+            quit. Path:{" "}
+            <code className="settings-path" title={crashLogPath}>
+              {crashLogPath || "…"}
+            </code>
+          </span>
+        </div>
+        <button type="button" className="btn" onClick={() => onOpenCrashLog()}>
+          Open crash log
         </button>
       </div>
     </section>

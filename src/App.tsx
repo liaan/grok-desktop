@@ -94,6 +94,7 @@ export default function App() {
   const [codingDataNote, setCodingDataNote] = useState<string | undefined>();
   const [debugLogging, setDebugLogging] = useState(false);
   const [debugLogPath, setDebugLogPath] = useState("");
+  const [crashLogPath, setCrashLogPath] = useState("");
   const [allowPrerelease, setAllowPrerelease] = useState(false);
   const [autoCompactAt, setAutoCompactAt] = useState<AutoCompactAt>("off");
   const autoCompactFiredRef = useRef({ sessionId: "", tokens: 0 });
@@ -205,6 +206,7 @@ export default function App() {
       setCodingDataNote(i.codingDataStatus?.note);
       setDebugLogging(Boolean(i.debugLogging));
       setDebugLogPath(i.debugLogPath || "");
+      setCrashLogPath(i.crashLogPath || "");
       setAllowPrerelease(Boolean(i.allowPrerelease));
       setAutoCompactAt(normalizeAutoCompactAt(i.autoCompactAt));
       const nextTheme = i.theme === "light" ? "light" : "dark";
@@ -1034,6 +1036,7 @@ export default function App() {
       sandboxStatus={sandboxStatus}
       debugLogging={debugLogging}
       debugLogPath={debugLogPath}
+      crashLogPath={crashLogPath}
       allowPrerelease={allowPrerelease}
       autoCompactAt={autoCompactAt}
       onSetTheme={(t) => void setAppTheme(t)}
@@ -1046,6 +1049,7 @@ export default function App() {
       onSetAllowPrerelease={(next) => void applyAllowPrerelease(next)}
       onSetAutoCompactAt={(next) => void applyAutoCompactAt(next)}
       onOpenDebugLog={() => void window.grokDesktop.openDebugLog()}
+      onOpenCrashLog={() => void window.grokDesktop.openCrashLog()}
       onRestartAgent={() => {
         setSettingsOpen(false);
         setSettingsSection(null);

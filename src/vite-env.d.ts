@@ -427,6 +427,9 @@ export type AppInfo = {
   /** Diagnostic JSONL log for tools/hooks/terminals */
   debugLogging: boolean;
   debugLogPath: string;
+  /** Always-on crash / exit JSONL (uncaughtException, renderer gone, quit) */
+  crashLogPath: string;
+  crashDumpsPath: string;
   /**
    * When true, Check for updates includes GitHub prereleases
    * (vX.Y.Z-beta.N). Default off.
@@ -614,6 +617,7 @@ declare global {
         value: boolean,
       ) => Promise<{ debugLogging: boolean; debugLogPath: string }>;
       openDebugLog: () => Promise<string>;
+      openCrashLog: () => Promise<string>;
       getGitBranch: (
         cwd?: string,
       ) => Promise<{ branch: string | null; detached: boolean }>;

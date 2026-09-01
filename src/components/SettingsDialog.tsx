@@ -33,6 +33,7 @@ export function SettingsDialog({
   sandboxStatus,
   debugLogging,
   debugLogPath,
+  crashLogPath,
   allowPrerelease,
   autoCompactAt,
   onSetTheme,
@@ -45,6 +46,7 @@ export function SettingsDialog({
   onSetAllowPrerelease,
   onSetAutoCompactAt,
   onOpenDebugLog,
+  onOpenCrashLog,
   onRestartAgent,
   onRestartAfterWrite,
   restarting,
@@ -188,6 +190,7 @@ export function SettingsDialog({
               sandboxStatus={sandboxStatus}
               debugLogging={debugLogging}
               debugLogPath={debugLogPath}
+              crashLogPath={crashLogPath}
               allowPrerelease={allowPrerelease}
               autoCompactAt={autoCompactAt}
               onSetTheme={onSetTheme}
@@ -200,6 +203,7 @@ export function SettingsDialog({
               onSetAllowPrerelease={onSetAllowPrerelease}
               onSetAutoCompactAt={onSetAutoCompactAt}
               onOpenDebugLog={onOpenDebugLog}
+              onOpenCrashLog={onOpenCrashLog}
               onRestartAgent={onRestartAgent}
               onRestartAfterWrite={onRestartAfterWrite}
               restarting={restarting}
@@ -307,8 +311,10 @@ function SettingsPageBody({
         <DiagnosticsPage
           debugLogging={props.debugLogging}
           debugLogPath={props.debugLogPath}
+          crashLogPath={props.crashLogPath}
           onSetDebugLogging={props.onSetDebugLogging}
           onOpenDebugLog={props.onOpenDebugLog}
+          onOpenCrashLog={props.onOpenCrashLog}
         />
       );
   }

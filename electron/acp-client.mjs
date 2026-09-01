@@ -73,6 +73,7 @@ import {
 } from "./acp-ext-methods.mjs";
 import { shouldAutoTrustFolder } from "./desktop-worktrees.mjs";
 import { debugLog } from "./debug-log.mjs";
+import { errorFields, writeCrashLog } from "./crash-log.mjs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
@@ -620,6 +621,17 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   _onLine(line) {
+    try {
+      this._dispatchLine(line);
+    } catch (err) {
+      debugLog("acp", "on-line-error", {
+        error: err?.message || String(err),
+      });
+      writeCrashLog("acp", "on-line-error", errorFields(err));
+    }
+  }
+
+  _dispatchLine(line) {
     const trimmed = line.trim();
     if (!trimmed) return;
     let msg;

@@ -129,6 +129,12 @@ import {
   setDebugLogging,
 } from "./debug-log.mjs";
 import {
+  getCrashDumpsPath,
+  getCrashLogPath,
+  installCrashLogging,
+  writeCrashLog,
+} from "./crash-log.mjs";
+import {
   applyPreviewTheme,
   getPreviewWindow,
   openPreviewWindow,
@@ -146,6 +152,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
+
+installCrashLogging();
 
 /** File → Quit / Cmd+Q. Window X does not set this (Settings can swallow that). */
 let appQuitting = false;
@@ -744,6 +752,8 @@ function registerIpc() {
       codingDataStatus: codingData,
       debugLogging: isDebugLogging() || Boolean(state.debugLogging),
       debugLogPath: getDebugLogPath(),
+      crashLogPath: getCrashLogPath(),
+      crashDumpsPath: getCrashDumpsPath(),
       allowPrerelease: Boolean(state.allowPrerelease),
       externalEditor: normalizeExternalEditor(state.externalEditor),
       autoCompactAt: normalizeAutoCompactAt(state.autoCompactAt),
@@ -1507,6 +1517,26 @@ function registerIpc() {
     };
   });
 
+  ipcMain.handle("app:open-crash-log", async () => {
+    const p = getCrashLogPath();
+    try {
+      if (!fs.existsSync(p)) {
+        fs.writeFileSync(
+          p,
+          `${JSON.stringify({ t: new Date().toISOString(), scope: "crash", msg: "log created" })}\n`,
+          "utf8",
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    const err = await shell.openPath(p);
+    if (err) {
+      shell.showItemInFolder(p);
+    }
+    return p;
+  });
+
   ipcMain.handle("app:open-debug-log", async () => {
     const p = getDebugLogPath();
     try {
@@ -1787,6 +1817,10 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  writeCrashLog("app", "window-all-closed-handler", {
+    quittingForUpdate: isQuittingForUpdate(),
+    platform: process.platform,
+  });
   if (isQuittingForUpdate()) return;
   if (process.platform !== "darwin") app.quit();
 });
@@ -1795,6 +1829,9 @@ app.on("window-all-closed", () => {
 // electron-updater quitAndInstall so "Restart now" appears to do nothing.
 app.on("before-quit", () => {
   appQuitting = true;
+  writeCrashLog("app", "before-quit-handler", {
+    quittingForUpdate: isQuittingForUpdate(),
+  });
   closeSplash();
   disposeAgentQuick();
 });

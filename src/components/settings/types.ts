@@ -86,6 +86,8 @@ export type SettingsSharedProps = {
   sandboxStatus: string;
   debugLogging: boolean;
   debugLogPath: string;
+  crashLogPath: string;
+  onOpenCrashLog: () => void;
   allowPrerelease: boolean;
   autoCompactAt: AutoCompactAt;
   onSetTheme: (theme: "dark" | "light") => void;

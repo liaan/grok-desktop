@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("app:set-allow-prerelease", value),
   setDebugLogging: (value) => ipcRenderer.invoke("app:set-debug-logging", value),
   openDebugLog: () => ipcRenderer.invoke("app:open-debug-log"),
+  openCrashLog: () => ipcRenderer.invoke("app:open-crash-log"),
   getGitBranch: (cwd) => ipcRenderer.invoke("git:branch", cwd),
   getGitStatus: (cwd) => ipcRenderer.invoke("git:status", cwd),
   getGitDiff: (path, opts) => ipcRenderer.invoke("git:diff", path, opts || {}),
