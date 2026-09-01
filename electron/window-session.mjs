@@ -546,7 +546,18 @@ export function ensureAgent(ws, cwd, opts = {}) {
       "session-update",
       ifCurrent((params) => {
         if (isDebugLogging()) {
-          debugLog("acp", "session-update", summarizeSessionUpdate(params));
+          const update = params?.update ?? params ?? {};
+          const kind = update.sessionUpdate || update.session_update || "";
+          // Thought/token streams are thousands of lines/sec; sync file
+          // appends on that path stall main and can take the process down.
+          if (
+            kind !== "agent_thought_chunk" &&
+            kind !== "agent_message_chunk" &&
+            kind !== "tool_call_delta_chunk" &&
+            kind !== "user_message_chunk"
+          ) {
+            debugLog("acp", "session-update", summarizeSessionUpdate(params));
+          }
         }
         send(ws, "agent:session-update", params);
       }),

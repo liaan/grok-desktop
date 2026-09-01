@@ -155,6 +155,23 @@ const isDev = !app.isPackaged;
 
 installCrashLogging();
 
+// Windows: extra BrowserWindow + WebContentsView (Preview) has been taking
+// the whole process down with no JS exception (crashpad "not connected").
+// Software compositing avoids that GPU path. Opt back in with GROK_DESKTOP_GPU=1.
+if (
+  process.platform === "win32" &&
+  !/^(1|true|yes|on)$/i.test(String(process.env.GROK_DESKTOP_GPU || ""))
+) {
+  try {
+    app.disableHardwareAcceleration();
+    writeCrashLog("app", "disable-hardware-acceleration", { platform: "win32" });
+  } catch (err) {
+    writeCrashLog("app", "disable-hardware-acceleration-failed", {
+      error: err?.message || String(err),
+    });
+  }
+}
+
 /** File → Quit / Cmd+Q. Window X does not set this (Settings can swallow that). */
 let appQuitting = false;
 

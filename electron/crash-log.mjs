@@ -3,6 +3,7 @@
  * Independent of Settings → Debug logging. Writes JSON lines to
  * userData/desktop-crash.log so silent main-process deaths are diagnosable.
  */
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -12,11 +13,13 @@ let logPath = null;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_LINE = 32 * 1024;
 
+const nodeRequire = createRequire(import.meta.url);
+
 function electronApp() {
   try {
-    // Lazy require so unit tests can import without a full Electron binding.
-    // eslint-disable-next-line global-require
-    return require("electron");
+    // createRequire works in ESM main; bare `require` is undefined and was
+    // silently skipping crashReporter + app quit/GPU handlers.
+    return nodeRequire("electron");
   } catch {
     return null;
   }

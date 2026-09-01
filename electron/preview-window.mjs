@@ -29,6 +29,7 @@ import {
   formatNetworkDump,
   ingestWebRequest,
 } from "./preview-network.mjs";
+import { errorFields, writeCrashLog } from "./crash-log.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -469,6 +470,19 @@ function ownerWindow() {
 }
 
 export async function openPreviewWindow(opts = {}) {
+  writeCrashLog("preview", "open-start", {
+    url: opts.url || null,
+    live: isLive(),
+  });
+  try {
+    return await openPreviewWindowInner(opts);
+  } catch (err) {
+    writeCrashLog("preview", "open-failed", errorFields(err));
+    throw err;
+  }
+}
+
+async function openPreviewWindowInner(opts = {}) {
   const owner = opts.owner || null;
   if (owner && !owner.isDestroyed()) ownerWin = owner;
   const state = readState?.() || {};
@@ -552,6 +566,7 @@ export async function openPreviewWindow(opts = {}) {
     emitChrome();
   }
 
+  writeCrashLog("preview", "open-ok", { url: lastUrl || null });
   return previewPublicState();
 }
 
