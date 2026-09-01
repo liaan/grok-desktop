@@ -364,17 +364,24 @@ function layoutGuest() {
 function applyViewport() {
   const wc = guestWc();
   const spec = VIEWPORTS[viewportId] || VIEWPORTS.fluid;
-  if (wc) {
+  // Device emulation on a guest that has never loaded a URL AVs Electron
+  // on Windows (Crashpad ACCESS_VIOLATION during Preview open).
+  const url = (() => {
     try {
-      if (spec.width) {
-        wc.enableDeviceEmulation({
-          screenPosition: spec.id === "mobile" ? "mobile" : "desktop",
-          screenSize: { width: spec.width, height: spec.height },
-          viewSize: { width: spec.width, height: spec.height },
-          deviceScaleFactor: spec.id === "mobile" ? 2 : 1,
-          scale: 1,
-        });
-      }
+      return wc && !wc.isDestroyed() ? wc.getURL() : "";
+    } catch {
+      return "";
+    }
+  })();
+  if (wc && spec.width && url && url !== "about:blank") {
+    try {
+      wc.enableDeviceEmulation({
+        screenPosition: spec.id === "mobile" ? "mobile" : "desktop",
+        screenSize: { width: spec.width, height: spec.height },
+        viewSize: { width: spec.width, height: spec.height },
+        deviceScaleFactor: spec.id === "mobile" ? 2 : 1,
+        scale: 1,
+      });
     } catch {
       /* older Electron / empty guest */
     }
@@ -490,6 +497,7 @@ async function openPreviewWindowInner(opts = {}) {
 
   if (!isLive()) {
     const bounds = preferredPreviewBounds(owner, state.previewBounds);
+    writeCrashLog("preview", "window-create", bounds);
     const win = new BrowserWindow({
       ...bounds,
       minWidth: 520,
@@ -538,12 +546,28 @@ async function openPreviewWindowInner(opts = {}) {
     });
 
     const chromeFile = path.join(__dirname, "preview", "index.html");
+    writeCrashLog("preview", "chrome-load");
     await win.loadFile(chromeFile, { query: { theme: themeFromState() } });
-    guestView = createGuest();
-    win.contentView.addChildView(guestView);
-    attachGuestNetwork(guestView.webContents);
+    writeCrashLog("preview", "chrome-loaded");
+    // HWND must exist before WebContentsView attach — add-then-show AVs on Windows.
     win.show();
     win.focus();
+    writeCrashLog("preview", "chrome-shown");
+    guestView = createGuest();
+    writeCrashLog("preview", "guest-created");
+    win.contentView.addChildView(guestView);
+    writeCrashLog("preview", "guest-attached");
+    layoutGuest();
+    const guestWcRef = guestView.webContents;
+    setImmediate(() => {
+      try {
+        if (!guestWcRef || guestWcRef.isDestroyed()) return;
+        attachGuestNetwork(guestWcRef);
+        writeCrashLog("preview", "guest-network-attached");
+      } catch (err) {
+        writeCrashLog("preview", "guest-network-failed", errorFields(err));
+      }
+    });
   } else {
     if (previewWin.isMinimized()) previewWin.restore();
     previewWin.show();
@@ -560,7 +584,9 @@ async function openPreviewWindowInner(opts = {}) {
   if (wanted) {
     const parsed = normalizePreviewUrl(wanted);
     if (parsed.ok && parsed.href !== "about:blank") {
+      writeCrashLog("preview", "guest-load", { url: parsed.href });
       await loadGuest(parsed.href);
+      writeCrashLog("preview", "guest-loaded", { url: lastUrl || null });
     }
   } else {
     emitChrome();
