@@ -4,7 +4,8 @@
  * When enabled (default), agent shells only see the open project (+ system
  * tool roots / temp) and GROK_HOME (~/.grok for skills/agents/personas).
  * Network is allowed. Docker sockets are never exposed. The rest of $HOME
- * stays blocked.
+ * stays blocked. Git is special: Seatbelt EPERM on an existing ~/.gitconfig
+ * is fatal, so jailed spawns null GIT_CONFIG_* and copy host user.name/email.
  *
  * Backends:
  *   darwin  → /usr/bin/sandbox-exec (Seatbelt)
@@ -153,6 +154,157 @@ function realpathOrSelf(p) {
  */
 export function seatbeltLiteral(p) {
   return String(p).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * Host git identity/config files git will try to read. Seatbelt EPERM on an
+ * *existing* ~/.gitconfig is fatal (`unable to access … Operation not permitted`);
+ * a missing file is not. Linux bwrap does not bind $HOME so this is macOS-only
+ * in practice.
+ * @param {string} [homeDir]
+ * @returns {{ gitconfig: string, xdgConfig: string, xdgIgnore: string, xdgAttributes: string, gitignoreGlobal: string }}
+ */
+export function hostGitConfigPaths(homeDir) {
+  const home = homeDir || os.homedir();
+  const xdg = process.env.XDG_CONFIG_HOME
+    ? String(process.env.XDG_CONFIG_HOME)
+    : path.join(home, ".config");
+  return {
+    gitconfig: path.join(home, ".gitconfig"),
+    xdgConfig: path.join(xdg, "git", "config"),
+    xdgIgnore: path.join(xdg, "git", "ignore"),
+    xdgAttributes: path.join(xdg, "git", "attributes"),
+    gitignoreGlobal: path.join(home, ".gitignore_global"),
+  };
+}
+
+/**
+ * Parse `[user] name` / `email` from a gitconfig snippet. No include follow.
+ * @param {string} text
+ * @returns {{ name: string, email: string }}
+ */
+export function parseGitConfigUser(text) {
+  let inUser = false;
+  let name = "";
+  let email = "";
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    const sec = line.match(/^\[([^\]]+)\]/);
+    if (sec) {
+      inUser = sec[1].trim().toLowerCase() === "user";
+      continue;
+    }
+    if (!inUser) continue;
+    const kv = line.match(/^(name|email)\s*=\s*(.*)$/i);
+    if (!kv) continue;
+    let val = kv[2].trim();
+    const hash = val.search(/\s+#/);
+    if (hash >= 0) val = val.slice(0, hash).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (kv[1].toLowerCase() === "name") name = val;
+    else email = val;
+  }
+  return { name, email };
+}
+
+/**
+ * Best-effort user.name / user.email from host gitconfig (read outside the jail).
+ * @param {string} [homeDir]
+ * @returns {{ name: string, email: string } | null}
+ */
+export function readHostGitIdentity(homeDir) {
+  const paths = hostGitConfigPaths(homeDir);
+  let name = "";
+  let email = "";
+  for (const file of [paths.gitconfig, paths.xdgConfig]) {
+    let text = "";
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const parsed = parseGitConfigUser(text);
+    if (parsed.name) name = parsed.name;
+    if (parsed.email) email = parsed.email;
+  }
+  if (!name && !email) return null;
+  return { name, email };
+}
+
+/**
+ * Git env for jailed tool shells.
+ *
+ * macOS Seatbelt denies $HOME, so git fatals on ~/.gitconfig (EPERM). Point
+ * global/system config at /dev/null (same workaround agents otherwise invent)
+ * and copy host identity so commits still have user.name / user.email.
+ *
+ * @param {{ name?: string, email?: string } | null} [ident]
+ *   Pass `null` to skip identity. Omit to read host gitconfig.
+ * @returns {Record<string, string>}
+ */
+export function sandboxedGitEnv(ident) {
+  if (ident === undefined) ident = readHostGitIdentity();
+  /** @type {Record<string, string>} */
+  const env = {
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  const name = ident?.name ? String(ident.name) : "";
+  const email = ident?.email ? String(ident.email) : "";
+  if (name) {
+    env.GIT_AUTHOR_NAME = name;
+    env.GIT_COMMITTER_NAME = name;
+  }
+  if (email) {
+    env.GIT_AUTHOR_EMAIL = email;
+    env.GIT_COMMITTER_EMAIL = email;
+  }
+  /** @type {Array<[string, string]>} */
+  const pairs = [];
+  if (name) pairs.push(["user.name", name]);
+  if (email) pairs.push(["user.email", email]);
+  if (pairs.length) {
+    env.GIT_CONFIG_COUNT = String(pairs.length);
+    pairs.forEach(([k, v], i) => {
+      env[`GIT_CONFIG_KEY_${i}`] = k;
+      env[`GIT_CONFIG_VALUE_${i}`] = v;
+    });
+  }
+  return env;
+}
+
+/**
+ * Merge {@link sandboxedGitEnv} into a spawn env. Existing non-empty keys win.
+ * @param {Record<string, string | undefined>} env
+ * @param {{ name?: string, email?: string } | null} [ident]
+ */
+export function applySandboxedGitEnv(env, ident) {
+  const extra = sandboxedGitEnv(ident);
+  for (const [k, v] of Object.entries(extra)) {
+    if (env[k] == null || env[k] === "") env[k] = v;
+  }
+  return env;
+}
+
+/**
+ * `docker run -e KEY=VAL` pairs for {@link sandboxedGitEnv}.
+ * @param {{ name?: string, email?: string } | null} [ident]
+ * @returns {string[]}
+ */
+export function dockerGitConfigEnvFlags(ident) {
+  /** @type {string[]} */
+  const flags = [];
+  for (const [k, v] of Object.entries(sandboxedGitEnv(ident))) {
+    flags.push("-e", `${k}=${v}`);
+  }
+  return flags;
 }
 
 /**
@@ -709,8 +861,8 @@ export function buildBwrapPrefix(opts) {
 /**
  * Seatbelt profile for ACP tool shells.
  *
- * `(allow default)` then deny $HOME outside the open project and GROK_HOME
- * (skills/agents/personas) + docker sockets.
+ * `(allow default)` then deny $HOME outside the open project, GROK_HOME
+ * (skills/agents/personas), and git identity files (read-only) + docker sockets.
  * Pure `(deny default)` allowlists SIGABRT on modern macOS (dyld paths).
  *
  * @param {{ projectRoot: string, tmpDir?: string, homeDir?: string, grokHome?: string }} opts
@@ -730,16 +882,38 @@ export function buildSeatbeltProfile(opts) {
   const tmpLit = seatbeltLiteral(tmpDir);
   const homeLit = seatbeltLiteral(home);
   const grokLit = seatbeltLiteral(grokHome);
+  const gitPaths = hostGitConfigPaths(home);
+  const gitconfigLit = seatbeltLiteral(gitPaths.gitconfig);
+  const gitXdgConfigLit = seatbeltLiteral(gitPaths.xdgConfig);
+  const gitXdgIgnoreLit = seatbeltLiteral(gitPaths.xdgIgnore);
+  const gitXdgAttrLit = seatbeltLiteral(gitPaths.xdgAttributes);
+  const gitignoreGlobalLit = seatbeltLiteral(gitPaths.gitignoreGlobal);
 
   return `(version 1)
 (allow default)
 
-; Block the user home tree except the open project and GROK_HOME (skills/agents).
-(deny file-read* file-write* file-ioctl file-write-data
+; Block writes under $HOME except the open project and GROK_HOME.
+(deny file-write* file-ioctl file-write-data
   (require-all
     (subpath "${homeLit}")
     (require-not (subpath "${projectLit}"))
     (require-not (subpath "${grokLit}"))
+  )
+)
+
+; Block reads under $HOME except project, GROK_HOME, and git identity files.
+; An existing ~/.gitconfig + EPERM makes git fatal; a missing file does not.
+; Writes to these paths stay denied (global gitconfig is host-owned).
+(deny file-read*
+  (require-all
+    (subpath "${homeLit}")
+    (require-not (subpath "${projectLit}"))
+    (require-not (subpath "${grokLit}"))
+    (require-not (literal "${gitconfigLit}"))
+    (require-not (literal "${gitXdgConfigLit}"))
+    (require-not (literal "${gitXdgIgnoreLit}"))
+    (require-not (literal "${gitXdgAttrLit}"))
+    (require-not (literal "${gitignoreGlobalLit}"))
   )
 )
 
@@ -1007,6 +1181,12 @@ export function planSandboxedSpawn(opts) {
     shell: Boolean(opts.shell),
   });
 
+  // win-host is path-gate only — host gitconfig is readable, so leave it.
+  // Jails (Seatbelt / bwrap / docker) must not let git fatal on ~/.gitconfig.
+  if (probe.backend && probe.backend !== "win-host" && probe.backend !== "none") {
+    applySandboxedGitEnv(env);
+  }
+
   if (probe.backend === "sandbox-exec") {
     const profile = buildSeatbeltProfile({ projectRoot });
     return {
@@ -1236,6 +1416,8 @@ function planDocker(p) {
     // Skills/agents resolve via GROK_HOME inside the jail
     "-e",
     "GROK_HOME=/grok",
+    // Same gitconfig workaround as Seatbelt (harmless in the container).
+    ...dockerGitConfigEnvFlags(),
   ];
 
   return {

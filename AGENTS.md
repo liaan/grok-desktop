@@ -273,7 +273,7 @@ Implementation: `electron/terminal-sandbox.mjs`, hooked in `AcpTerminalManager` 
 
 | Platform | Backend | Notes |
 |----------|---------|--------|
-| macOS | `sandbox-exec` (Seatbelt) | `(allow default)` then **deny `$HOME` except project** + deny docker sockets; network allowed |
+| macOS | `sandbox-exec` (Seatbelt) | `(allow default)` then **deny `$HOME` except project + GROK_HOME + git identity files (read)**; deny docker sockets; network allowed |
 | Linux | `bwrap` (bubblewrap); Docker fallback | No host `$HOME` bind; **no docker.sock** |
 | Windows | WSL + `bwrap` if present; else **host shell** (`win-host`); Docker **opt-in only** (`GROK_DESKTOP_ALLOW_DOCKER_SANDBOX=1`) | Docker/WSL bind-mounts often hang on Windows volumes — default avoids them |
 
@@ -282,6 +282,7 @@ Policy highlights:
 - **Fail closed** — if sandbox is on and no backend is available, `terminal/create` errors (does not silently spawn on the bare host).
 - **Network allowed** — `npm install` / `git fetch` still work.
 - **Home jail** — tool shells cannot read/write the rest of `$HOME` (`.ssh`, sibling repos, Docker config). **`GROK_HOME` (`~/.grok`) is always bound** so skills, agents, personas, and sessions work with sandbox on. Other global host paths still need sandbox off or “Allow outside project”.
+- **Git config** — Seatbelt EPERM on an existing `~/.gitconfig` is fatal to git (`unable to access … Operation not permitted`). Jailed terminals set `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, and copy host `user.name` / `user.email` into `GIT_AUTHOR_*` / `GIT_COMMITTER_*` / `GIT_CONFIG_COUNT`. Seatbelt also allows **read** of the usual git identity files (`~/.gitconfig`, `~/.config/git/{config,ignore,attributes}`, `~/.gitignore_global`); writes stay denied. Do not bind `~/.git-credentials` or `~/.ssh`.
 - **Does not sandbox** the `grok agent stdio` process, MCP servers under `~/.grok`, or Electron itself.
 - UI: Settings toggle (confirm when turning **off**); topbar chips for **Host shell** / **Outside project** / **Auto-approve**.
 - **Docker image must include git** — default `buildpack-deps:noble-scm` (not plain `ubuntu:24.04`). If the chosen image has no `git`, Desktop builds a local `grok-desktop-sandbox:2` once. Warm runs **async at app start / sandbox enable** — never pull/build on the `terminal/create` hot path (fail fast with “preparing… retry” until ready). Only **git-verified** images are cached.

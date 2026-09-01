@@ -226,4 +226,6 @@ test("buildSeatbeltProfile exempts GROK_HOME from home deny", async () => {
     profile.includes(gh) || profile.includes(sandboxGrokHome().replace(/\\/g, "/")),
     "seatbelt profile should mention GROK_HOME",
   );
+  assert.match(profile, /deny file-read\*/);
+  assert.match(profile, /deny file-write\*/);
 });
