@@ -34,10 +34,8 @@ export function useProjectSession(opts: {
   revokeWritesThisSession: () => void | Promise<void>;
   hydrateBackgroundTasks: (tasks: import("../lib/background-tasks").BackgroundTask[]) => void;
   hydrateSessionUsage: (usage: import("../lib/usage").SessionUsage | null | undefined) => void;
-  /** Mirror open permission gates from main (source of truth). */
-  syncPermissionsFromMain: () => void | Promise<void>;
-  /** Restore Trust-folder modal if open() wiped renderer state. */
-  syncFolderTrustFromMain?: () => void | Promise<void>;
+  /** Mirror open permission + parked gates from main (source of truth). */
+  syncAgentGatesFromMain: () => void | Promise<void>;
   hydrateFromInfo: (i: AppInfo) => void;
   refreshAuth: () => Promise<AuthStatus>;
   refreshBackbone: (cwd?: string) => Promise<BackboneSummary>;
@@ -74,8 +72,7 @@ export function useProjectSession(opts: {
     revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
-    syncPermissionsFromMain,
-    syncFolderTrustFromMain,
+    syncAgentGatesFromMain,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -120,8 +117,7 @@ export function useProjectSession(opts: {
       hydrateBackgroundTasks(res.backgroundTasks || []);
       hydrateSessionUsage(res.usage);
       // Await so we do not mark online with a stale empty mirror.
-      await syncPermissionsFromMain();
-      await syncFolderTrustFromMain?.();
+      await syncAgentGatesFromMain();
       setAgentCommands([]);
       // Composer draft/slash menu remounts via key=sessionId — no reset needed.
       clearPromptQueue();
@@ -183,8 +179,7 @@ export function useProjectSession(opts: {
       revokeWritesThisSession,
       hydrateBackgroundTasks,
       hydrateSessionUsage,
-      syncPermissionsFromMain,
-      syncFolderTrustFromMain,
+      syncAgentGatesFromMain,
       hydrateFromInfo,
       promptQueueRef,
       refreshBackbone,

@@ -45,6 +45,80 @@ function toolCallIdFromPermission(p: PermissionRequest | undefined): string | nu
   return extractToolCallId(p.params) || extractToolCallId(p.params?.toolCall);
 }
 
+function keepIfSameReq<T extends { reqId: string }>(
+  cur: T | null,
+  next: T | null,
+): T | null {
+  if (!next) return null;
+  if (cur?.reqId === next.reqId) return cur;
+  return next;
+}
+
+function folderTrustFromRow(row: {
+  reqId?: string;
+  params?: {
+    cwd?: string;
+    workspace?: string;
+    configKinds?: string[];
+  };
+} | null | undefined): FolderTrustRequest | null {
+  if (!row?.reqId) return null;
+  return {
+    reqId: row.reqId,
+    cwd: row.params?.cwd,
+    workspace: row.params?.workspace,
+    configKinds: row.params?.configKinds,
+  };
+}
+
+function planApprovalFromRow(row: {
+  reqId?: string;
+  params?: { planContent?: string; planFilePath?: string | null };
+} | null | undefined): PlanApprovalRequest | null {
+  if (!row?.reqId) return null;
+  return {
+    reqId: row.reqId,
+    planContent: row.params?.planContent || "",
+    planFilePath: row.params?.planFilePath,
+  };
+}
+
+function userQuestionFromRow(row: {
+  reqId?: string;
+  params?: { questions?: unknown };
+} | null | undefined): AskUserRequest | null {
+  if (!row?.reqId) return null;
+  return {
+    reqId: row.reqId,
+    questions: Array.isArray(row.params?.questions)
+      ? (row.params.questions as AskUserRequest["questions"])
+      : [],
+  };
+}
+
+function mcpElicitFromRow(row: {
+  reqId?: string;
+  params?: {
+    serverName?: string;
+    message?: string;
+    mode?: "form" | "url";
+    url?: string;
+    elicitationId?: string;
+    requestedSchema?: unknown;
+  };
+} | null | undefined): McpElicitRequest | null {
+  if (!row?.reqId) return null;
+  return {
+    reqId: row.reqId,
+    serverName: row.params?.serverName || "",
+    message: row.params?.message || "",
+    mode: row.params?.mode === "url" ? "url" : "form",
+    url: row.params?.url,
+    elicitationId: row.params?.elicitationId,
+    requestedSchema: row.params?.requestedSchema,
+  };
+}
+
 /**
  * Subscribe to agent IPC: timeline updates, permissions, plan/ask modals,
  * background tasks, session mode.
@@ -91,6 +165,8 @@ export function useAgentEvents(opts: {
    * re-syncs instead of wiping a request that landed after the snapshot.
    */
   const permissionEpoch = useRef(0);
+  /** Same idea for parked plan/ask/trust/elicit (no 1.5s poll). */
+  const gateEpoch = useRef(0);
 
   /**
    * Main owns open tool gates. Replace renderer mirror from the main list
@@ -125,34 +201,48 @@ export function useAgentEvents(opts: {
     }
   }, []);
 
-  const syncFolderTrustFromMain = useCallback(async () => {
-    try {
-      const list = await window.grokDesktop.listPendingFolderTrust();
-      const row = Array.isArray(list) ? list[0] : null;
-      setFolderTrust((cur) => {
-        if (!row?.reqId) return null;
-        if (cur?.reqId === row.reqId) return cur;
-        return {
-          reqId: row.reqId,
-          cwd: row.params?.cwd,
-          workspace: row.params?.workspace,
-          configKinds: row.params?.configKinds,
-        };
-      });
-    } catch {
-      /* ignore */
+  /**
+   * Main owns parked reverse-requests. Replace renderer modals from the
+   * parked maps (open / HMR). Skip applying a snapshot if a live push
+   * arrived during the await (empty list must not clobber trust-2).
+   */
+  const syncAgentGatesFromMain = useCallback(async () => {
+    await syncPermissionsFromMain();
+    for (;;) {
+      const epochAtStart = gateEpoch.current;
+      try {
+        const gates = await window.grokDesktop.listPendingGates();
+        if (gateEpoch.current !== epochAtStart) continue;
+        const folder = Array.isArray(gates?.folderTrust)
+          ? gates.folderTrust[0]
+          : null;
+        const plan = Array.isArray(gates?.planApprovals)
+          ? gates.planApprovals[0]
+          : null;
+        const ask = Array.isArray(gates?.userQuestions)
+          ? gates.userQuestions[0]
+          : null;
+        const elicit = Array.isArray(gates?.mcpElicits)
+          ? gates.mcpElicits[0]
+          : null;
+        setFolderTrust((cur) => keepIfSameReq(cur, folderTrustFromRow(folder)));
+        setPlanApproval((cur) => keepIfSameReq(cur, planApprovalFromRow(plan)));
+        setUserQuestion((cur) => keepIfSameReq(cur, userQuestionFromRow(ask)));
+        setMcpElicit((cur) => keepIfSameReq(cur, mcpElicitFromRow(elicit)));
+      } catch {
+        /* ignore */
+      }
+      if (gateEpoch.current === epochAtStart) break;
     }
-  }, []);
+  }, [syncPermissionsFromMain]);
 
   useEffect(() => {
-    void syncPermissionsFromMain();
-    void syncFolderTrustFromMain();
+    void syncAgentGatesFromMain();
     // Safety net: if a permission push was dropped (HMR, late subscribe, focus),
     // the agent still waits and the UI stays on "Working…" with no Approvals.
     // Poll while we may be mid-turn or whenever main already holds gates.
     const poll = window.setInterval(() => {
       void syncPermissionsFromMain();
-      void syncFolderTrustFromMain();
     }, 1500);
     const offs = [
       window.grokDesktop.on("agent:session-update", (params) => {
@@ -249,6 +339,7 @@ export function useAgentEvents(opts: {
         setPermissions((prev) => prev.filter((p) => p.reqId !== reqId));
       }),
       window.grokDesktop.on("agent:plan-approval-request", (payload) => {
+        gateEpoch.current += 1;
         const p = payload as {
           reqId: string;
           params?: { planContent?: string; planFilePath?: string | null };
@@ -260,6 +351,7 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:plan-approval-dismiss", (payload) => {
+        gateEpoch.current += 1;
         const reqId = (payload as { reqId?: string })?.reqId;
         setPlanApproval((cur) => {
           if (!cur) return null;
@@ -269,6 +361,7 @@ export function useAgentEvents(opts: {
         setSessionMode(null);
       }),
       window.grokDesktop.on("agent:user-question-request", (payload) => {
+        gateEpoch.current += 1;
         const p = payload as {
           reqId: string;
           params?: { questions?: AskUserRequest["questions"] };
@@ -279,6 +372,7 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:user-question-dismiss", (payload) => {
+        gateEpoch.current += 1;
         const reqId = (payload as { reqId?: string })?.reqId;
         setUserQuestion((cur) => {
           if (!cur) return null;
@@ -287,22 +381,22 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:folder-trust-request", (payload) => {
-        const p = payload as {
-          reqId: string;
-          params?: {
-            cwd?: string;
-            workspace?: string;
-            configKinds?: string[];
-          };
-        };
-        setFolderTrust({
-          reqId: p.reqId,
-          cwd: p.params?.cwd,
-          workspace: p.params?.workspace,
-          configKinds: p.params?.configKinds,
-        });
+        gateEpoch.current += 1;
+        setFolderTrust(
+          folderTrustFromRow(
+            payload as {
+              reqId: string;
+              params?: {
+                cwd?: string;
+                workspace?: string;
+                configKinds?: string[];
+              };
+            },
+          ),
+        );
       }),
       window.grokDesktop.on("agent:folder-trust-dismiss", (payload) => {
+        gateEpoch.current += 1;
         const reqId = (payload as { reqId?: string })?.reqId;
         setFolderTrust((cur) => {
           if (!cur) return null;
@@ -311,6 +405,7 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:mcp-elicit-request", (payload) => {
+        gateEpoch.current += 1;
         const p = payload as {
           reqId: string;
           params?: {
@@ -333,6 +428,7 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:mcp-elicit-dismiss", (payload) => {
+        gateEpoch.current += 1;
         const reqId = (payload as { reqId?: string })?.reqId;
         setMcpElicit((cur) => {
           if (!cur) return null;
@@ -341,6 +437,7 @@ export function useAgentEvents(opts: {
         });
       }),
       window.grokDesktop.on("agent:permissions-cleared", () => {
+        gateEpoch.current += 1;
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
@@ -363,6 +460,7 @@ export function useAgentEvents(opts: {
         setConn("error");
         setSessionId(null);
         setError("Agent process exited");
+        gateEpoch.current += 1;
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
@@ -384,7 +482,7 @@ export function useAgentEvents(opts: {
   }, [
     openingRef,
     syncPermissionsFromMain,
-    syncFolderTrustFromMain,
+    syncAgentGatesFromMain,
     setAgentCommands,
     setConn,
     setError,
@@ -415,14 +513,11 @@ export function useAgentEvents(opts: {
   }, [setError]);
 
   const clearSessionScoped = useCallback(() => {
-    setPermissions([]);
     setBackgroundTasks([]);
     setSessionUsage(emptyUsage());
     setSessionMode(null);
-    setPlanApproval(null);
-    setUserQuestion(null);
-    setFolderTrust(null);
-    setMcpElicit(null);
+    // Parked gates + permissions stay mirrored from main; syncAgentGatesFromMain
+    // replaces them after open so a still-parked request is not wiped empty.
   }, []);
 
   /** Awaited on successful open so a later grant cannot lose a race with revoke. */
@@ -660,8 +755,9 @@ export function useAgentEvents(opts: {
         | { type: "request_changes"; feedback: string }
         | { type: "abandoned" },
     ) => {
-      await window.grokDesktop.respondPlanApproval(reqId, decision);
-      setPlanApproval(null);
+      const ok = await window.grokDesktop.respondPlanApproval(reqId, decision);
+      if (!ok) return;
+      setPlanApproval((cur) => (cur?.reqId === reqId ? null : cur));
       if (decision.type === "approved" || decision.type === "abandoned") {
         setSessionMode(null);
       }
@@ -676,16 +772,18 @@ export function useAgentEvents(opts: {
         | { type: "answered"; answers: Record<string, string> }
         | { type: "declined" },
     ) => {
-      await window.grokDesktop.respondUserQuestion(reqId, decision);
-      setUserQuestion(null);
+      const ok = await window.grokDesktop.respondUserQuestion(reqId, decision);
+      if (!ok) return;
+      setUserQuestion((cur) => (cur?.reqId === reqId ? null : cur));
     },
     [],
   );
 
   const onFolderTrust = useCallback(
     async (reqId: string, decision: { outcome: "trust" | "reject" }) => {
-      await window.grokDesktop.respondFolderTrust(reqId, decision);
-      setFolderTrust(null);
+      const ok = await window.grokDesktop.respondFolderTrust(reqId, decision);
+      if (!ok) return;
+      setFolderTrust((cur) => (cur?.reqId === reqId ? null : cur));
     },
     [],
   );
@@ -698,8 +796,9 @@ export function useAgentEvents(opts: {
         | { outcome: "decline" }
         | { outcome: "cancel" },
     ) => {
-      await window.grokDesktop.respondMcpElicit(reqId, decision);
-      setMcpElicit(null);
+      const ok = await window.grokDesktop.respondMcpElicit(reqId, decision);
+      if (!ok) return;
+      setMcpElicit((cur) => (cur?.reqId === reqId ? null : cur));
     },
     [],
   );
@@ -717,8 +816,7 @@ export function useAgentEvents(opts: {
     revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
-    syncPermissionsFromMain,
-    syncFolderTrustFromMain,
+    syncAgentGatesFromMain,
     onPermission,
     onAllowAllPermissions,
     allowWritesThisSession,

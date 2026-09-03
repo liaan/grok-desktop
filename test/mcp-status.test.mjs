@@ -14,6 +14,7 @@ import {
   normalizeMcpLiveStatus,
   resolveMcpCardStatus,
   looksLikeFolderUntrusted,
+  needsFolderTrust,
 } from "../shared/mcp-status.mjs";
 
 test("normalizeMcpLiveStatus matches TUI /mcps tokens", () => {
@@ -194,4 +195,47 @@ test("looksLikeFolderUntrusted matches grok doctor copy", () => {
     true,
   );
   assert.equal(looksLikeFolderUntrusted("OAuth authorization required"), false);
+});
+
+test("needsFolderTrust uses doctor/live copy only", () => {
+  assert.equal(
+    needsFolderTrust(
+      { scope: "project", liveStatus: "unavailable" },
+      { status: "fail", healthy: false },
+    ),
+    false,
+    "project + unavailable is not folder-untrusted",
+  );
+  assert.equal(
+    needsFolderTrust(
+      { scope: "project", liveStatus: "unavailable" },
+      {
+        error:
+          "folder untrusted (repo-local (project-scoped) server not started for an untrusted folder)",
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    needsFolderTrust(
+      { scope: "user" },
+      {
+        checks: [
+          { passed: false, label: "start", detail: "untrusted folder" },
+        ],
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    needsFolderTrust(
+      { scope: "project" },
+      { checks: [{ passed: false, label: "start", detail: "OAuth required" }] },
+    ),
+    false,
+  );
+  assert.equal(
+    needsFolderTrust({ message: "folder untrusted" }, null),
+    true,
+  );
 });

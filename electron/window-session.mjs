@@ -27,7 +27,7 @@ import {
   restartTargetFromSources,
   shouldFallbackToNewSession,
 } from "./agent-restart.mjs";
-import { listParked, settleParked, wrapParked } from "./parked-request.mjs";
+import { settleParked, wrapParked } from "./parked-request.mjs";
 
 /**
  * Desktop state loader — set once from main at startup.
@@ -356,8 +356,8 @@ function parkAgentGate(ws, agent, ifCurrent, opts) {
       );
       map.set(reqId, wrapParked(settle, params));
       send(ws, ipcRequest, { reqId, params });
-      // Open/HMR clears renderer modal state after start() returns. Re-push
-      // once so Trust/plan/ask still land (same idea as permission gates).
+      // Re-push once so HMR / late renderer subscribe still show the modal
+      // (same idea as permission gates).
       setTimeout(() => {
         if (settled || ws.agent !== agent) return;
         if (!map.has(reqId)) return;
@@ -368,16 +368,8 @@ function parkAgentGate(ws, agent, ifCurrent, opts) {
 }
 
 /**
- * Open folder-trust gates for this window (renderer rehydrate / Settings).
- * @param {WindowSession | null | undefined} ws
- */
-export function listPendingFolderTrust(ws) {
-  return listParked(ws?.pendingFolderTrust);
-}
-
-/**
- * Clear pending UI gates for one window. Each stored callback is a main-owned
- * settle wrapper that also dismisses the renderer modal.
+ * Clear pending UI gates for one window. Map values are ParkedEntry
+ * `{ settle, params }`; settle also dismisses the renderer modal.
  * @param {WindowSession} ws
  */
 export function clearPendingPermissions(ws) {

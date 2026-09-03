@@ -15,15 +15,11 @@ test("settleParked runs wrapParked settle", () => {
   assert.deepEqual(got, { outcome: "trust" });
 });
 
-test("settleParked still accepts a bare function", () => {
-  let got = null;
+test("settleParked rejects a bare function", () => {
   assert.equal(
-    settleParked((d) => {
-      got = d;
-    }, { outcome: "reject" }),
-    true,
+    settleParked((d) => d, { outcome: "reject" }),
+    false,
   );
-  assert.deepEqual(got, { outcome: "reject" });
 });
 
 test("settleParked is fail-closed on junk", () => {
@@ -41,4 +37,11 @@ test("listParked returns reqId + params", () => {
     },
   ]);
   assert.deepEqual(listParked(null), []);
+});
+
+test("listParked skips non-entry values", () => {
+  const map = new Map();
+  map.set("legacy", () => {});
+  map.set("ok", wrapParked(() => {}, { cwd: "/repo" }));
+  assert.deepEqual(listParked(map), [{ reqId: "ok", params: { cwd: "/repo" } }]);
 });

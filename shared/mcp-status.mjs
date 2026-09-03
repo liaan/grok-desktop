@@ -315,6 +315,39 @@ export function looksLikeFolderUntrusted(text) {
   );
 }
 
+/**
+ * True only when doctor/live copy says the folder is untrusted.
+ * Do not infer from project scope + unavailable (OAuth/network also unavailable).
+ * @param {unknown} [server]
+ * @param {{
+ *   error?: string | null,
+ *   checks?: Array<{ passed?: boolean, label?: string, detail?: string | null }>,
+ * } | null | undefined} [view]
+ */
+export function needsFolderTrust(server, view) {
+  if (looksLikeFolderUntrusted(view?.error)) return true;
+  for (const check of view?.checks || []) {
+    if (
+      check?.passed === false &&
+      looksLikeFolderUntrusted(`${check.label || ""} ${check.detail || ""}`)
+    ) {
+      return true;
+    }
+  }
+  if (server && typeof server === "object") {
+    const rec = /** @type {Record<string, unknown>} */ (server);
+    if (
+      looksLikeFolderUntrusted(rec.error) ||
+      looksLikeFolderUntrusted(rec.detail) ||
+      looksLikeFolderUntrusted(rec.statusMessage) ||
+      looksLikeFolderUntrusted(rec.message)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function mcpNeedsSignIn(server, testView) {
   if (testView?.needsAuth) return true;
   if (server?.authRequired) return true;

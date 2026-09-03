@@ -36,8 +36,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
     ipcRenderer.invoke("agent:set-allow-writes-session", value),
   listPendingPermissions: () =>
     ipcRenderer.invoke("agent:list-pending-permissions"),
-  listPendingFolderTrust: () =>
-    ipcRenderer.invoke("agent:list-pending-folder-trust"),
+  listPendingGates: () => ipcRenderer.invoke("agent:list-pending-gates"),
   respondPlanApproval: (reqId, decision) =>
     ipcRenderer.invoke("agent:plan-approval-respond", { reqId, decision }),
   respondUserQuestion: (reqId, decision) =>

@@ -87,7 +87,6 @@ import {
   focusedSession,
   openSessionOnWindow,
   ownerIdFor,
-  listPendingFolderTrust,
   restartAgentOnWindow,
   send,
   sessionFromEvent,
@@ -117,7 +116,7 @@ import {
   probeSandbox,
   sandboxStatusLabel,
 } from "./terminal-sandbox.mjs";
-import { settleParked } from "./parked-request.mjs";
+import { listParked, settleParked } from "./parked-request.mjs";
 import { normalizePermissionMode } from "./permission-mode.mjs";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -1339,7 +1338,7 @@ function registerIpc() {
   });
 
   /**
-   * @param {Map<string, any> | undefined} map
+   * @param {Map<string, import('./parked-request.mjs').ParkedEntry> | undefined} map
    * @param {string} reqId
    * @param {any} fallback
    */
@@ -1347,10 +1346,22 @@ function registerIpc() {
     return settleParked(map?.get(reqId), fallback);
   };
 
-  ipcMain.handle("agent:list-pending-folder-trust", async (e) => {
+  const emptyParkedGates = () => ({
+    folderTrust: [],
+    planApprovals: [],
+    userQuestions: [],
+    mcpElicits: [],
+  });
+
+  ipcMain.handle("agent:list-pending-gates", async (e) => {
     const ws = sessionFromEvent(e);
-    if (!ws) return [];
-    return listPendingFolderTrust(ws);
+    if (!ws) return emptyParkedGates();
+    return {
+      folderTrust: listParked(ws.pendingFolderTrust),
+      planApprovals: listParked(ws.pendingPlanApprovals),
+      userQuestions: listParked(ws.pendingUserQuestions),
+      mcpElicits: listParked(ws.pendingMcpElicits),
+    };
   });
 
   ipcMain.handle("agent:plan-approval-respond", async (e, { reqId, decision }) => {

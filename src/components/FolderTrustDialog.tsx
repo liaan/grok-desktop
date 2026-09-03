@@ -71,9 +71,7 @@ export function FolderTrustDialog({
         <div className="modal-body">
           <p className="worktree-lead">
             This workspace has project config ({kindLabel}). Grok will not load
-            those until you trust the folder. If this dialog disappears, type{" "}
-            <code>/hooks-trust</code> in chat or use Settings → MCP → Trust
-            folder.
+            those until you trust the folder.
           </p>
           {folder ? (
             <p className="worktree-path" title={redact(folder)}>

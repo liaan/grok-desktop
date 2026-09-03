@@ -547,17 +547,36 @@ declare global {
       ) => Promise<{ allowWritesThisSession: boolean }>;
       /** Open Approvals still held in main (after HMR / reload) */
       listPendingPermissions: () => Promise<PermissionRequest[]>;
-      /** Open folder-trust gate (after HMR / Settings open / open-project wipe) */
-      listPendingFolderTrust: () => Promise<
-        Array<{
+      /** Parked plan/ask/trust/elicit gates (main is source of truth). */
+      listPendingGates: () => Promise<{
+        folderTrust: Array<{
           reqId: string;
           params?: {
             cwd?: string;
             workspace?: string;
             configKinds?: string[];
           };
-        }>
-      >;
+        }>;
+        planApprovals: Array<{
+          reqId: string;
+          params?: { planContent?: string; planFilePath?: string | null };
+        }>;
+        userQuestions: Array<{
+          reqId: string;
+          params?: { questions?: unknown[] };
+        }>;
+        mcpElicits: Array<{
+          reqId: string;
+          params?: {
+            serverName?: string;
+            message?: string;
+            mode?: "form" | "url";
+            url?: string;
+            elicitationId?: string;
+            requestedSchema?: unknown;
+          };
+        }>;
+      }>;
       respondPlanApproval: (
         reqId: string,
         decision: {
