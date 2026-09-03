@@ -13,6 +13,7 @@ import {
   mergeMcpLiveStatus,
   normalizeMcpLiveStatus,
   resolveMcpCardStatus,
+  looksLikeFolderUntrusted,
 } from "../shared/mcp-status.mjs";
 
 test("normalizeMcpLiveStatus matches TUI /mcps tokens", () => {
@@ -183,4 +184,14 @@ test("applyMcpServerStatus patches initializing to ready", () => {
   );
   assert.equal(auth.liveStatus, "needs-auth");
   assert.equal(auth.authRequired, true);
+});
+
+test("looksLikeFolderUntrusted matches grok doctor copy", () => {
+  assert.equal(
+    looksLikeFolderUntrusted(
+      "folder untrusted (repo-local (project-scoped) server not started for an untrusted folder)",
+    ),
+    true,
+  );
+  assert.equal(looksLikeFolderUntrusted("OAuth authorization required"), false);
 });

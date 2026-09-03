@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   applyMcpServerStatus,
+  looksLikeFolderUntrusted,
   mcpLiveLabel,
   mcpNeedsSignIn,
   resolveMcpCardStatus,
@@ -27,6 +28,15 @@ type TestView = {
 function looksLikeOauthFail(text: string | null | undefined): boolean {
   return /oauth authorization required|no stored tokens|authenticate in tui|authorization required, when send initialize|re-authenticate in tui/i.test(
     String(text || ""),
+  );
+}
+
+function viewFolderUntrusted(view?: TestView | null): boolean {
+  if (!view) return false;
+  if (looksLikeFolderUntrusted(view.error)) return true;
+  return (view.checks || []).some(
+    (c) =>
+      !c.passed && looksLikeFolderUntrusted(`${c.label} ${c.detail || ""}`),
   );
 }
 
@@ -170,6 +180,7 @@ export function McpPage({
   const [adding, setAdding] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [authing, setAuthing] = useState<string | null>(null);
+  const [trustBusy, setTrustBusy] = useState(false);
 
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "http" | "sse">("stdio");
@@ -190,9 +201,10 @@ export function McpPage({
     });
   };
 
-  const writeLocked = writeBusy || restarting;
-  const testLocked = testing !== null || restarting;
-  const authLocked = authing !== null || restarting;
+  const writeLocked = writeBusy || restarting || trustBusy;
+  const testLocked = testing !== null || restarting || trustBusy;
+  const authLocked = authing !== null || restarting || trustBusy;
+  const trustLocked = trustBusy || restarting || !hasProject;
   const formOpen = adding || Boolean(editingName);
 
   const reload = async (cache = true) => {
@@ -347,6 +359,33 @@ export function McpPage({
       await onRestartAfterWrite();
     }
     await reload();
+  };
+
+  const onTrustFolder = async () => {
+    if (!hasProject) {
+      setNote("Open a project first, then trust the folder.");
+      return;
+    }
+    setTrustBusy(true);
+    setNote(null);
+    try {
+      const pending = await window.grokDesktop.listPendingFolderTrust();
+      const row = Array.isArray(pending) ? pending[0] : null;
+      if (row?.reqId) {
+        await window.grokDesktop.respondFolderTrust(row.reqId, {
+          outcome: "trust",
+        });
+      } else {
+        await window.grokDesktop.prompt("/hooks-trust");
+      }
+      if (onRestartAfterWrite) await onRestartAfterWrite();
+      await reload(false);
+      setNote("Folder trusted. Project MCP should load after the agent restart.");
+    } catch (e: unknown) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTrustBusy(false);
+    }
   };
 
   const onToggle = async (s: McpServerInfo) => {
@@ -646,6 +685,37 @@ export function McpPage({
         </div>
       </div>
 
+      {servers.some((s) => {
+        const view = reports[reportKey(s)];
+        if (viewFolderUntrusted(view)) return true;
+        const scope = String(s.scope || "").toLowerCase();
+        return (
+          (scope === "project" || scope === "repo-local") &&
+          resolveMcpCardStatus(s, view) === "unavailable"
+        );
+      }) ? (
+        <div className="mcp-trust-banner">
+          <p className="settings-desc">
+            Project MCP stays unloaded until this folder is trusted — same as
+            TUI <code>/hooks-trust</code>. The first prompt can vanish when the
+            session finishes opening; use this button to grant trust again.
+          </p>
+          <button
+            type="button"
+            className="btn btn-sm primary"
+            disabled={trustLocked}
+            title={
+              hasProject
+                ? "Trust this workspace for project MCP, hooks, and LSP"
+                : "Open a project first"
+            }
+            onClick={() => void onTrustFolder()}
+          >
+            {trustBusy ? "Trusting…" : "Trust folder"}
+          </button>
+        </div>
+      ) : null}
+
       {loading ? <p className="settings-desc">Loading MCP servers…</p> : null}
       {!loading && servers.length === 0 ? (
         <p className="settings-desc">No MCP servers. Add one here — no terminal.</p>
@@ -711,6 +781,20 @@ export function McpPage({
                   >
                     {testingThis && testing !== "all" ? "Testing…" : "Test"}
                   </button>
+                  {viewFolderUntrusted(view) ||
+                  ((String(s.scope || "").toLowerCase() === "project" ||
+                    String(s.scope || "").toLowerCase() === "repo-local") &&
+                    status === "unavailable") ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm primary"
+                      disabled={trustLocked}
+                      title="Trust this workspace so project MCP can start"
+                      onClick={() => void onTrustFolder()}
+                    >
+                      {trustBusy ? "Trusting…" : "Trust folder"}
+                    </button>
+                  ) : null}
                   {mcpNeedsSignIn(s, view) || viewNeedsAuth(view) ? (
                     <button
                       type="button"

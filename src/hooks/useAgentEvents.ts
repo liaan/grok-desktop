@@ -125,13 +125,34 @@ export function useAgentEvents(opts: {
     }
   }, []);
 
+  const syncFolderTrustFromMain = useCallback(async () => {
+    try {
+      const list = await window.grokDesktop.listPendingFolderTrust();
+      const row = Array.isArray(list) ? list[0] : null;
+      setFolderTrust((cur) => {
+        if (!row?.reqId) return null;
+        if (cur?.reqId === row.reqId) return cur;
+        return {
+          reqId: row.reqId,
+          cwd: row.params?.cwd,
+          workspace: row.params?.workspace,
+          configKinds: row.params?.configKinds,
+        };
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     void syncPermissionsFromMain();
+    void syncFolderTrustFromMain();
     // Safety net: if a permission push was dropped (HMR, late subscribe, focus),
     // the agent still waits and the UI stays on "Working…" with no Approvals.
     // Poll while we may be mid-turn or whenever main already holds gates.
     const poll = window.setInterval(() => {
       void syncPermissionsFromMain();
+      void syncFolderTrustFromMain();
     }, 1500);
     const offs = [
       window.grokDesktop.on("agent:session-update", (params) => {
@@ -345,6 +366,7 @@ export function useAgentEvents(opts: {
         setPermissions([]);
         setPlanApproval(null);
         setUserQuestion(null);
+        setFolderTrust(null);
         setMcpElicit(null);
       }),
       window.grokDesktop.on("agent:ready", () => {
@@ -362,6 +384,7 @@ export function useAgentEvents(opts: {
   }, [
     openingRef,
     syncPermissionsFromMain,
+    syncFolderTrustFromMain,
     setAgentCommands,
     setConn,
     setError,
@@ -695,6 +718,7 @@ export function useAgentEvents(opts: {
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
+    syncFolderTrustFromMain,
     onPermission,
     onAllowAllPermissions,
     allowWritesThisSession,

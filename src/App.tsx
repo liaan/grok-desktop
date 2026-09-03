@@ -165,6 +165,7 @@ export default function App() {
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
+    syncFolderTrustFromMain,
     onPermission,
     onAllowAllPermissions,
     allowWritesThisSession,
@@ -306,6 +307,7 @@ export default function App() {
       hydrateBackgroundTasks,
       hydrateSessionUsage,
       syncPermissionsFromMain,
+      syncFolderTrustFromMain,
       hydrateFromInfo,
       refreshAuth,
       refreshBackbone,
@@ -1016,7 +1018,9 @@ export default function App() {
 
   const columns = useColumnLayout();
 
-  const overlayOpen = Boolean(planApproval || userQuestion || mcpElicit);
+  const overlayOpen = Boolean(
+    planApproval || userQuestion || mcpElicit || folderTrust,
+  );
 
   const settingsDialog = (
     <SettingsDialog

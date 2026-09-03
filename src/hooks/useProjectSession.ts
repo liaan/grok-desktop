@@ -36,6 +36,8 @@ export function useProjectSession(opts: {
   hydrateSessionUsage: (usage: import("../lib/usage").SessionUsage | null | undefined) => void;
   /** Mirror open permission gates from main (source of truth). */
   syncPermissionsFromMain: () => void | Promise<void>;
+  /** Restore Trust-folder modal if open() wiped renderer state. */
+  syncFolderTrustFromMain?: () => void | Promise<void>;
   hydrateFromInfo: (i: AppInfo) => void;
   refreshAuth: () => Promise<AuthStatus>;
   refreshBackbone: (cwd?: string) => Promise<BackboneSummary>;
@@ -73,6 +75,7 @@ export function useProjectSession(opts: {
     hydrateBackgroundTasks,
     hydrateSessionUsage,
     syncPermissionsFromMain,
+    syncFolderTrustFromMain,
     hydrateFromInfo,
     refreshAuth,
     refreshBackbone,
@@ -118,6 +121,7 @@ export function useProjectSession(opts: {
       hydrateSessionUsage(res.usage);
       // Await so we do not mark online with a stale empty mirror.
       await syncPermissionsFromMain();
+      await syncFolderTrustFromMain?.();
       setAgentCommands([]);
       // Composer draft/slash menu remounts via key=sessionId — no reset needed.
       clearPromptQueue();
@@ -180,6 +184,7 @@ export function useProjectSession(opts: {
       hydrateBackgroundTasks,
       hydrateSessionUsage,
       syncPermissionsFromMain,
+      syncFolderTrustFromMain,
       hydrateFromInfo,
       promptQueueRef,
       refreshBackbone,

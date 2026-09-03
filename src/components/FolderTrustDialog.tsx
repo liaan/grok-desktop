@@ -22,13 +22,20 @@ export function FolderTrustDialog({
     decision: { outcome: "trust" | "reject" },
   ) => void;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const trustRef = useRef<HTMLButtonElement>(null);
   const { redact } = usePrivacy();
 
   useEffect(() => {
     if (!request) return;
-    closeRef.current?.focus();
-  }, [request?.reqId]);
+    trustRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onRespond(request.reqId, { outcome: "reject" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [request, onRespond]);
 
   if (!request) return null;
 
@@ -53,7 +60,6 @@ export function FolderTrustDialog({
         <div className="modal-header">
           <h2 id="folder-trust-title">Trust this folder?</h2>
           <button
-            ref={closeRef}
             type="button"
             className="btn ghost btn-sm"
             aria-label="Don't trust"
@@ -65,8 +71,9 @@ export function FolderTrustDialog({
         <div className="modal-body">
           <p className="worktree-lead">
             This workspace has project config ({kindLabel}). Grok will not load
-            those until you trust the folder — same as TUI{" "}
-            <code>/hooks-trust</code>.
+            those until you trust the folder. If this dialog disappears, type{" "}
+            <code>/hooks-trust</code> in chat or use Settings → MCP → Trust
+            folder.
           </p>
           {folder ? (
             <p className="worktree-path" title={redact(folder)}>
@@ -83,6 +90,7 @@ export function FolderTrustDialog({
             Don&apos;t trust
           </button>
           <button
+            ref={trustRef}
             type="button"
             className="btn primary"
             onClick={() => onRespond(request.reqId, { outcome: "trust" })}

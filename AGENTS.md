@@ -175,7 +175,7 @@ Desktop is a shell. Config ownership:
 | `fs.readTextFile` / `fs.writeTextFile` | Implemented | `electron/acp-client.mjs` |
 | `terminal` | Implemented | `electron/acp-terminals.mjs` — create / output / wait_for_exit / kill / release |
 | Permissions | Implemented | UI + optional always-approve |
-| Folder trust (`x.ai/folderTrust.interactive`) | Implemented | Agent reverse-request `x.ai/folder_trust/request` (same gate as TUI `/hooks-trust`). Grok ACP worktrees under `~/.grok/worktrees` auto-trust so project MCP/hooks load; other new folders prompt. |
+| Folder trust (`x.ai/folderTrust.interactive`) | Implemented | Agent reverse-request `x.ai/folder_trust/request` (same gate as TUI `/hooks-trust`). Grok ACP worktrees under `~/.grok/worktrees` auto-trust so project MCP/hooks load; other new folders prompt. If the prompt is missed: composer `/hooks-trust` or Settings → MCP → **Trust folder**. |
 | Slash commands | Implemented | Composer `/` menu — ACP `available_commands_update` + skills from `grok inspect` + desktop `/new` `/clear` `/always-approve` |
 
 Terminals spawn in the project `cwd` (or the path the agent passes). Output is buffered (default 1 MiB, truncated from the start). Dispose / cwd change releases all terminals.
@@ -255,7 +255,7 @@ Desktop stores `reasoningEffort` in `desktop-state.json` (`high` default). Spawn
 |---------|----------|
 | `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon). Must not be no-op (agent reports “client disconnected”). |
 | `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal |
-| `x.ai/folder_trust/request` | Client extension — **Trust this folder?** (project MCP/hooks). Auto-trust Grok ACP worktrees; must advertise `clientCapabilities._meta["x.ai/folderTrust"].interactive` or the agent silently skips project MCP (Settings cards stay **unknown**). |
+| `x.ai/folder_trust/request` | Client extension — **Trust this folder?** (project MCP/hooks). Auto-trust Grok ACP worktrees; must advertise `clientCapabilities._meta["x.ai/folderTrust"].interactive` or the agent silently skips project MCP (Settings cards stay **unknown**). Prompt is re-pushed after session open so Settings does not swallow it. Missed grant: `/hooks-trust` or Settings → MCP → Trust folder, then agent restart. |
 | ACP `fs/*` under session dir | Always allowed for the current session folder (`~/.grok/sessions/<encoded-cwd>/<session-id>/`) so `plan.md` can be written while project path gate stays on |
 | `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** bottom dock (agent often sends these on `_x.ai/session/update`, which Desktop must forward like `session/update`) |
 | `current_mode_update` | Plan-mode banner when `currentModeId === "plan"` |

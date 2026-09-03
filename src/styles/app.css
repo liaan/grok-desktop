@@ -3483,8 +3483,8 @@ body.settings-open .welcome-card .brand {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  /* Above full-screen settings so plan/ask stay usable on top. */
-  z-index: 1100;
+  /* Above full-screen settings (20000) so Trust/plan/ask stay usable on top. */
+  z-index: 21000;
   background: var(--overlay-scrim);
   display: grid;
   place-items: center;
@@ -3629,6 +3629,22 @@ body.settings-open .welcome-card .brand {
   justify-content: space-between;
   gap: 12px;
   margin: 4px 0 12px;
+}
+
+.mcp-trust-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.mcp-trust-banner .settings-desc {
+  margin: 0;
 }
 
 .mcp-list {

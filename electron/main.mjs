@@ -87,6 +87,7 @@ import {
   focusedSession,
   openSessionOnWindow,
   ownerIdFor,
+  listPendingFolderTrust,
   restartAgentOnWindow,
   send,
   sessionFromEvent,
@@ -116,6 +117,7 @@ import {
   probeSandbox,
   sandboxStatusLabel,
 } from "./terminal-sandbox.mjs";
+import { settleParked } from "./parked-request.mjs";
 import { normalizePermissionMode } from "./permission-mode.mjs";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -1337,16 +1339,19 @@ function registerIpc() {
   });
 
   /**
-   * @param {Map<string, Function> | undefined} map
+   * @param {Map<string, any> | undefined} map
    * @param {string} reqId
    * @param {any} fallback
    */
   const settleParkedIpc = (map, reqId, fallback) => {
-    const settle = map?.get(reqId);
-    if (!settle) return false;
-    settle(fallback);
-    return true;
+    return settleParked(map?.get(reqId), fallback);
   };
+
+  ipcMain.handle("agent:list-pending-folder-trust", async (e) => {
+    const ws = sessionFromEvent(e);
+    if (!ws) return [];
+    return listPendingFolderTrust(ws);
+  });
 
   ipcMain.handle("agent:plan-approval-respond", async (e, { reqId, decision }) => {
     const ws = sessionFromEvent(e);

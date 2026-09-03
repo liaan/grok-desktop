@@ -547,6 +547,17 @@ declare global {
       ) => Promise<{ allowWritesThisSession: boolean }>;
       /** Open Approvals still held in main (after HMR / reload) */
       listPendingPermissions: () => Promise<PermissionRequest[]>;
+      /** Open folder-trust gate (after HMR / Settings open / open-project wipe) */
+      listPendingFolderTrust: () => Promise<
+        Array<{
+          reqId: string;
+          params?: {
+            cwd?: string;
+            workspace?: string;
+            configKinds?: string[];
+          };
+        }>
+      >;
       respondPlanApproval: (
         reqId: string,
         decision: {

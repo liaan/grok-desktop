@@ -305,6 +305,16 @@ export function summarizeMcpDoctorDetail(detail) {
   return cleaned;
 }
 
+/**
+ * Project MCP/hooks stay gated until folder trust (`/hooks-trust`).
+ * @param {unknown} text
+ */
+export function looksLikeFolderUntrusted(text) {
+  return /folder untrusted|untrusted folder|project-scoped\) server not started|repo-local \(project-scoped\)/i.test(
+    String(text || ""),
+  );
+}
+
 export function mcpNeedsSignIn(server, testView) {
   if (testView?.needsAuth) return true;
   if (server?.authRequired) return true;

@@ -27,6 +27,7 @@ import {
   restartTargetFromSources,
   shouldFallbackToNewSession,
 } from "./agent-restart.mjs";
+import { listParked, settleParked, wrapParked } from "./parked-request.mjs";
 
 /**
  * Desktop state loader — set once from main at startup.
@@ -73,10 +74,10 @@ function notifyWindowChrome() {
  *   agent: GrokAcpClient | null,
  *   agentChain: Promise<unknown>,
  *   stopBackgroundTaskTail: (() => void) | null,
- *   pendingPlanApprovals: Map<string, (decision: any) => void>,
- *   pendingUserQuestions: Map<string, (decision: any) => void>,
- *   pendingFolderTrust: Map<string, (decision: any) => void>,
- *   pendingMcpElicits: Map<string, (decision: any) => void>,
+ *   pendingPlanApprovals: Map<string, { settle: (decision: any) => void, params?: any }>,
+ *   pendingUserQuestions: Map<string, { settle: (decision: any) => void, params?: any }>,
+ *   pendingFolderTrust: Map<string, { settle: (decision: any) => void, params?: any }>,
+ *   pendingMcpElicits: Map<string, { settle: (decision: any) => void, params?: any }>,
  *   disposed: boolean,
  *   generation: number,
  *   lastCwd: string | null,
@@ -308,7 +309,7 @@ export function makeReqId(prefix) {
  *   event: string,
  *   ipcRequest: string,
  *   ipcDismiss: string,
- *   map: Map<string, (decision: any) => void>,
+ *   map: Map<string, { settle: (decision: any) => void, params?: any }>,
  *   prefix: string,
  *   timeoutMs: number,
  *   fallback: any,
@@ -353,10 +354,25 @@ function parkAgentGate(ws, agent, ifCurrent, opts) {
         () => settle({ ...fallback, timedOut: true }),
         timeoutMs,
       );
-      map.set(reqId, settle);
+      map.set(reqId, wrapParked(settle, params));
       send(ws, ipcRequest, { reqId, params });
+      // Open/HMR clears renderer modal state after start() returns. Re-push
+      // once so Trust/plan/ask still land (same idea as permission gates).
+      setTimeout(() => {
+        if (settled || ws.agent !== agent) return;
+        if (!map.has(reqId)) return;
+        send(ws, ipcRequest, { reqId, params });
+      }, 750);
     }),
   );
+}
+
+/**
+ * Open folder-trust gates for this window (renderer rehydrate / Settings).
+ * @param {WindowSession | null | undefined} ws
+ */
+export function listPendingFolderTrust(ws) {
+  return listParked(ws?.pendingFolderTrust);
 }
 
 /**
@@ -379,7 +395,7 @@ export function clearPendingPermissions(ws) {
     map.clear();
     for (const settle of settlers) {
       try {
-        settle(fallback);
+        settleParked(settle, fallback);
       } catch {
         /* ignore */
       }
