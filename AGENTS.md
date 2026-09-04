@@ -140,7 +140,7 @@ Artifacts only; no Release page unless ref is a `v*` tag.
 
 ## ACP surface (do not break casually)
 
-Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`  
+Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `x.ai/interject`  
 Agent → client: `session/update`, `session/request_permission`, `fs/*`, `terminal/*`
 
 `session/new` / `session/load` use empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
@@ -195,7 +195,7 @@ PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **El
 
 **Preview MCP (text-first):** HTTP `desktop-preview` only. Agent drives the window and reads **text** snapshots. Viewport JPEGs are **user-sent**: Preview chrome **Send screenshot** → owning chat (`preview:viewport-capture`). MCP `preview_screenshot` does not attach pixels.
 
-**Mid-turn interject (CLI-style):** While a turn is running, **Enter** queues a follow-up (shown above the composer). **Ctrl/⌘+Enter** or **Send now** cancels the current turn and sends that message next. Empty Enter with a non-empty queue force-sends the top item. Queue drains FIFO when each turn ends.
+**Mid-turn interject (CLI-style):** While a turn is running, **Enter** calls ACP `x.ai/interject` (injects at the next tool/model safe gap; does **not** cancel — wait tools abort when this lands). **Queue** still waits until the turn ends. **Ctrl/⌘+Enter** or **Send now** cancels the current turn and sends that message next. Empty Enter with a non-empty queue force-sends the top item. Queue drains FIFO when each turn ends. Old CLIs without `x.ai/interject` fall back to queue.
 
 ### Session continuity (same as CLI)
 

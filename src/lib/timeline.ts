@@ -1,6 +1,8 @@
 // @ts-nocheck — imports shared pure ESM without package types
-import type { TimelineItem } from "../vite-env";
+import type { TimelineImage, TimelineItem } from "../vite-env";
 import {
+  appendUserMessage as appendShared,
+  applySessionInterjection as applyInterjectShared,
   applySessionUpdate as applyShared,
   finalizeOpenTools as finalizeShared,
   uid as sharedUid,
@@ -16,6 +18,27 @@ export function applySessionUpdate(
   params: any,
 ): TimelineItem[] {
   return applyShared(items, params);
+}
+
+export function appendUserMessage(
+  items: TimelineItem[],
+  payload: {
+    text?: string;
+    images?: TimelineImage[];
+    optimistic?: boolean;
+    at?: number;
+    id?: string;
+  },
+): TimelineItem[] {
+  return appendShared(items, payload);
+}
+
+export function applySessionInterjection(
+  items: TimelineItem[],
+  payload: { text?: string; interjectionId?: string },
+  selfIds?: Set<string>,
+): TimelineItem[] {
+  return applyInterjectShared(items, payload, selfIds);
 }
 
 /** Close open tool cards when session/prompt returns or the user cancels. */

@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld("grokDesktop", {
       images: opts?.images || [],
       imageQuality: opts?.imageQuality || "compact",
     }),
+  interject: (text, opts) =>
+    ipcRenderer.invoke("agent:interject", {
+      text,
+      images: opts?.images || [],
+      imageQuality: opts?.imageQuality || "compact",
+      interjectionId: opts?.interjectionId,
+    }),
   cancel: () => ipcRenderer.invoke("agent:cancel"),
   compact: (hint) => ipcRenderer.invoke("agent:compact", hint || ""),
   respondPermission: (reqId, outcome) =>
@@ -118,6 +125,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   on: (channel, handler) => {
     const valid = [
       "agent:session-update",
+      "agent:session-interjection",
       "agent:mcp-status",
       "agent:permission-request",
       "agent:permission-dismiss",

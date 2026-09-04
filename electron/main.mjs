@@ -1269,6 +1269,29 @@ function registerIpc() {
     },
   );
 
+  ipcMain.handle(
+    "agent:interject",
+    async (
+      e,
+      { text, images = [], imageQuality = "compact", interjectionId } = {},
+    ) => {
+      const agent = sessionFromEvent(e)?.agent;
+      if (!agent?.ready)
+        throw new Error("Agent not connected. Open a project first.");
+      try {
+        return await agent.interject(text, {
+          images,
+          imageQuality,
+          interjectionId,
+        });
+      } catch (err) {
+        const wrapped = new Error(err?.message || String(err));
+        if (err?.code != null) wrapped.code = err.code;
+        throw wrapped;
+      }
+    },
+  );
+
   ipcMain.handle("agent:compact", async (e, hint = "") => {
     const agent = sessionFromEvent(e)?.agent;
     if (!agent?.ready)

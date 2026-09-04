@@ -572,6 +572,13 @@ export function ensureAgent(ws, cwd, opts = {}) {
     );
 
     agent.on(
+      "session-interjection",
+      ifCurrent((payload) => {
+        send(ws, "agent:session-interjection", payload);
+      }),
+    );
+
+    agent.on(
       "mcp-status",
       ifCurrent((event) => {
         send(ws, "agent:mcp-status", event);

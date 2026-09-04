@@ -231,7 +231,7 @@ grok-desktop/
 
 ### ACP (client ↔ agent)
 
-**Client → agent:** `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`
+**Client → agent:** `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `x.ai/interject`
 
 **Agent → client:** `session/update`, `session/request_permission`, `fs/*`, `terminal/*`
 

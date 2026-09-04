@@ -14,12 +14,20 @@ import {
   type PendingImage,
 } from "../lib/pending-images";
 import { isAuthError, type ConnState } from "../lib/conn";
-import { finalizeOpenTools, uid } from "../lib/timeline";
+import { appendUserMessage, finalizeOpenTools, uid } from "../lib/timeline";
+import {
+  consumeSelfInterjection,
+  rememberSelfInterjection,
+} from "../lib/self-interjections";
+import {
+  isInterjectUnsupported,
+  midTurnAction,
+} from "../../shared/prompt-delivery.mjs";
 import type { TimelineImage, TimelineItem } from "../vite-env";
 
 /**
  * Mid-turn queue + session/prompt delivery (CLI-style Enter / Ctrl+Enter).
- * Capture uses this path so a running turn queues the JPEG like composer Enter.
+ * Capture uses this path so a running turn interjects the JPEG like composer Enter.
  */
 export function usePromptDelivery(opts: {
   project: string | null;
@@ -116,21 +124,13 @@ export function usePromptDelivery(opts: {
         mimeType: img.mimeType,
         previewUrl: img.previewUrl,
       }));
-      setItems((prev) => [
-        ...prev,
-        {
-          id: uid("user"),
-          kind: "user",
-          text:
-            text ||
-            (images.length
-              ? `(${images.length} image${images.length > 1 ? "s" : ""})`
-              : ""),
-          images: timelineImages.length ? timelineImages : undefined,
+      setItems((prev) =>
+        appendUserMessage(prev, {
+          text,
+          images: timelineImages,
           optimistic: true,
-          at: Date.now(),
-        },
-      ]);
+        }),
+      );
       const stale = () =>
         openingRef.current || deliveryGenRef.current !== gen;
       try {
@@ -225,15 +225,53 @@ export function usePromptDelivery(opts: {
       }
       if (!text && images.length === 0) return false;
 
-      if (busyRef.current) {
-        if (mode === "now") {
-          const item = enqueuePrompt(text, images, imageQuality);
-          sendNowRef.current = item;
-          setItems((prev) => finalizeOpenTools(prev, "cancelled"));
-          void window.grokDesktop.cancel();
+      const action = midTurnAction(mode, busyRef.current);
+      if (action === "send-now") {
+        const item = enqueuePrompt(text, images, imageQuality);
+        sendNowRef.current = item;
+        setItems((prev) => finalizeOpenTools(prev, "cancelled"));
+        void window.grokDesktop.cancel();
+        return true;
+      }
+      if (action === "queue") {
+        enqueuePrompt(text, images, imageQuality);
+        return true;
+      }
+      if (action === "interject") {
+        if (typeof window.grokDesktop.interject !== "function") {
+          enqueuePrompt(text, images, imageQuality);
           return true;
         }
-        enqueuePrompt(text, images, imageQuality);
+        const interjectionId = uid("ij");
+        rememberSelfInterjection(interjectionId);
+        try {
+          await window.grokDesktop.interject(text, {
+            images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+            imageQuality,
+            interjectionId,
+          });
+        } catch (e: unknown) {
+          consumeSelfInterjection(interjectionId);
+          if (isInterjectUnsupported(e)) {
+            enqueuePrompt(text, images, imageQuality);
+            return true;
+          }
+          const msg = e instanceof Error ? e.message : String(e);
+          setError(msg);
+          return false;
+        }
+        const timelineImages: TimelineImage[] = images.map((img) => ({
+          mimeType: img.mimeType,
+          previewUrl: img.previewUrl,
+        }));
+        pinToBottom();
+        setItems((prev) =>
+          appendUserMessage(prev, {
+            text,
+            images: timelineImages,
+            optimistic: true,
+          }),
+        );
         return true;
       }
 
@@ -249,6 +287,8 @@ export function usePromptDelivery(opts: {
       busyRef,
       enqueuePrompt,
       setItems,
+      setError,
+      pinToBottom,
       deliverPrompt,
     ],
   );

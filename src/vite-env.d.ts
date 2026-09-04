@@ -536,6 +536,14 @@ declare global {
           imageQuality?: "compact" | "high";
         },
       ) => Promise<unknown>;
+      interject: (
+        text: string,
+        opts?: {
+          images?: PromptImage[];
+          imageQuality?: "compact" | "high";
+          interjectionId?: string;
+        },
+      ) => Promise<{ status?: string; interjectionId?: string }>;
       cancel: () => Promise<boolean>;
       compact: (hint?: string) => Promise<unknown>;
       respondPermission: (

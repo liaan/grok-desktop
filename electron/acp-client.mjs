@@ -41,6 +41,9 @@ import { compressPromptImage } from "./image-compress.mjs";
 import {
   classifyInboundMessage,
   compactConversationAttempts,
+  interjectAttempts,
+  unwrapExtMethodResult,
+  unwrapSessionInterjection,
   worktreeCreateFromSyncAttempts,
   worktreeListAttempts,
   parseWorktreeCreateResponse,
@@ -643,6 +646,16 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     const c = classifyInboundMessage(msg);
+    const interjection = unwrapSessionInterjection(msg.method, msg.params);
+    if (interjection) {
+      this.emit("session-interjection", interjection);
+      if (msg.id !== undefined) {
+        this._ensureOnce().beginRequest(msg.id);
+        this._respond(msg.id, {});
+      }
+      return;
+    }
+
     const mcpEvent = unwrapMcpExtNotification(msg.method, msg.params);
     if (mcpEvent && isMcpElicitCompleteMethod(mcpEvent.method)) {
       if (msg.id !== undefined) {
@@ -1350,6 +1363,70 @@ export class GrokAcpClient extends EventEmitter {
       },
       { timeoutMs: 30 * 60_000 },
     );
+  }
+
+  /**
+   * Mid-turn steer: grok-build `x.ai/interject`. Does not cancel the turn.
+   * Wait tools abort when this lands in the pending-interjection buffer.
+   *
+   * @param {string} text
+   * @param {{
+   *   images?: { data: string, mimeType?: string }[],
+   *   imageQuality?: string,
+   *   interjectionId?: string,
+   * }} [opts]
+   */
+  async interject(text, { images = [], imageQuality = "compact", interjectionId } = {}) {
+    if (!this.sessionId) throw new Error("No ACP session");
+    const compressed = [];
+    for (const img of images) {
+      const next = compressPromptImage(img, imageQuality);
+      if (next?.data) compressed.push(next);
+    }
+    const id =
+      String(interjectionId || "").trim() || crypto.randomUUID();
+    const attempts = interjectAttempts({
+      sessionId: this.sessionId,
+      text: String(text || ""),
+      interjectionId: id,
+      images: compressed,
+    });
+    const methodMissing = (err) => {
+      if (err?.code === -32601) return true;
+      return /method not found|-32601|unknown method/i.test(
+        String(err?.message || err),
+      );
+    };
+    const misses = [];
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.request(attempt.method, attempt.params, {
+          timeoutMs: 15_000,
+        });
+        debugLog("acp", "interject-ok", { path: attempt.method, id });
+        const result = unwrapExtMethodResult(raw);
+        return result && typeof result === "object"
+          ? { ...result, interjectionId: id }
+          : { status: "queued", interjectionId: id };
+      } catch (err) {
+        const message = err?.message || String(err);
+        debugLog("acp", "interject-try", {
+          path: attempt.method,
+          error: message,
+          code: err?.code,
+        });
+        if (methodMissing(err)) {
+          misses.push(`${attempt.method}: ${message}`);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
+    }
+    const unsupported = new Error(
+      `Mid-turn interject is not available on this Grok CLI (${misses.join(" · ") || "no methods accepted"}).`,
+    );
+    unsupported.code = "INTERJECT_UNSUPPORTED";
+    throw unsupported;
   }
 
   cancel() {

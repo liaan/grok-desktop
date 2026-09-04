@@ -121,6 +121,60 @@ export function finalizeOpenTools(items, status = "completed") {
 }
 
 /**
+ * Append a user bubble (composer send or mid-turn interject).
+ * @param {any[]} items
+ * @param {{
+ *   text?: string,
+ *   images?: any[],
+ *   optimistic?: boolean,
+ *   at?: number,
+ *   id?: string,
+ * }} payload
+ */
+export function appendUserMessage(items, payload = {}) {
+  const text = String(payload.text || "");
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  if (!text.trim() && images.length === 0) {
+    return Array.isArray(items) ? items : [];
+  }
+  const next = Array.isArray(items) ? [...items] : [];
+  /** @type {Record<string, unknown>} */
+  const item = {
+    id: payload.id || uid("user"),
+    kind: "user",
+    text:
+      text ||
+      (images.length
+        ? `(${images.length} image${images.length > 1 ? "s" : ""})`
+        : ""),
+    optimistic: Boolean(payload.optimistic),
+    at: typeof payload.at === "number" ? payload.at : Date.now(),
+  };
+  if (images.length) item.images = images;
+  next.push(item);
+  return next;
+}
+
+/**
+ * Agent broadcast `x.ai/session/interjection`. Originator already painted
+ * an optimistic bubble and listed `interjectionId` in `selfIds`.
+ * @param {any[]} items
+ * @param {{ text?: string, interjectionId?: string }} payload
+ * @param {Set<string> | { has: (id: string) => boolean, delete?: (id: string) => boolean } | null} [selfIds]
+ */
+export function applySessionInterjection(items, payload, selfIds) {
+  const id = String(payload?.interjectionId || "").trim();
+  if (id && selfIds && typeof selfIds.has === "function" && selfIds.has(id)) {
+    if (typeof selfIds.delete === "function") selfIds.delete(id);
+    return items;
+  }
+  return appendUserMessage(items, {
+    text: payload?.text,
+    optimistic: false,
+  });
+}
+
+/**
  * @param {any[]} items
  * @param {any} params - full session/update params or a bare update object
  * @returns {any[]}

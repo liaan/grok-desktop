@@ -12,7 +12,8 @@ import {
   applyBackgroundUpdate,
   type BackgroundTask,
 } from "../lib/background-tasks";
-import { applySessionUpdate } from "../lib/timeline";
+import { applySessionInterjection, applySessionUpdate } from "../lib/timeline";
+import { selfInterjectionIds } from "../lib/self-interjections";
 import {
   applyUsageUpdate,
   emptyUsage,
@@ -245,6 +246,22 @@ export function useAgentEvents(opts: {
       void syncPermissionsFromMain();
     }, 1500);
     const offs = [
+      window.grokDesktop.on("agent:session-interjection", (payload) => {
+        const text = String(
+          (payload as { text?: string } | null)?.text || "",
+        );
+        const interjectionId = String(
+          (payload as { interjectionId?: string } | null)?.interjectionId ||
+            "",
+        );
+        setItems((prev) =>
+          applySessionInterjection(
+            prev,
+            { text, interjectionId },
+            selfInterjectionIds(),
+          ),
+        );
+      }),
       window.grokDesktop.on("agent:session-update", (params) => {
         const update = params?.update ?? params;
         const kind = update?.sessionUpdate || update?.session_update;

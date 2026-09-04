@@ -489,7 +489,7 @@ export const Composer = memo(function Composer({
                 {promptQueue.length === 1 ? "" : "s"}
               </span>
               <span className="prompt-queue-hint">
-                runs after this turn · Enter on empty = send top now
+                waits for this turn · Enter interjects now
               </span>
             </div>
             <ul className="prompt-queue-list">
@@ -528,7 +528,7 @@ export const Composer = memo(function Composer({
           style={{ height: composerHeight }}
           placeholder={
             conn === "busy"
-              ? "Interject: Enter queues · Ctrl/⌘+Enter sends now (stops turn)…"
+              ? "Interject: Enter steers this turn · Ctrl/⌘+Enter send now (stops turn)…"
               : "Ask Grok… or type / for skills & commands (review, design, implement…)"
           }
           onChange={(e) => setInput(e.target.value)}
@@ -561,7 +561,7 @@ export const Composer = memo(function Composer({
             </button>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {conn === "busy"
-                ? "Enter queue · Ctrl/⌘+Enter send now · Shift+Enter newline"
+                ? "Enter interject · Ctrl/⌘+Enter send now · Shift+Enter newline"
                 : "/ commands · Enter send · Shift+Enter newline"}
             </span>
           </div>
