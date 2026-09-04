@@ -9,11 +9,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  appendUserMessage,
+  applySessionInterjection,
   applySessionUpdate,
   finalizeOpenTools,
   isBashBackgroundedRawOutput,
   looksLikeFinalToolResult,
+  removeUserInterjection,
   resolveToolUpdateStatus,
+  shouldApplySessionInterjection,
 } from "../shared/session-timeline.mjs";
 
 const writeStartDiff = {
@@ -489,4 +493,134 @@ test("auto_compact_completed becomes a system line with before/after", () => {
   assert.equal(items[0].kind, "system");
   assert.match(items[0].text, /31,000/);
   assert.match(items[0].text, /12,000/);
+});
+
+test("appendUserMessage persists interjectionId", () => {
+  const items = appendUserMessage([], {
+    text: "steer",
+    interjectionId: "ij1",
+    optimistic: true,
+  });
+  assert.equal(items[0].kind, "user");
+  assert.equal(items[0].interjectionId, "ij1");
+});
+
+test("applySessionInterjection skips originator echo then paints others", () => {
+  const start = appendUserMessage([], {
+    text: "already painted",
+    optimistic: true,
+    interjectionId: "i-self",
+  });
+  const skipped = applySessionInterjection(start, {
+    text: "already painted",
+    interjectionId: "i-self",
+  });
+  assert.equal(skipped, start);
+
+  const other = applySessionInterjection(start, {
+    text: "from another pane",
+    interjectionId: "i-other",
+  });
+  assert.equal(other.length, start.length + 1);
+  assert.equal(other[other.length - 1].kind, "user");
+  assert.equal(other[other.length - 1].text, "from another pane");
+  assert.equal(other[other.length - 1].interjectionId, "i-other");
+  assert.equal(other[other.length - 1].optimistic, false);
+
+  const echoed = applySessionInterjection(other, {
+    text: "from another pane",
+    interjectionId: "i-other",
+  });
+  assert.equal(echoed, other);
+});
+
+test("applySessionInterjection skip is kind-scoped and id-trimmed", () => {
+  const withTool = [
+    {
+      id: "t1",
+      kind: "tool",
+      interjectionId: "same",
+      toolCallId: "c",
+      status: "pending",
+    },
+  ];
+  const afterTool = applySessionInterjection(withTool, {
+    text: "user",
+    interjectionId: "same",
+  });
+  assert.equal(afterTool.length, 2);
+  assert.equal(afterTool[1].kind, "user");
+
+  const mid = [
+    ...appendUserMessage([], { text: "first", interjectionId: "keep" }),
+    { id: "a", kind: "assistant", text: "ok", at: 1 },
+  ];
+  const skippedMid = applySessionInterjection(mid, {
+    text: "different echo text",
+    interjectionId: "keep",
+  });
+  assert.equal(skippedMid, mid);
+
+  const ws = applySessionInterjection([], {
+    text: "ws",
+    interjectionId: "   ",
+  });
+  assert.equal(ws.length, 1);
+  assert.equal(ws[0].interjectionId, undefined);
+
+  const omitted = applySessionInterjection(
+    appendUserMessage([], { text: "a", interjectionId: "x" }),
+    { text: "b" },
+  );
+  assert.equal(omitted.length, 2);
+  assert.equal(omitted[1].interjectionId, undefined);
+
+  const empty = applySessionInterjection(
+    appendUserMessage([], { text: "a", interjectionId: "x" }),
+    { text: "b", interjectionId: "" },
+  );
+  assert.equal(empty.length, 2);
+});
+
+test("removeUserInterjection then echo of same id appends again", () => {
+  const painted = appendUserMessage([], {
+    text: "hi",
+    interjectionId: "i1",
+    optimistic: true,
+  });
+  const dropped = removeUserInterjection(painted, "i1");
+  assert.equal(dropped.length, 0);
+  const echoed = applySessionInterjection(dropped, {
+    text: "hi",
+    interjectionId: "i1",
+  });
+  assert.equal(echoed.length, 1);
+  assert.equal(echoed[0].interjectionId, "i1");
+  assert.equal(removeUserInterjection(painted, "other"), painted);
+});
+
+test("shouldApplySessionInterjection skips opening and other sessions", () => {
+  assert.equal(
+    shouldApplySessionInterjection({ sessionId: "a" }, { sessionId: "a" }),
+    true,
+  );
+  assert.equal(
+    shouldApplySessionInterjection({ sessionId: "a" }, { sessionId: "b" }),
+    false,
+  );
+  assert.equal(
+    shouldApplySessionInterjection(
+      { sessionId: "a" },
+      { opening: true, sessionId: "a" },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldApplySessionInterjection({ sessionId: "" }, { sessionId: "b" }),
+    true,
+  );
+  assert.equal(
+    shouldApplySessionInterjection({ sessionId: "a" }, { sessionId: "" }),
+    false,
+  );
 });

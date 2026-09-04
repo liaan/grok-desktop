@@ -12,8 +12,12 @@ import {
   applyBackgroundUpdate,
   type BackgroundTask,
 } from "../lib/background-tasks";
-import { applySessionInterjection, applySessionUpdate } from "../lib/timeline";
-import { selfInterjectionIds } from "../lib/self-interjections";
+import {
+  applySessionInterjection,
+  applySessionUpdate,
+  shouldApplySessionInterjection,
+} from "../lib/timeline";
+import type { SessionInterjection } from "../../shared/acp-interject.mjs";
 import {
   applyUsageUpdate,
   emptyUsage,
@@ -126,6 +130,7 @@ function mcpElicitFromRow(row: {
  */
 export function useAgentEvents(opts: {
   openingRef: MutableRefObject<boolean>;
+  sessionIdRef: MutableRefObject<string | null>;
   setConn: Dispatch<SetStateAction<ConnState>>;
   setError: Dispatch<SetStateAction<string | null>>;
   setSessionId: Dispatch<SetStateAction<string | null>>;
@@ -135,6 +140,7 @@ export function useAgentEvents(opts: {
 }) {
   const {
     openingRef,
+    sessionIdRef,
     setConn,
     setError,
     setSessionId,
@@ -246,22 +252,20 @@ export function useAgentEvents(opts: {
       void syncPermissionsFromMain();
     }, 1500);
     const offs = [
-      window.grokDesktop.on("agent:session-interjection", (payload) => {
-        const text = String(
-          (payload as { text?: string } | null)?.text || "",
-        );
-        const interjectionId = String(
-          (payload as { interjectionId?: string } | null)?.interjectionId ||
-            "",
-        );
-        setItems((prev) =>
-          applySessionInterjection(
-            prev,
-            { text, interjectionId },
-            selfInterjectionIds(),
-          ),
-        );
-      }),
+      window.grokDesktop.on(
+        "agent:session-interjection",
+        (payload: SessionInterjection) => {
+          if (
+            !shouldApplySessionInterjection(payload, {
+              opening: openingRef.current,
+              sessionId: sessionIdRef.current,
+            })
+          ) {
+            return;
+          }
+          setItems((prev) => applySessionInterjection(prev, payload));
+        },
+      ),
       window.grokDesktop.on("agent:session-update", (params) => {
         const update = params?.update ?? params;
         const kind = update?.sessionUpdate || update?.session_update;
@@ -498,6 +502,7 @@ export function useAgentEvents(opts: {
     };
   }, [
     openingRef,
+    sessionIdRef,
     syncPermissionsFromMain,
     syncAgentGatesFromMain,
     setAgentCommands,

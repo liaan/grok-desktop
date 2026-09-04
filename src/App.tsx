@@ -176,6 +176,7 @@ export default function App() {
     onMcpElicit,
   } = useAgentEvents({
     openingRef,
+    sessionIdRef,
     setConn,
     setError,
     setSessionId,

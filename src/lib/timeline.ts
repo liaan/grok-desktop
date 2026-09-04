@@ -3,6 +3,8 @@ import type { TimelineImage, TimelineItem } from "../vite-env";
 import {
   appendUserMessage as appendShared,
   applySessionInterjection as applyInterjectShared,
+  removeUserInterjection as removeShared,
+  shouldApplySessionInterjection as shouldApplyShared,
   applySessionUpdate as applyShared,
   finalizeOpenTools as finalizeShared,
   uid as sharedUid,
@@ -28,6 +30,7 @@ export function appendUserMessage(
     optimistic?: boolean;
     at?: number;
     id?: string;
+    interjectionId?: string;
   },
 ): TimelineItem[] {
   return appendShared(items, payload);
@@ -36,9 +39,22 @@ export function appendUserMessage(
 export function applySessionInterjection(
   items: TimelineItem[],
   payload: { text?: string; interjectionId?: string },
-  selfIds?: Set<string>,
 ): TimelineItem[] {
-  return applyInterjectShared(items, payload, selfIds);
+  return applyInterjectShared(items, payload);
+}
+
+export function removeUserInterjection(
+  items: TimelineItem[],
+  interjectionId: string,
+): TimelineItem[] {
+  return removeShared(items, interjectionId);
+}
+
+export function shouldApplySessionInterjection(
+  payload?: { sessionId?: string } | null,
+  opts?: { opening?: boolean; sessionId?: string | null },
+): boolean {
+  return shouldApplyShared(payload, opts);
 }
 
 /** Close open tool cards when session/prompt returns or the user cancels. */

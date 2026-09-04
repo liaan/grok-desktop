@@ -39,11 +39,16 @@ import {
 import { cancelledPermissionResult } from "../shared/permission-options.mjs";
 import { compressPromptImage } from "./image-compress.mjs";
 import {
+  interjectAcceptedResult,
+  interjectAttempts,
+  interjectFromAttemptErrors,
+  isInterjectMethodMissing,
+  unwrapSessionInterjection,
+} from "../shared/acp-interject.mjs";
+import {
   classifyInboundMessage,
   compactConversationAttempts,
-  interjectAttempts,
   unwrapExtMethodResult,
-  unwrapSessionInterjection,
   worktreeCreateFromSyncAttempts,
   worktreeListAttempts,
   parseWorktreeCreateResponse,
@@ -1391,12 +1396,6 @@ export class GrokAcpClient extends EventEmitter {
       interjectionId: id,
       images: compressed,
     });
-    const methodMissing = (err) => {
-      if (err?.code === -32601) return true;
-      return /method not found|-32601|unknown method/i.test(
-        String(err?.message || err),
-      );
-    };
     const misses = [];
     for (const attempt of attempts) {
       try {
@@ -1405,9 +1404,11 @@ export class GrokAcpClient extends EventEmitter {
         });
         debugLog("acp", "interject-ok", { path: attempt.method, id });
         const result = unwrapExtMethodResult(raw);
-        return result && typeof result === "object"
-          ? { ...result, interjectionId: id }
-          : { status: "queued", interjectionId: id };
+        const status =
+          result && typeof result === "object" && typeof result.status === "string"
+            ? result.status
+            : "queued";
+        return interjectAcceptedResult(id, status);
       } catch (err) {
         const message = err?.message || String(err);
         debugLog("acp", "interject-try", {
@@ -1415,18 +1416,15 @@ export class GrokAcpClient extends EventEmitter {
           error: message,
           code: err?.code,
         });
-        if (methodMissing(err)) {
-          misses.push(`${attempt.method}: ${message}`);
+        if (isInterjectMethodMissing(err)) {
+          misses.push(err);
           continue;
         }
         throw err instanceof Error ? err : new Error(message);
       }
     }
-    const unsupported = new Error(
-      `Mid-turn interject is not available on this Grok CLI (${misses.join(" · ") || "no methods accepted"}).`,
-    );
-    unsupported.code = "INTERJECT_UNSUPPORTED";
-    throw unsupported;
+    debugLog("acp", "interject-unsupported", { attempts: misses.length });
+    return interjectFromAttemptErrors(misses, id);
   }
 
   cancel() {

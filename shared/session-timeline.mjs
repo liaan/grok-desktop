@@ -129,6 +129,7 @@ export function finalizeOpenTools(items, status = "completed") {
  *   optimistic?: boolean,
  *   at?: number,
  *   id?: string,
+ *   interjectionId?: string,
  * }} payload
  */
 export function appendUserMessage(items, payload = {}) {
@@ -138,6 +139,7 @@ export function appendUserMessage(items, payload = {}) {
     return Array.isArray(items) ? items : [];
   }
   const next = Array.isArray(items) ? [...items] : [];
+  const interjectionId = String(payload.interjectionId || "").trim();
   /** @type {Record<string, unknown>} */
   const item = {
     id: payload.id || uid("user"),
@@ -151,25 +153,58 @@ export function appendUserMessage(items, payload = {}) {
     at: typeof payload.at === "number" ? payload.at : Date.now(),
   };
   if (images.length) item.images = images;
+  if (interjectionId) item.interjectionId = interjectionId;
   next.push(item);
   return next;
 }
 
 /**
- * Agent broadcast `x.ai/session/interjection`. Originator already painted
- * an optimistic bubble and listed `interjectionId` in `selfIds`.
+ * Drop the optimistic user row for this interjection id (failed / unsupported RPC).
+ * @param {any[]} items
+ * @param {string} interjectionId
+ */
+export function removeUserInterjection(items, interjectionId) {
+  const id = String(interjectionId || "").trim();
+  if (!id || !Array.isArray(items)) {
+    return Array.isArray(items) ? items : [];
+  }
+  const next = items.filter(
+    (item) => !(item?.kind === "user" && item.interjectionId === id),
+  );
+  return next.length === items.length ? items : next;
+}
+
+/**
+ * Skip delayed echoes after chat switch / restart.
+ * Empty payload sessionId is allowed (older agents).
+ * @param {{ sessionId?: string } | null | undefined} payload
+ * @param {{ opening?: boolean, sessionId?: string | null }} [opts]
+ */
+export function shouldApplySessionInterjection(payload, opts = {}) {
+  if (opts.opening) return false;
+  const incoming = String(payload?.sessionId || "").trim();
+  if (!incoming) return true;
+  return incoming === String(opts.sessionId || "").trim();
+}
+
+/**
+ * Agent broadcast `x.ai/session/interjection`. Skip when a user row already
+ * carries this id (originator painted the bubble on send).
  * @param {any[]} items
  * @param {{ text?: string, interjectionId?: string }} payload
- * @param {Set<string> | { has: (id: string) => boolean, delete?: (id: string) => boolean } | null} [selfIds]
  */
-export function applySessionInterjection(items, payload, selfIds) {
+export function applySessionInterjection(items, payload) {
   const id = String(payload?.interjectionId || "").trim();
-  if (id && selfIds && typeof selfIds.has === "function" && selfIds.has(id)) {
-    if (typeof selfIds.delete === "function") selfIds.delete(id);
+  if (
+    id &&
+    Array.isArray(items) &&
+    items.some((item) => item?.kind === "user" && item.interjectionId === id)
+  ) {
     return items;
   }
   return appendUserMessage(items, {
     text: payload?.text,
+    interjectionId: id || undefined,
     optimistic: false,
   });
 }

@@ -1,3 +1,7 @@
+import {
+  INTERJECT_UNSUPPORTED_REASON,
+} from "./acp-interject.mjs";
+
 /**
  * Mid-turn composer routing (busy session).
  *
@@ -17,14 +21,29 @@ export function midTurnAction(mode, busy) {
 }
 
 /**
- * True when the ACP client/CLI has no `x.ai/interject` (old grok).
+ * True when this Grok CLI has no `x.ai/interject`.
+ * Generic JSON-RPC method-missing must not enqueue.
  * @param {unknown} err
  */
 export function isInterjectUnsupported(err) {
-  if (!err) return false;
-  const code = typeof err === "object" ? err.code : undefined;
-  if (code === -32601 || code === "INTERJECT_UNSUPPORTED") return true;
-  return /method not found|-32601|unknown method|interject is not available/i.test(
-    String(typeof err === "object" && err.message ? err.message : err),
+  if (!err || typeof err !== "object") return false;
+  return (
+    err.ok === false && err.reason === INTERJECT_UNSUPPORTED_REASON
   );
+}
+
+/**
+ * Renderer follow-up after `agent:interject`. Throws are real failures —
+ * leftover unsupported Errors are mapped to JSON in main before this runs.
+ * @param {unknown} result
+ * @param {unknown} [thrown]
+ * @returns {"ok" | "queue" | "error"}
+ */
+export function interjectRpcFollowUp(result, thrown) {
+  if (thrown) return "error";
+  if (isInterjectUnsupported(result)) return "queue";
+  if (result && typeof result === "object" && result.ok === false) {
+    return "error";
+  }
+  return "ok";
 }

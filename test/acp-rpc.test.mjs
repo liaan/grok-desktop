@@ -1,6 +1,7 @@
 /**
  * ACP JSON-RPC protocol tests — drives shipped shared/acp-rpc.mjs and
  * electron/acp-protocol.mjs (real entry points, no reimplementation).
+ * Interject wire helpers live in test/acp-interject.test.mjs.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,10 +9,6 @@ import {
   classifyInboundMessage,
   compactConversationAttempts,
   compactConversationRequestParams,
-  interjectAttempts,
-  interjectRequestParams,
-  isSessionInterjectionMethod,
-  unwrapSessionInterjection,
   unwrapExtMethodResult,
   worktreeCreateFromSyncAttempts,
   worktreeListAttempts,
@@ -160,66 +157,6 @@ test("compactConversationAttempts uses underscore ACP ext method on stdio", () =
     sessionId: "sess-1",
     userContext: "keep auth",
   });
-});
-
-test("interjectRequestParams omits content when there are no images", () => {
-  const params = interjectRequestParams({
-    sessionId: "s1",
-    text: "steer left",
-    interjectionId: "i1",
-  });
-  assert.deepEqual(params, {
-    sessionId: "s1",
-    text: "steer left",
-    interjectionId: "i1",
-  });
-  assert.equal("content" in params, false);
-});
-
-test("interjectRequestParams puts text then images in content", () => {
-  const params = interjectRequestParams({
-    sessionId: "s1",
-    text: "look at this",
-    interjectionId: "i2",
-    images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
-  });
-  assert.deepEqual(params.content, [
-    { type: "text", text: "look at this" },
-    { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
-  ]);
-});
-
-test("interjectAttempts uses underscore ACP ext method first", () => {
-  const attempts = interjectAttempts({
-    sessionId: "s1",
-    text: "steer",
-    interjectionId: "i1",
-  });
-  assert.equal(attempts[0].method, "_x.ai/interject");
-  assert.equal(attempts[1].method, "x.ai/interject");
-});
-
-test("unwrapSessionInterjection peels stdio underscore and ext_notification", () => {
-  assert.equal(isSessionInterjectionMethod("_x.ai/session/interjection"), true);
-  assert.deepEqual(
-    unwrapSessionInterjection("_x.ai/session/interjection", {
-      sessionId: "s",
-      text: "steer",
-      interjectionId: "i1",
-    }),
-    { sessionId: "s", text: "steer", interjectionId: "i1" },
-  );
-  assert.deepEqual(
-    unwrapSessionInterjection("ext_notification", {
-      method: "x.ai/session/interjection",
-      params: { session_id: "s2", text: "hi", interjection_id: "i2" },
-    }),
-    { sessionId: "s2", text: "hi", interjectionId: "i2" },
-  );
-  assert.equal(
-    unwrapSessionInterjection("session/update", { update: {} }),
-    null,
-  );
 });
 
 test("worktree ACP helpers match TUI create_from_worktree_sync", () => {

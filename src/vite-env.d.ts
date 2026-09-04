@@ -67,6 +67,8 @@ export type TimelineItem =
       images?: TimelineImage[];
       /** Set when UI inserts the bubble before ACP echoes it */
       optimistic?: boolean;
+      /** Client-minted id so `x.ai/session/interjection` is not painted twice. */
+      interjectionId?: string;
       at: number;
     }
   | { id: string; kind: "assistant"; text: string; at: number }
@@ -543,7 +545,12 @@ declare global {
           imageQuality?: "compact" | "high";
           interjectionId?: string;
         },
-      ) => Promise<{ status?: string; interjectionId?: string }>;
+      ) => Promise<{
+        ok?: boolean;
+        reason?: string;
+        status?: string;
+        interjectionId?: string;
+      }>;
       cancel: () => Promise<boolean>;
       compact: (hint?: string) => Promise<unknown>;
       respondPermission: (

@@ -14,13 +14,14 @@ import {
   type PendingImage,
 } from "../lib/pending-images";
 import { isAuthError, type ConnState } from "../lib/conn";
-import { appendUserMessage, finalizeOpenTools, uid } from "../lib/timeline";
 import {
-  consumeSelfInterjection,
-  rememberSelfInterjection,
-} from "../lib/self-interjections";
+  appendUserMessage,
+  finalizeOpenTools,
+  removeUserInterjection,
+  uid,
+} from "../lib/timeline";
 import {
-  isInterjectUnsupported,
+  interjectRpcFollowUp,
   midTurnAction,
 } from "../../shared/prompt-delivery.mjs";
 import type { TimelineImage, TimelineItem } from "../vite-env";
@@ -209,6 +210,83 @@ export function usePromptDelivery(opts: {
 
   deliverRef.current = deliverPrompt;
 
+  const deliverInterject = useCallback(
+    async (payload: {
+      text: string;
+      images: PendingImage[];
+      imageQuality?: "compact" | "high";
+    }) => {
+      const text = payload.text.trim();
+      const images = payload.images;
+      const imageQuality = payload.imageQuality || "compact";
+      if (!text && images.length === 0) return;
+
+      const interjectionId = uid("ij");
+      const gen = deliveryGenRef.current;
+      const timelineImages: TimelineImage[] = images.map((img) => ({
+        mimeType: img.mimeType,
+        previewUrl: img.previewUrl,
+      }));
+      pinToBottom();
+      setItems((prev) =>
+        appendUserMessage(prev, {
+          text,
+          images: timelineImages,
+          optimistic: true,
+          interjectionId,
+        }),
+      );
+      const stale = () =>
+        openingRef.current || deliveryGenRef.current !== gen;
+      try {
+        const result = await window.grokDesktop.interject(text, {
+          images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+          imageQuality,
+          interjectionId,
+        });
+        if (stale()) {
+          // Id-scoped; no-op if restart already replaced the timeline.
+          setItems((prev) => removeUserInterjection(prev, interjectionId));
+          return;
+        }
+        const follow = interjectRpcFollowUp(result);
+        if (follow === "ok") return;
+        setItems((prev) => removeUserInterjection(prev, interjectionId));
+        if (follow === "queue") {
+          if (!busyRef.current) {
+            void deliverPrompt({ text, images, imageQuality });
+          } else {
+            enqueuePrompt(text, images, imageQuality);
+          }
+          return;
+        }
+        const fail =
+          result && typeof result === "object"
+            ? String(
+                (result as { error?: string; reason?: string }).error ||
+                  (result as { reason?: string }).reason ||
+                  "Interject failed",
+              )
+            : "Interject failed";
+        setError(fail);
+      } catch (e: unknown) {
+        setItems((prev) => removeUserInterjection(prev, interjectionId));
+        if (stale()) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+      }
+    },
+    [
+      busyRef,
+      openingRef,
+      enqueuePrompt,
+      deliverPrompt,
+      pinToBottom,
+      setError,
+      setItems,
+    ],
+  );
+
   /**
    * Accept composer submit. Returns true when the draft should clear
    * (queued, interject, or delivered). False when refused (opening / no project).
@@ -238,40 +316,7 @@ export function usePromptDelivery(opts: {
         return true;
       }
       if (action === "interject") {
-        if (typeof window.grokDesktop.interject !== "function") {
-          enqueuePrompt(text, images, imageQuality);
-          return true;
-        }
-        const interjectionId = uid("ij");
-        rememberSelfInterjection(interjectionId);
-        try {
-          await window.grokDesktop.interject(text, {
-            images: images.map(({ data, mimeType }) => ({ data, mimeType })),
-            imageQuality,
-            interjectionId,
-          });
-        } catch (e: unknown) {
-          consumeSelfInterjection(interjectionId);
-          if (isInterjectUnsupported(e)) {
-            enqueuePrompt(text, images, imageQuality);
-            return true;
-          }
-          const msg = e instanceof Error ? e.message : String(e);
-          setError(msg);
-          return false;
-        }
-        const timelineImages: TimelineImage[] = images.map((img) => ({
-          mimeType: img.mimeType,
-          previewUrl: img.previewUrl,
-        }));
-        pinToBottom();
-        setItems((prev) =>
-          appendUserMessage(prev, {
-            text,
-            images: timelineImages,
-            optimistic: true,
-          }),
-        );
+        void deliverInterject({ text, images, imageQuality });
         return true;
       }
 
@@ -287,8 +332,7 @@ export function usePromptDelivery(opts: {
       busyRef,
       enqueuePrompt,
       setItems,
-      setError,
-      pinToBottom,
+      deliverInterject,
       deliverPrompt,
     ],
   );

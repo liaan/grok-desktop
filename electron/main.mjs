@@ -143,6 +143,7 @@ import {
 } from "./preview-window.mjs";
 import { previewApiAddress, startPreviewApi } from "./preview-api.mjs";
 import { installDesktopPreviewSkill } from "./preview-mcp.mjs";
+import { mapInterjectIpcError } from "../shared/acp-interject.mjs";
 import { normalizeAutoCompactAt } from "../shared/auto-compact.mjs";
 import { mergeMcpLiveStatus } from "../shared/mcp-status.mjs";
 import {
@@ -1285,9 +1286,10 @@ function registerIpc() {
           interjectionId,
         });
       } catch (err) {
-        const wrapped = new Error(err?.message || String(err));
-        if (err?.code != null) wrapped.code = err.code;
-        throw wrapped;
+        // IPC clones Error.message only, not `.code` — keep unsupported as JSON.
+        const mapped = mapInterjectIpcError(err, interjectionId);
+        if (mapped) return mapped;
+        throw new Error(err?.message || String(err));
       }
     },
   );
