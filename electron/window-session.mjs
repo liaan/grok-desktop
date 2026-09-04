@@ -534,6 +534,7 @@ export function ensureAgent(ws, cwd, opts = {}) {
       allowOutsideProject: Boolean(state.allowOutsideProject),
       sandboxTerminal: state.sandboxTerminal !== false,
       clientVersion: app.getVersion(),
+      windowId: ws.win?.id,
     });
 
     if (!isSessionLive(ws, gen)) {

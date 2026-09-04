@@ -13,9 +13,12 @@ export { PREVIEW_MCP_TOOLS };
  * Handle one MCP JSON-RPC message.
  * @returns {object | null} response to send, or null for notifications
  */
-export async function handlePreviewMcpMessage(msg) {
+export async function handlePreviewMcpMessage(msg, opts = {}) {
   if (!msg || typeof msg !== "object") return null;
   const { id, method, params } = msg;
+  const owner = opts.owner || null;
+  const ownerStamped = Boolean(opts.ownerStamped);
+  const dispatch = (req) => dispatchPreviewApi({ ...req, owner, ownerStamped });
   if (method === "initialize") {
     return {
       jsonrpc: "2.0",
@@ -45,7 +48,7 @@ export async function handlePreviewMcpMessage(msg) {
       const result = await callPreviewTool(
         params?.name,
         params?.arguments || {},
-        dispatchPreviewApi,
+        dispatch,
       );
       return { jsonrpc: "2.0", id, result };
     } catch (err) {

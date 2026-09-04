@@ -140,11 +140,40 @@ export const PREVIEW_MCP_TOOLS = [
 export const SCREENSHOT_DISABLED_TEXT =
   "preview_screenshot is disabled (viewport JPEGs stay in context). Use preview_snapshot to read the page. The user can already see the Preview window.";
 
+/** MCP HTTP header so Send screenshot goes to the window whose agent opened Preview. */
+export const PREVIEW_OWNER_HEADER = "X-Grok-Desktop-Window";
+
+/**
+ * @param {unknown} windowId
+ * @returns {{ name: string, value: string }[]}
+ */
+export function previewOwnerHeaders(windowId) {
+  const n = Number.parseInt(String(windowId ?? ""), 10);
+  if (!Number.isInteger(n) || n <= 0) return [];
+  return [{ name: PREVIEW_OWNER_HEADER, value: String(n) }];
+}
+
+/**
+ * @param {unknown} headers
+ * @returns {number | null}
+ */
+export function previewOwnerIdFromHeaders(headers) {
+  if (!headers || typeof headers !== "object") return null;
+  const raw =
+    headers[PREVIEW_OWNER_HEADER] ??
+    headers["x-grok-desktop-window"] ??
+    headers["X-Grok-Desktop-Window"];
+  const n = Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw || ""), 10);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 /**
  * @param {{ url?: string, token?: string }} api
+ * @param {unknown} [windowId]
  * @returns {object[]}
  */
-export function previewMcpHttpServers(api) {
+export function previewMcpHttpServers(api, windowId) {
   const url = String(api?.url || "").replace(/\/$/, "");
   const token = String(api?.token || "");
   if (!url || !token) return [];
@@ -153,7 +182,10 @@ export function previewMcpHttpServers(api) {
       type: "http",
       name: "desktop-preview",
       url: `${url}/mcp`,
-      headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+      headers: [
+        { name: "Authorization", value: `Bearer ${token}` },
+        ...previewOwnerHeaders(windowId),
+      ],
     },
   ];
 }

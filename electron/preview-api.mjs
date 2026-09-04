@@ -76,6 +76,7 @@ export async function dispatchPreviewApi(req) {
   }
 
   const {
+    claimPreviewOwner,
     closePreviewWindow,
     navigatePreview,
     openPreviewWindow,
@@ -87,6 +88,12 @@ export async function dispatchPreviewApi(req) {
     VIEWPORTS,
   } = await previewWindowApi();
 
+  // Header owner always claims. Focused-window fallback is only for open/navigate
+  // when MCP did not stamp a window — later snapshot/click must not steal.
+  if (req.owner) claimPreviewOwner(req.owner);
+  const openOwner =
+    req.owner || (req.ownerStamped ? null : getOwner());
+
   if (method === "GET" && path === "/health") {
     return { ok: true, ...previewPublicState() };
   }
@@ -95,7 +102,7 @@ export async function dispatchPreviewApi(req) {
   }
   if (method === "POST" && path === "/open") {
     const url = typeof body.url === "string" ? body.url : "";
-    return openPreviewWindow({ owner: getOwner(), url });
+    return openPreviewWindow({ owner: openOwner, url });
   }
   if (method === "POST" && path === "/close") {
     return { ok: closePreviewWindow(), ...previewPublicState() };
@@ -103,7 +110,7 @@ export async function dispatchPreviewApi(req) {
   if (method === "POST" && path === "/navigate") {
     const url = typeof body.url === "string" ? body.url : "";
     if (!previewPublicState().open) {
-      return openPreviewWindow({ owner: getOwner(), url });
+      return openPreviewWindow({ owner: openOwner, url });
     }
     return navigatePreview(url);
   }
@@ -207,7 +214,15 @@ async function handleMcpHttp(req, res, rawBody) {
     res.end(JSON.stringify({ error: "invalid JSON" }));
     return;
   }
-  const reply = await handlePreviewMcpMessage(msg);
+  const { previewOwnerIdFromHeaders } = await import("./preview-mcp-tools.mjs");
+  const ownerId = previewOwnerIdFromHeaders(req.headers);
+  const ownerStamped = ownerId != null;
+  let owner = null;
+  if (ownerStamped) {
+    const { windowById } = await previewWindowApi();
+    owner = windowById(ownerId);
+  }
+  const reply = await handlePreviewMcpMessage(msg, { owner, ownerStamped });
   if (!reply) {
     res.writeHead(202);
     res.end();

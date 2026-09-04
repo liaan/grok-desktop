@@ -476,6 +476,25 @@ function ownerWindow() {
   return null;
 }
 
+/**
+ * Chat whose agent is driving Preview. Send screenshot goes here, not the focused window.
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ */
+export function claimPreviewOwner(win) {
+  if (win && !win.isDestroyed()) ownerWin = win;
+}
+
+/**
+ * @param {unknown} id
+ * @returns {import('electron').BrowserWindow | null}
+ */
+export function windowById(id) {
+  const n = Number.parseInt(String(id ?? ""), 10);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  const win = BrowserWindow.fromId(n);
+  return win && !win.isDestroyed() ? win : null;
+}
+
 export async function openPreviewWindow(opts = {}) {
   writeCrashLog("preview", "open-start", {
     url: opts.url || null,
@@ -491,7 +510,7 @@ export async function openPreviewWindow(opts = {}) {
 
 async function openPreviewWindowInner(opts = {}) {
   const owner = opts.owner || null;
-  if (owner && !owner.isDestroyed()) ownerWin = owner;
+  claimPreviewOwner(owner);
   const state = readState?.() || {};
   viewportId = VIEWPORTS[state.previewViewport] ? state.previewViewport : "fluid";
 

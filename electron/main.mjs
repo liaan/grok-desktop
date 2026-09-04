@@ -1822,6 +1822,7 @@ app.whenReady().then(() => {
   setupAutoUpdater({ disposeAgent: disposeAgentQuick });
 
   void startPreviewApi({
+    // Fallback when the MCP request has no window header (menu / old agent).
     getOwner: () => {
       const ws = focusedSession();
       return ws?.win && !ws.win.isDestroyed() ? ws.win : null;

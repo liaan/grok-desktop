@@ -14,12 +14,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_MARKER = "managed-by: grok-desktop-preview";
 
 /**
- * ACP MCP entries. Empty when the loopback API is not up yet.
- * HTTP only (in-process). A second stdio server used to duplicate every tool.
+ * ACP MCP entries. Empty when the loopback API is not up yet. HTTP only.
+ * @param {unknown} [windowId] BrowserWindow id of the chat that owns this agent.
  * @returns {object[]}
  */
-export function desktopPreviewMcpServers() {
-  return previewMcpHttpServers(previewApiAddress());
+export function desktopPreviewMcpServers(windowId) {
+  return previewMcpHttpServers(previewApiAddress(), windowId);
 }
 
 /**

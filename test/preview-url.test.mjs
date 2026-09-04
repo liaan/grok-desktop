@@ -15,7 +15,10 @@ import {
   PREVIEW_MCP_TOOLS,
   SCREENSHOT_DISABLED_TEXT,
   callPreviewTool,
+  PREVIEW_OWNER_HEADER,
   previewMcpHttpServers,
+  previewOwnerHeaders,
+  previewOwnerIdFromHeaders,
 } from "../electron/preview-mcp-tools.mjs";
 import {
   dispatchPreviewApi,
@@ -97,6 +100,32 @@ test("MCP advertises HTTP snapshot tools, not screenshot", () => {
   assert.equal(previewMcpHttpServers({}).length, 0);
 });
 
+test("preview MCP stamps the owning BrowserWindow id on HTTP headers", () => {
+  assert.deepEqual(previewOwnerHeaders(42), [
+    { name: PREVIEW_OWNER_HEADER, value: "42" },
+  ]);
+  assert.deepEqual(previewOwnerHeaders(0), []);
+  assert.deepEqual(previewOwnerHeaders("nope"), []);
+  const servers = previewMcpHttpServers(
+    { url: "http://127.0.0.1:9", token: "t" },
+    7,
+  );
+  assert.deepEqual(servers[0].headers, [
+    { name: "Authorization", value: "Bearer t" },
+    { name: PREVIEW_OWNER_HEADER, value: "7" },
+  ]);
+  assert.equal(
+    previewOwnerIdFromHeaders({ "x-grok-desktop-window": "7" }),
+    7,
+  );
+  assert.equal(
+    previewOwnerIdFromHeaders({ [PREVIEW_OWNER_HEADER]: "7" }),
+    7,
+  );
+  assert.equal(previewOwnerIdFromHeaders({}), null);
+  assert.equal(previewOwnerIdFromHeaders({ "x-grok-desktop-window": "0" }), null);
+});
+
 test("preview_screenshot does not dispatch a JPEG capture", async () => {
   const calls = [];
   const dispatch = async (req) => {
@@ -168,6 +197,16 @@ test("capture delivery is in usePromptDelivery, not App", () => {
   assert.doesNotMatch(win, /ipcMain\.handle\(["']preview:screenshot["']/);
   assert.match(win, /ipcMain\.handle\(["']preview:chrome-screenshot["']/);
   assert.match(win, /sendPreviewCaptureToChat/);
+  const mcp = fs.readFileSync(
+    new URL("../electron/preview-mcp-tools.mjs", import.meta.url),
+    "utf8",
+  );
+  const acp = fs.readFileSync(
+    new URL("../electron/acp-client.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(mcp, /X-Grok-Desktop-Window/);
+  assert.match(acp, /desktopPreviewMcpServers\(this\.windowId\)/);
   assert.match(chrome, /Handed to chat/);
   assert.doesNotMatch(chrome, /Sent to chat ·/);
 });
