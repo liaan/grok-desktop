@@ -9,7 +9,7 @@ import {
 /** Within this many px of the bottom we treat the viewport as "pinned". */
 const NEAR_BOTTOM_PX = 80;
 
-function nearBottom(el: HTMLElement): boolean {
+function isScrollerNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
 }
 
@@ -63,7 +63,7 @@ export function useStickToBottom(
 
     const onScroll = () => {
       if (ignoreScrollRef.current > 0) return;
-      stickRef.current = nearBottom(el);
+      stickRef.current = isScrollerNearBottom(el);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -76,7 +76,7 @@ export function useStickToBottom(
     const el = scrollerRef.current;
     if (!el) return;
     if (!stickRef.current) {
-      if (nearBottom(el)) stickRef.current = true;
+      if (isScrollerNearBottom(el)) stickRef.current = true;
       else return;
     }
     scrollToBottom();

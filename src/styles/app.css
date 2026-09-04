@@ -1050,6 +1050,95 @@ button {
   gap: 14px;
 }
 
+.timeline-filter {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 6px 16px 8px;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.timeline-filter-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.timeline-filter-group {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+
+.timeline-filter-opt {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.timeline-filter-opt + .timeline-filter-opt {
+  border-left: 1px solid var(--border);
+}
+
+.timeline-filter-opt:hover {
+  color: var(--text);
+}
+
+.timeline-filter-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.timeline-filter-opt.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.timeline-filter-count {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.78;
+}
+
+.timeline-filter-opt.active .timeline-filter-count {
+  opacity: 0.95;
+}
+
+.timeline-filter-hidden {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.empty-state-filter h2 {
+  font-size: 16px;
+}
+
+.empty-state-filter .btn {
+  margin-top: 12px;
+}
+
 .day-divider {
   display: flex;
   align-items: center;

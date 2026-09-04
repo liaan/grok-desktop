@@ -1267,16 +1267,17 @@ export default function App() {
             </div>
           )}
 
-          <div className="timeline" ref={timelineRef}>
-            <MessageList
-              items={items}
-              bottomRef={bottomRef}
-              knownCommands={allCommands}
-              pendingPermissions={permissions}
-              onPermission={onPermission}
-              onAllowAllPermissions={() => void onAllowAllPermissions()}
-            />
-          </div>
+          <MessageList
+            key={sessionId || "no-session"}
+            items={items}
+            bottomRef={bottomRef}
+            scrollerRef={timelineRef}
+            pinToBottom={pinToBottom}
+            knownCommands={allCommands}
+            pendingPermissions={permissions}
+            onPermission={onPermission}
+            onAllowAllPermissions={() => void onAllowAllPermissions()}
+          />
 
           <ApprovalsDock
             permissions={permissions}
