@@ -1268,11 +1268,10 @@ export default function App() {
           )}
 
           <MessageList
-            key={sessionId || "no-session"}
+            key={`messages:${sessionId || "no-session"}`}
             items={items}
             bottomRef={bottomRef}
             scrollerRef={timelineRef}
-            pinToBottom={pinToBottom}
             knownCommands={allCommands}
             pendingPermissions={permissions}
             onPermission={onPermission}
@@ -1289,7 +1288,7 @@ export default function App() {
           />
 
           <Composer
-            key={sessionId || "no-session"}
+            key={`composer:${sessionId || "no-session"}`}
             conn={conn}
             projectOpen={Boolean(project)}
             commands={allCommands}

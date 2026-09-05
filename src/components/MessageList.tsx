@@ -1,11 +1,7 @@
 import {
   Fragment,
   memo,
-  useCallback,
   useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
   useState,
   type ReactNode,
   type RefObject,
@@ -25,15 +21,6 @@ import {
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
 import { formatOptionLabel } from "../lib/timeline";
-import {
-  countTimelineKinds,
-  filterTimelineItems,
-  shouldSnapTimelineFilterToAll,
-  timelineFilterEmptyLabel,
-  TIMELINE_VIEW_FILTERS,
-  type TimelineKindFilter,
-  type TimelineViewFilter,
-} from "../../shared/timeline-filter.mjs";
 import {
   classifyOptionId,
   permissionButtonClass,
@@ -450,71 +437,10 @@ function PendingApprovalCard({
   );
 }
 
-function kindCount(
-  counts: Record<TimelineKindFilter, number>,
-  id: TimelineViewFilter,
-): number | null {
-  if (id === "all") return null;
-  return counts[id];
-}
-
-function TimelineFilterBar({
-  value,
-  counts,
-  hiddenCount,
-  onChange,
-}: {
-  value: TimelineViewFilter;
-  counts: Record<TimelineKindFilter, number>;
-  hiddenCount: number;
-  onChange: (next: TimelineViewFilter) => void;
-}) {
-  return (
-    <div className="timeline-filter">
-      <span className="timeline-filter-label" id="timeline-filter-label">
-        Show
-      </span>
-      <div
-        className="timeline-filter-group"
-        role="group"
-        aria-labelledby="timeline-filter-label"
-      >
-        {TIMELINE_VIEW_FILTERS.map((opt) => {
-          const count = kindCount(counts, opt.id);
-          const active = value === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              aria-pressed={active}
-              className={`timeline-filter-opt${active ? " active" : ""}`}
-              title={opt.title}
-              onClick={() =>
-                onChange(active && opt.id !== "all" ? "all" : opt.id)
-              }
-            >
-              {opt.label}
-              {count != null ? (
-                <span className="timeline-filter-count">{count}</span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-      {value !== "all" && hiddenCount > 0 ? (
-        <span className="timeline-filter-hidden">
-          {hiddenCount} hidden
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export const MessageList = memo(function MessageList({
   items,
   bottomRef,
   scrollerRef,
-  pinToBottom,
   knownCommands,
   pendingPermissions,
   onPermission,
@@ -522,9 +448,7 @@ export const MessageList = memo(function MessageList({
 }: {
   items: TimelineItem[];
   bottomRef: RefObject<HTMLDivElement | null>;
-  /** Overflow scroller; filter chrome is a sibling, not a child. */
   scrollerRef: RefObject<HTMLDivElement | null>;
-  pinToBottom: () => void;
   /** Skills + agent + desktop commands for slash recognition in user bubbles */
   knownCommands?: SlashCommand[];
   /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
@@ -535,34 +459,6 @@ export const MessageList = memo(function MessageList({
 }) {
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
-  const [viewFilter, setViewFilter] = useState<TimelineViewFilter>("all");
-  const lastUserIdRef = useRef<string | null>(null);
-  const prevFilterRef = useRef<TimelineViewFilter | null>(null);
-
-  const counts = useMemo(() => countTimelineKinds(items), [items]);
-  const visible = useMemo(
-    () => filterTimelineItems(items, viewFilter),
-    [items, viewFilter],
-  );
-  const hiddenCount = items.length - visible.length;
-
-  const applyFilter = useCallback((next: TimelineViewFilter) => {
-    setViewFilter((prev) => (prev === next ? prev : next));
-  }, []);
-
-  useLayoutEffect(() => {
-    const last = items[items.length - 1];
-    if (!shouldSnapTimelineFilterToAll(last, lastUserIdRef.current)) return;
-    lastUserIdRef.current = last.id;
-    applyFilter("all");
-  }, [items, applyFilter]);
-
-  useLayoutEffect(() => {
-    const prev = prevFilterRef.current;
-    prevFilterRef.current = viewFilter;
-    if (prev === null || prev === viewFilter) return;
-    pinToBottom();
-  }, [viewFilter, pinToBottom]);
 
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
@@ -577,85 +473,62 @@ export const MessageList = memo(function MessageList({
   }, []);
 
   const emptyWelcome = items.length === 0 && perms.length === 0;
-  const emptyFilter = !emptyWelcome && visible.length === 0 && perms.length === 0;
 
   return (
-    <>
-      <div className="timeline" ref={scrollerRef}>
-        {emptyWelcome ? (
-          <div className="empty-state">
-            <h2>What should we build?</h2>
-            <p>
-              This desktop app is a GUI on top of the Grok agent backbone
-              (<code>grok agent stdio</code> + ACP). Skills, MCP, auth, and models still
-              come from your Grok install.
-            </p>
-          </div>
-        ) : emptyFilter ? (
-          <div className="empty-state empty-state-filter">
-            <h2>No {timelineFilterEmptyLabel(viewFilter)} in this chat</h2>
-            <p>Choose All to see the rest of the thread.</p>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => applyFilter("all")}
-            >
-              Show all
-            </button>
-          </div>
-        ) : (
-          <>
-            {visible.map((item, i) => {
-              const prev = i > 0 ? visible[i - 1] : null;
-              const showDay =
-                typeof item.at === "number" &&
-                (!prev ||
-                  typeof prev.at !== "number" ||
-                  !sameCalendarDay(prev.at, item.at));
+    <div className="timeline" ref={scrollerRef}>
+      {emptyWelcome ? (
+        <div className="empty-state">
+          <h2>What should we build?</h2>
+          <p>
+            This desktop app is a GUI on top of the Grok agent backbone
+            (<code>grok agent stdio</code> + ACP). Skills, MCP, auth, and models still
+            come from your Grok install.
+          </p>
+        </div>
+      ) : (
+        <>
+          {items.map((item, i) => {
+            const prev = i > 0 ? items[i - 1] : null;
+            const showDay =
+              typeof item.at === "number" &&
+              (!prev ||
+                typeof prev.at !== "number" ||
+                !sameCalendarDay(prev.at, item.at));
 
-              return (
-                <TimelineRow
-                  key={item.id}
-                  item={item}
-                  showDay={showDay}
-                  knownCommands={cmds}
-                />
-              );
-            })}
-            {perms.length > 1 && onAllowAllPermissions ? (
-              <div className="perm-batch-inline" role="region" aria-label="Batch approvals">
-                <p className="perm-batch-hint">
-                  {perms.length} tools waiting — Allow all grants each once so
-                  multi-edit batches do not stall.
-                </p>
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => onAllowAllPermissions()}
-                >
-                  Allow all ({perms.length})
-                </button>
-              </div>
-            ) : null}
-            {perms.map((p) => (
-              <PendingApprovalCard
-                key={p.reqId}
-                request={p}
-                onPermission={onPermission}
+            return (
+              <TimelineRow
+                key={item.id}
+                item={item}
+                showDay={showDay}
+                knownCommands={cmds}
               />
-            ))}
-          </>
-        )}
-        <div ref={bottomRef} />
-      </div>
-      {items.length > 0 ? (
-        <TimelineFilterBar
-          value={viewFilter}
-          counts={counts}
-          hiddenCount={hiddenCount}
-          onChange={applyFilter}
-        />
-      ) : null}
-    </>
+            );
+          })}
+          {perms.length > 1 && onAllowAllPermissions ? (
+            <div className="perm-batch-inline" role="region" aria-label="Batch approvals">
+              <p className="perm-batch-hint">
+                {perms.length} tools waiting — Allow all grants each once so
+                multi-edit batches do not stall.
+              </p>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => onAllowAllPermissions()}
+              >
+                Allow all ({perms.length})
+              </button>
+            </div>
+          ) : null}
+          {perms.map((p) => (
+            <PendingApprovalCard
+              key={p.reqId}
+              request={p}
+              onPermission={onPermission}
+            />
+          ))}
+        </>
+      )}
+      <div ref={bottomRef} />
+    </div>
   );
 });
