@@ -7,6 +7,8 @@ import { EventEmitter } from "node:events";
 import {
   acpClientCapabilities,
   folderTrustResponse,
+  isAskUserQuestionMethod,
+  isExitPlanModeMethod,
   isFolderTrustMethod,
   isMcpElicitCompleteMethod,
   isMcpElicitMethod,
@@ -16,6 +18,7 @@ import {
   unwrapExtParams,
 } from "../shared/acp-rpc.mjs";
 import {
+  handleAskUserQuestion,
   handleExitPlanMode,
   handleFolderTrustRequest,
   handleMcpElicit,
@@ -27,9 +30,38 @@ test("isFolderTrustMethod matches stdio underscore and nested names", () => {
   assert.equal(isFolderTrustMethod("session/request_permission"), false);
 });
 
+test("isAskUserQuestionMethod matches stdio underscore and nested names", () => {
+  assert.equal(isAskUserQuestionMethod("x.ai/ask_user_question"), true);
+  assert.equal(isAskUserQuestionMethod("_x.ai/ask_user_question"), true);
+  assert.equal(isAskUserQuestionMethod("ask_user_question"), true);
+  assert.equal(isAskUserQuestionMethod("ext_method"), false);
+  assert.equal(isExitPlanModeMethod("_x.ai/exit_plan_mode"), true);
+  assert.equal(isExitPlanModeMethod("session/prompt"), false);
+});
+
+test("unwrapExtParams peels nested ext_method for ask_user_question", () => {
+  const inner = {
+    sessionId: "s",
+    questions: [{ question: "Pick one?", options: [{ label: "A" }] }],
+  };
+  assert.equal(
+    unwrapExtParams("_x.ai/ask_user_question", inner, isAskUserQuestionMethod),
+    inner,
+  );
+  assert.deepEqual(
+    unwrapExtParams(
+      "ext_method",
+      { method: "x.ai/ask_user_question", params: inner },
+      isAskUserQuestionMethod,
+    ),
+    inner,
+  );
+});
+
 test("acpClientCapabilities advertises folderTrust.interactive", () => {
   const caps = acpClientCapabilities();
   assert.equal(caps._meta["x.ai/folderTrust"].interactive, true);
+  assert.equal(caps._meta["x.ai/askUserQuestion"].interactive, true);
   assert.equal(caps.terminal, true);
   assert.equal(caps.fs.readTextFile, true);
 });
@@ -172,6 +204,33 @@ test("handleFolderTrustRequest UI reject stays fail-closed", async () => {
   assert.deepEqual(result, { outcome: "reject" });
 });
 
+test("handleAskUserQuestion accepts nested params.questions", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("user-question-request", (payload) => {
+    assert.equal(payload.params.questions.length, 1);
+    assert.equal(payload.params.questions[0].question, "Pick?");
+    payload.respond({ type: "answered", answers: { "0": "a" } });
+  });
+  await handleAskUserQuestion(
+    {
+      emitter,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    1,
+    {
+      method: "x.ai/ask_user_question",
+      params: {
+        questions: [{ question: "Pick?", options: [{ label: "A", id: "a" }] }],
+      },
+    },
+  );
+  assert.equal(result.outcome, "accepted");
+  assert.equal(result.answers.a || result.answers["0"], "a");
+});
+
 test("plan request_changes maps to cancelled + feedback", async () => {
   const emitter = new EventEmitter();
   let result = null;
@@ -217,6 +276,30 @@ test("plan request_changes omits empty feedback", async () => {
     { planContent: "# Plan" },
   );
   assert.deepEqual(result, { outcome: "cancelled" });
+});
+
+test("plan approved drops leftover feedback (TUI sends comments via interject)", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("plan-approval-request", (payload) => {
+    payload.respond({
+      type: "approved",
+      feedback: "use postgres — should not land on the wire",
+    });
+  });
+  await handleExitPlanMode(
+    {
+      emitter,
+      sessionDir: () => null,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    7,
+    { planContent: "# Plan" },
+  );
+  assert.deepEqual(result, { outcome: "approved" });
+  assert.equal(result.feedback, undefined);
 });
 
 test("plan approved / abandoned stay distinct outcomes", async () => {

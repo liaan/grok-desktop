@@ -37,6 +37,11 @@ import {
   normalizeReasoningEffort,
 } from "./reasoning-effort.mjs";
 import { cancelledPermissionResult } from "../shared/permission-options.mjs";
+import {
+  currentModeIdFromUpdate,
+  rememberSessionMode,
+  setSessionModeParams,
+} from "../shared/session-mode.mjs";
 import { compressPromptImage } from "./image-compress.mjs";
 import {
   interjectAcceptedResult,
@@ -64,9 +69,12 @@ import {
   createOnceResponder,
   isFsReadMethod,
   isFsWriteMethod,
+  isAskUserQuestionMethod,
+  isExitPlanModeMethod,
   isFolderTrustMethod,
   isPermissionMethod,
   isTerminalMethod,
+  unwrapExtParams,
   jsonRpcErrorCode,
   formatAcpError,
   acpClientCapabilities,
@@ -86,9 +94,6 @@ import { errorFields, writeCrashLog } from "./crash-log.mjs";
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const INIT_TIMEOUT_MS = 60_000;
 const LOAD_TIMEOUT_MS = 90_000;
-/** Client extension methods used by Grok for plan UI / questions (not plain tools). */
-const EXT_EXIT_PLAN = "x.ai/exit_plan_mode";
-const EXT_ASK_USER = "x.ai/ask_user_question";
 
 /** @param {any} entry */
 function modelEntryName(entry) {
@@ -242,6 +247,8 @@ export class GrokAcpClient extends EventEmitter {
     this.agentCapabilities = {};
     /** Last known ACP model id (from session/new|load models.currentModelId). */
     this.currentModelId = null;
+    /** Last known ACP session mode id (`plan` / `default` / `ask`). */
+    this.currentModeId = null;
     /** Human-readable name for the current model when the agent provides one. */
     this.currentModelName = null;
     /**
@@ -501,6 +508,19 @@ export class GrokAcpClient extends EventEmitter {
   }
 
   /**
+   * Remember session mode from session/new|load (`modes.currentModeId`).
+   * @param {any} session
+   */
+  _rememberModes(session) {
+    this.currentModeId = rememberSessionMode(session);
+  }
+
+  /** Snapshot of session mode for IPC / open-session results. */
+  _modesPublic() {
+    return { sessionMode: this.currentModeId || null };
+  }
+
+  /**
    * Align live session effort with Desktop preference after session/new|load.
    * Spawn flag usually already matches; this covers load + mid-process /new.
    */
@@ -542,6 +562,7 @@ export class GrokAcpClient extends EventEmitter {
     this.allowWritesThisSession = false;
     this.emit("writes-session", false);
     this._rememberModels(session);
+    this._rememberModes(session);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
     await this._syncReasoningEffortToSession();
@@ -551,6 +572,7 @@ export class GrokAcpClient extends EventEmitter {
       grokBinary: this.grokPath,
       resumed: false,
       ...this._modelsPublic(),
+      ...this._modesPublic(),
     });
     return this.sessionId;
   }
@@ -587,6 +609,7 @@ export class GrokAcpClient extends EventEmitter {
     this.allowWritesThisSession = false;
     this.emit("writes-session", false);
     this._rememberModels(result);
+    this._rememberModes(result);
     this.terminals.setDefaultCwd(this.cwd);
     this.ready = true;
     await this._syncReasoningEffortToSession();
@@ -596,6 +619,7 @@ export class GrokAcpClient extends EventEmitter {
       grokBinary: this.grokPath,
       resumed: true,
       ...this._modelsPublic(),
+      ...this._modesPublic(),
     });
     return this.sessionId;
   }
@@ -683,6 +707,8 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (c.kind === "session-update") {
+      const modeId = currentModeIdFromUpdate(c.params);
+      if (modeId !== undefined) this.currentModeId = modeId;
       // Progress only — does not complete tools; agent still needs client RPCs.
       this.emit("session-update", c.params);
       if (c.expectsEmptyAck) {
@@ -761,22 +787,25 @@ export class GrokAcpClient extends EventEmitter {
 
     try {
       // Grok extension: plan approval popup (must not auto-approve / no-op)
-      if (
-        method === EXT_EXIT_PLAN ||
-        method === "exit_plan_mode" ||
-        method?.endsWith("/exit_plan_mode")
-      ) {
-        await handleExitPlanMode(extCtx, id, params);
+      if (isExitPlanModeMethod(method) || isExitPlanModeMethod(params?.method)) {
+        await handleExitPlanMode(
+          extCtx,
+          id,
+          unwrapExtParams(method, params, isExitPlanModeMethod),
+        );
         return;
       }
 
       // Grok extension: multi-choice questions
       if (
-        method === EXT_ASK_USER ||
-        method === "ask_user_question" ||
-        method?.endsWith("/ask_user_question")
+        isAskUserQuestionMethod(method) ||
+        isAskUserQuestionMethod(params?.method)
       ) {
-        await handleAskUserQuestion(extCtx, id, params);
+        await handleAskUserQuestion(
+          extCtx,
+          id,
+          unwrapExtParams(method, params, isAskUserQuestionMethod),
+        );
         return;
       }
 
@@ -1603,6 +1632,66 @@ export class GrokAcpClient extends EventEmitter {
         ...this._modelsPublic(),
         agentSynced: false,
         error: err?.message || String(err),
+      };
+    }
+  }
+
+  /**
+   * Switch the live session mode (same as TUI `/plan` / Shift+Tab).
+   * Live path: ACP `session/set_mode` with `modeId` (`plan` | `default` | `ask`).
+   *
+   * @param {string} modeId
+   * @returns {Promise<{
+   *   modeId: string | null,
+   *   agentSynced: boolean,
+   *   error?: string,
+   * }>}
+   */
+  async setSessionMode(modeId) {
+    const nextId = String(modeId || "").trim();
+    if (!nextId) {
+      return {
+        modeId: this.currentModeId || null,
+        agentSynced: false,
+        error: "modeId required",
+      };
+    }
+    if (nextId === this.currentModeId) {
+      return { modeId: nextId, agentSynced: true };
+    }
+    const sessionAtStart = this.sessionId;
+    if (!sessionAtStart || !this.ready || !this.proc) {
+      return {
+        modeId: this.currentModeId || null,
+        agentSynced: false,
+        error: "Agent is not ready",
+      };
+    }
+
+    try {
+      await this.request(
+        "session/set_mode",
+        setSessionModeParams(sessionAtStart, nextId),
+        { timeoutMs: 15_000 },
+      );
+      if (this.sessionId !== sessionAtStart) {
+        return {
+          modeId: this.currentModeId || null,
+          agentSynced: false,
+          error: "Session changed",
+        };
+      }
+      this.currentModeId = nextId;
+      return { modeId: nextId, agentSynced: true };
+    } catch (err) {
+      const raw = err?.message || String(err);
+      const error = /-32601|method not found/i.test(raw)
+        ? "This Grok CLI does not support plan mode (session/set_mode)."
+        : raw;
+      return {
+        modeId: this.currentModeId || null,
+        agentSynced: false,
+        error,
       };
     }
   }

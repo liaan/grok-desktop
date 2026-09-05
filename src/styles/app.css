@@ -1011,6 +1011,12 @@ button {
   border-color: rgba(167, 139, 250, 0.4);
 }
 
+.status-pill.plan-mode-pill {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+}
+
 .status-dot {
   width: 7px;
   height: 7px;
@@ -1509,6 +1515,18 @@ button {
 .msg.plan {
   border-color: var(--plan-border);
   background: var(--plan-bg);
+}
+
+.msg.plan-question {
+  border-color: rgba(251, 191, 36, 0.85);
+  background: rgba(251, 191, 36, 0.07);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.28);
+}
+
+[data-theme="light"] .msg.plan-question {
+  border-color: rgba(202, 138, 4, 0.75);
+  background: rgba(254, 243, 199, 0.7);
+  box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.18);
 }
 
 .tool-body {
@@ -3023,16 +3041,13 @@ button {
   color: var(--text-muted);
 }
 
-.plan-approval-dialog {
-  width: min(720px, 96vw);
-  max-height: min(90vh, 900px);
-  display: flex;
-  flex-direction: column;
+.plan-approval-dialog > .modal-header {
+  flex-shrink: 0;
 }
 
-.plan-approval-body {
+.modal-dialog.plan-approval-dialog .plan-approval-body {
   overflow: auto;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -3062,14 +3077,18 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 16px 0;
   font-size: 13px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .plan-feedback-input {
   width: 100%;
   resize: vertical;
   min-height: 80px;
+  max-height: 30vh;
   font: inherit;
   padding: 8px 10px;
   border-radius: 8px;
@@ -3078,9 +3097,23 @@ button {
   color: var(--text);
 }
 
+.plan-feedback-input.invalid {
+  border-color: var(--danger);
+}
+
+.plan-feedback-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plan-feedback-hint.warn {
+  color: var(--danger);
+}
+
 .plan-approval-footer {
   flex-wrap: wrap;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .ask-user-dialog {
@@ -3511,6 +3544,13 @@ body.settings-open .welcome-card .brand {
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
+}
+
+/* Two classes so this wins over .modal-dialog { overflow: auto }. */
+.modal-dialog.plan-approval-dialog {
+  width: min(720px, 96vw);
+  max-height: min(90vh, 900px);
+  overflow: hidden;
 }
 
 .modal-header {

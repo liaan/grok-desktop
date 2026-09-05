@@ -35,6 +35,13 @@ import {
   nextAlwaysApproveMode,
   runDesktopCommand,
 } from "./lib/desktop-commands";
+import {
+  ALREADY_IN_PLAN_NOTICE,
+  PLAN_MODE_ID,
+  PLAN_MODE_ON_NOTICE,
+  isPlanMode,
+  planSlashAction,
+} from "../shared/session-mode.mjs";
 import { isMissingBinaryError, type ConnState } from "./lib/conn";
 import {
   normalizeAutoCompactAt,
@@ -156,6 +163,7 @@ export default function App() {
     backgroundTasks,
     sessionUsage,
     sessionMode,
+    setSessionMode,
     planApproval,
     userQuestion,
     folderTrust,
@@ -306,6 +314,7 @@ export default function App() {
       revokeWritesThisSession,
       hydrateBackgroundTasks,
       hydrateSessionUsage,
+      hydrateSessionMode: setSessionMode,
       syncAgentGatesFromMain,
       hydrateFromInfo,
       refreshAuth,
@@ -743,6 +752,44 @@ export default function App() {
           compact: (hint) => {
             void runCompress(hint);
           },
+          enterPlanMode: async (description) => {
+            const action = planSlashAction(description, {
+              alreadyInPlan: isPlanMode(sessionMode),
+            });
+            if (action.type === "already-in-plan") {
+              appendSystem(ALREADY_IN_PLAN_NOTICE);
+              return;
+            }
+            const prevMode = sessionMode;
+            setSessionMode(PLAN_MODE_ID);
+            try {
+              const result =
+                await window.grokDesktop.setSessionMode(PLAN_MODE_ID);
+              if (!result.agentSynced) {
+                setSessionMode(prevMode);
+                const msg = result.error || "Could not enter plan mode";
+                setError(msg);
+                appendSystem(`Plan mode failed: ${msg}`);
+                return;
+              }
+            } catch (e: unknown) {
+              setSessionMode(prevMode);
+              const msg = e instanceof Error ? e.message : String(e);
+              setError(msg || "Could not enter plan mode");
+              appendSystem(`Plan mode failed: ${msg}`);
+              return;
+            }
+            if (action.type === "set-mode") {
+              appendSystem(PLAN_MODE_ON_NOTICE);
+              return;
+            }
+            const accepted = await submitFromComposer({
+              text: action.text || "",
+              images: [],
+              mode: "auto",
+            });
+            if (!accepted) appendSystem(PLAN_MODE_ON_NOTICE);
+          },
           preview: async (previewArgs) => {
             const a = String(previewArgs || "").trim();
             try {
@@ -781,6 +828,9 @@ export default function App() {
       appendSystem,
       setError,
       runCompress,
+      sessionMode,
+      setSessionMode,
+      submitFromComposer,
     ],
   );
 
@@ -1209,6 +1259,7 @@ export default function App() {
             availableModels={availableModels}
             permissionMode={permissionMode}
             reasoningEffort={reasoningEffort}
+            sessionMode={sessionMode}
             allowOutsideProject={allowOutsideProject}
             sandboxTerminal={sandboxTerminal}
             privacyMode={privacyMode}
@@ -1273,6 +1324,7 @@ export default function App() {
             bottomRef={bottomRef}
             scrollerRef={timelineRef}
             knownCommands={allCommands}
+            planMode={sessionMode === "plan"}
             pendingPermissions={permissions}
             onPermission={onPermission}
             onAllowAllPermissions={() => void onAllowAllPermissions()}

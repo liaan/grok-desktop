@@ -137,7 +137,8 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Plugins** | Settings → Plugins (list / enable / disable / install from git URL) | Marketplace browse still CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
-| Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | Agent `session/set_mode` + `_meta.yoloMode` / `permissionMode` on session start |
+| Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | `_meta.yoloMode` / `permissionMode` on session start + live `_x.ai/yolo_mode_changed` |
+| Plan mode (`/plan`) | Composer `/plan` (optional description) + topbar **Plan** pill | ACP `session/set_mode` `modeId: "plan"` first (same as TUI). `/plan add auth` then prompts `add auth` after the mode RPC. |
 | Reasoning effort (`/effort`) | Topbar **Effort** dropdown (Low / Medium / High / X-High) | Agent `--reasoning-effort` on spawn + live `session/set_model` `_meta.reasoningEffort` |
 | **Project-root safety** | On by default (Settings: “Allow outside project” off) | Open project + **linked git worktrees** of that repo. Agent fs/terminal also allow **Grok worktrees** of this repo (`~/.grok/worktrees`). File browser stays project + porcelain. Turn on only for unrelated host paths. Independent of terminal sandbox. |
 | **Terminal sandbox** | On by default (Settings: “Sandbox terminal”) | macOS Seatbelt / Linux `bwrap` / Windows WSL+bwrap or Docker (no host docker.sock). Turn off only for unrestricted host shell |

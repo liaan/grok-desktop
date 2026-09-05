@@ -364,6 +364,8 @@ export type OpenProjectResult = {
   modelName?: string | null;
   /** Models advertised on session/new|load — empty when the agent omits them */
   availableModels?: AvailableModel[];
+  /** ACP session mode from session/new|load (`plan` when plan mode is on) */
+  sessionMode?: string | null;
   history?: TimelineItem[];
   /** Background commands/subagents restored from updates.jsonl */
   backgroundTasks?: Array<{
@@ -635,6 +637,11 @@ declare global {
         modelId: string | null;
         modelName: string | null;
         availableModels: AvailableModel[];
+        agentSynced: boolean;
+        error?: string;
+      }>;
+      setSessionMode: (modeId: string) => Promise<{
+        modeId: string | null;
         agentSynced: boolean;
         error?: string;
       }>;

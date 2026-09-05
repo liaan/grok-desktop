@@ -186,10 +186,13 @@ const TimelineRow = memo(function TimelineRow({
   item,
   showDay,
   knownCommands,
+  planQuestion = false,
 }: {
   item: TimelineItem;
   showDay: boolean;
   knownCommands: SlashCommand[];
+  /** Last assistant bubble while plan mode is on — yellow question frame. */
+  planQuestion?: boolean;
 }) {
   const { redact } = usePrivacy();
   const day =
@@ -281,7 +284,7 @@ const TimelineRow = memo(function TimelineRow({
     return (
       <Fragment>
         {day}
-        <article className="msg">
+        <article className={planQuestion ? "msg plan-question" : "msg"}>
           <MsgMeta
             role="Grok"
             at={item.at}
@@ -442,6 +445,7 @@ export const MessageList = memo(function MessageList({
   bottomRef,
   scrollerRef,
   knownCommands,
+  planMode = false,
   pendingPermissions,
   onPermission,
   onAllowAllPermissions,
@@ -451,6 +455,8 @@ export const MessageList = memo(function MessageList({
   scrollerRef: RefObject<HTMLDivElement | null>;
   /** Skills + agent + desktop commands for slash recognition in user bubbles */
   knownCommands?: SlashCommand[];
+  /** ACP plan mode — frame the latest assistant reply as the open question. */
+  planMode?: boolean;
   /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
   pendingPermissions?: PermissionRequest[];
   onPermission?: (reqId: string, optionId: string | "cancelled") => void;
@@ -459,6 +465,15 @@ export const MessageList = memo(function MessageList({
 }) {
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
+  let lastAssistantId: string | null = null;
+  if (planMode) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].kind === "assistant") {
+        lastAssistantId = items[i].id;
+        break;
+      }
+    }
+  }
 
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
@@ -501,6 +516,7 @@ export const MessageList = memo(function MessageList({
                 item={item}
                 showDay={showDay}
                 knownCommands={cmds}
+                planQuestion={item.id === lastAssistantId}
               />
             );
           })}

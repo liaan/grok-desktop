@@ -34,6 +34,9 @@ import {
   permissionOutcomeFromUi,
 } from "../../shared/permission-options.mjs";
 import type { McpElicitRequest } from "../components/McpElicitDialog";
+import { planApproveCommentsText } from "../../shared/plan-approval.mjs";
+import { currentModeIdFromUpdate } from "../../shared/session-mode.mjs";
+import { interjectRpcFollowUp } from "../../shared/prompt-delivery.mjs";
 
 function isAllowChoice(optionId: string, options?: PermissionRequest["params"]["options"]): boolean {
   if (optionId === "cancelled" || optionId === "cancel") return false;
@@ -274,12 +277,8 @@ export function useAgentEvents(opts: {
           setAgentCommands(agentCommandsFromUpdate(update));
           // Do not return before usage: stream meta often rides this event
         } else if (kind === "current_mode_update") {
-          const modeId =
-            update?.currentModeId ||
-            update?.modeId ||
-            update?.current_mode_id ||
-            null;
-          setSessionMode(modeId ? String(modeId) : null);
+          const modeId = currentModeIdFromUpdate(params);
+          if (modeId !== undefined) setSessionMode(modeId);
         }
         if (
           kind === "task_backgrounded" ||
@@ -773,15 +772,38 @@ export function useAgentEvents(opts: {
     async (
       reqId: string,
       decision:
-        | { type: "approved" }
+        | { type: "approved"; feedback?: string }
         | { type: "request_changes"; feedback: string }
         | { type: "abandoned" },
     ) => {
-      const ok = await window.grokDesktop.respondPlanApproval(reqId, decision);
+      const comments =
+        decision.type === "approved"
+          ? planApproveCommentsText(decision.feedback)
+          : "";
+      const ok = await window.grokDesktop.respondPlanApproval(reqId, {
+        type: decision.type,
+        ...(decision.type === "request_changes"
+          ? { feedback: decision.feedback }
+          : {}),
+      });
       if (!ok) return;
       setPlanApproval((cur) => (cur?.reqId === reqId ? null : cur));
       if (decision.type === "approved" || decision.type === "abandoned") {
         setSessionMode(null);
+      }
+      // TUI approve-w/ comments: verdict first, then interject. Wire
+      // `feedback` is only consumed on cancelled (request changes).
+      if (!comments) return;
+      try {
+        const result = await window.grokDesktop.interject(comments);
+        if (interjectRpcFollowUp(result) === "ok") return;
+        await window.grokDesktop.prompt(comments);
+      } catch {
+        try {
+          await window.grokDesktop.prompt(comments);
+        } catch {
+          /* plan already approved */
+        }
       }
     },
     [],
@@ -830,6 +852,7 @@ export function useAgentEvents(opts: {
     backgroundTasks,
     sessionUsage,
     sessionMode,
+    setSessionMode,
     planApproval,
     userQuestion,
     folderTrust,

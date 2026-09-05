@@ -105,7 +105,11 @@ export async function handleExitPlanMode(ctx, id, params) {
  * @param {any} params
  */
 export async function handleAskUserQuestion(ctx, id, params) {
-  const questions = Array.isArray(params?.questions) ? params.questions : [];
+  const questions = Array.isArray(params?.questions)
+    ? params.questions
+    : Array.isArray(params?.params?.questions)
+      ? params.params.questions
+      : [];
 
   const decision = await new Promise((resolve) => {
     let settled = false;

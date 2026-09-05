@@ -70,8 +70,22 @@ export function toAgentPermissionMode(mode) {
 
 /**
  * `_meta` for session/new and session/load (grok-build resolve_session_*).
+ *
+ * TUI stamps `agentProfile: grok-build-plan` when plan + subagents + ask-user
+ * are on. Desktop supports all three, so we send the same profile — default
+ * `grok-build` only injects plan/ask tools locally; the model still needs the
+ * profile name to treat `ask_user_question` as a first-class call.
+ *
+ * `askUserQuestion: true` keeps the structured question tool in the model
+ * tool list (absent key is usually ON; explicit true beats `--no-ask-user`).
  * @param {unknown} mode
- * @returns {{ yoloMode: boolean, autoMode: boolean, permissionMode: string }}
+ * @returns {{
+ *   yoloMode: boolean,
+ *   autoMode: boolean,
+ *   permissionMode: string,
+ *   askUserQuestion: true,
+ *   agentProfile: "grok-build-plan",
+ * }}
  */
 export function sessionPermissionMeta(mode) {
   const m = normalizePermissionMode(mode);
@@ -80,6 +94,8 @@ export function sessionPermissionMeta(mode) {
     // Agent reads autoMode / auto_mode — not permissionMode alone.
     autoMode: m === "auto",
     permissionMode: toAgentPermissionMode(m),
+    askUserQuestion: true,
+    agentProfile: "grok-build-plan",
   };
 }
 

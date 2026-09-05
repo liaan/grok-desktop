@@ -59,6 +59,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setReasoningEffort: (value) =>
     ipcRenderer.invoke("agent:set-reasoning-effort", value),
   setModel: (modelId) => ipcRenderer.invoke("agent:set-model", modelId),
+  setSessionMode: (modeId) =>
+    ipcRenderer.invoke("agent:set-session-mode", modeId),
   setAllowOutsideProject: (value) =>
     ipcRenderer.invoke("agent:set-allow-outside-project", value),
   setSandboxTerminal: (value) =>

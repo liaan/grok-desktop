@@ -212,7 +212,7 @@ export const SidePanel = memo(function SidePanel({
         <div className="panel-body">
           {sessionMode === "plan" ? (
             <div className="mode-banner plan-mode-banner" role="status">
-              Plan mode active — file edits blocked until you approve a plan
+              Plan mode — file edits blocked until you approve a plan
             </div>
           ) : null}
           {!project ? (

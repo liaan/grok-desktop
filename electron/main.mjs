@@ -1498,6 +1498,29 @@ function registerIpc() {
     return result;
   });
 
+  ipcMain.handle("agent:set-session-mode", async (e, modeId) => {
+    const ws = sessionFromEvent(e);
+    const agent = ws?.agent;
+    if (!agent?.setSessionMode) {
+      return {
+        modeId: null,
+        agentSynced: false,
+        error: "No live agent",
+      };
+    }
+    const sessionId = agent.sessionId;
+    const result = await agent.setSessionMode(modeId);
+    const live = sessionFromEvent(e)?.agent;
+    if (live !== agent || live?.sessionId !== sessionId) {
+      return {
+        modeId: live?.currentModeId || null,
+        agentSynced: false,
+        error: "Session changed",
+      };
+    }
+    return result;
+  });
+
   ipcMain.handle("agent:set-allow-outside-project", async (_e, value) => {
     const state = loadState();
     state.allowOutsideProject = Boolean(value);

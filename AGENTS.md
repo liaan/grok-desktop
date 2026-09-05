@@ -140,7 +140,7 @@ Artifacts only; no Release page unless ref is a `v*` tag.
 
 ## ACP surface (do not break casually)
 
-Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `x.ai/interject`  
+Client → agent: `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_mode`, `session/set_model`, `x.ai/interject`  
 Agent → client: `session/update`, `session/request_permission`, `fs/*`, `terminal/*`
 
 `session/new` / `session/load` use empty client `mcpServers`; agent still loads MCP/skills from `~/.grok`.
@@ -176,7 +176,7 @@ Desktop is a shell. Config ownership:
 | `terminal` | Implemented | `electron/acp-terminals.mjs` — create / output / wait_for_exit / kill / release |
 | Permissions | Implemented | UI + optional always-approve |
 | Folder trust (`x.ai/folderTrust.interactive`) | Implemented | Agent reverse-request `x.ai/folder_trust/request` (same gate as TUI `/hooks-trust`). Grok ACP worktrees under `~/.grok/worktrees` auto-trust so project MCP/hooks load; other new folders prompt. If the prompt is missed: composer `/hooks-trust` or Settings → MCP → **Trust folder**. |
-| Slash commands | Implemented | Composer `/` menu — ACP `available_commands_update` + skills from `grok inspect` + desktop `/new` `/clear` `/always-approve` |
+| Slash commands | Implemented | Composer `/` menu — ACP `available_commands_update` + skills from `grok inspect` + desktop `/new` `/clear` `/always-approve` `/plan` `/compact` `/preview` |
 
 Terminals spawn in the project `cwd` (or the path the agent passes). Output is buffered (default 1 MiB, truncated from the start). Dispose / cwd change releases all terminals.
 
@@ -243,7 +243,7 @@ Desktop stores `permissionMode` in `desktop-state.json` (`ask` default; migrates
 | `auto` | Show only escalations the agent still requests | `_meta.permissionMode: auto` |
 | `always-approve` | Auto-respond allow-once (except plan exit formality) | `_meta.yoloMode: true` + `permissionMode: bypassPermissions` |
 
-Live changes call `session/set_mode` when available, else slash `/always-approve on|off` or `/auto`. UI: topbar **Perms** select + Settings dropdown.
+Live changes notify `_x.ai/yolo_mode_changed` (not `session/set_mode`). UI: topbar **Perms** select + Settings dropdown. Slash `/always-approve` toggles Always vs Ask.
 
 ### Reasoning effort (topbar Effort)
 
@@ -253,13 +253,13 @@ Desktop stores `reasoningEffort` in `desktop-state.json` (`high` default). Spawn
 
 | Surface | Behavior |
 |---------|----------|
-| `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon). Must not be no-op (agent reports “client disconnected”). |
-| `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal |
+| `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon) with a pinned comment box. Request changes sends `cancelled` + `feedback`. Approve with comments sends `approved` then `x.ai/interject` (same as TUI `a` with pending comments). Must not be no-op (agent reports “client disconnected”). |
+| `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal. Session `_meta` sends `agentProfile: grok-build-plan` (same as TUI plan+ask-user) and `askUserQuestion: true`. The popup only appears when the agent actually dispatches this tool (questions written into `plan.md` or chat are markdown — answer those in the plan Comments box). |
 | `x.ai/folder_trust/request` | Client extension — **Trust this folder?** (project MCP/hooks). Auto-trust Grok ACP worktrees; must advertise `clientCapabilities._meta["x.ai/folderTrust"].interactive` or the agent silently skips project MCP (Settings cards stay **unknown**). Prompt is re-pushed after session open so Settings does not swallow it. Missed grant: `/hooks-trust` or Settings → MCP → Trust folder, then agent restart. |
 | ACP `fs/*` under session dir | Always allowed for the current session folder (`~/.grok/sessions/<encoded-cwd>/<session-id>/`) so `plan.md` can be written while project path gate stays on |
 | `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** bottom dock (agent often sends these on `_x.ai/session/update`, which Desktop must forward like `session/update`) |
-| `current_mode_update` | Plan-mode banner when `currentModeId === "plan"` |
-| `/plan` slash | Advertised in composer menu; sent to agent as normal prompt text |
+| `current_mode_update` | Topbar **Plan mode** pill + yellow frame on the latest assistant bubble + files-panel banner when `currentModeId === "plan"` |
+| `/plan` slash | Desktop-local (same as TUI): ACP `session/set_mode` `modeId: "plan"` first. Bare `/plan` only switches mode. `/plan <desc>` waits for that RPC, then sends the remaining text as `session/prompt` (never the `/plan` token). Already-in-plan toasts and does not re-send. |
 
 ### Terminal process sandbox (default on)
 

@@ -51,7 +51,8 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     description: "Enter plan mode (explore + design before coding)",
     source: "desktop",
     inputHint: "description",
-    // Not local: sent to the agent as `/plan …` (same as CLI)
+    // Local: ACP session/set_mode (same as TUI /plan). Remainder is the first prompt.
+    local: true,
   },
   {
     name: "compact",

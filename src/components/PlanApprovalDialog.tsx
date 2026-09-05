@@ -9,31 +9,47 @@ export type PlanApprovalRequest = {
   planFilePath?: string | null;
 };
 
+export type PlanApprovalDecision =
+  | { type: "approved"; feedback?: string }
+  | { type: "request_changes"; feedback: string }
+  | { type: "abandoned" };
+
 /**
  * Modal for Grok `x.ai/exit_plan_mode` — approve, request changes, or abandon.
+ * Comments stay pinned under the plan (not inside the markdown scroller) so
+ * they remain typable on long plans, matching the TUI prompt.
  */
 export function PlanApprovalDialog({
   request,
   onRespond,
 }: {
   request: PlanApprovalRequest | null;
-  onRespond: (
-    reqId: string,
-    decision:
-      | { type: "approved" }
-      | { type: "request_changes"; feedback: string }
-      | { type: "abandoned" },
-  ) => void;
+  onRespond: (reqId: string, decision: PlanApprovalDecision) => void;
 }) {
   const [feedback, setFeedback] = useState("");
-  const [mode, setMode] = useState<"review" | "changes">("review");
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const [needNotes, setNeedNotes] = useState(false);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const onRespondRef = useRef(onRespond);
+  onRespondRef.current = onRespond;
 
   useEffect(() => {
     if (!request) return;
     setFeedback("");
-    setMode("review");
-    closeRef.current?.focus();
+    setNeedNotes(false);
+    const id = window.setTimeout(() => notesRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [request?.reqId]);
+
+  useEffect(() => {
+    if (!request) return;
+    const reqId = request.reqId;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onRespondRef.current(reqId, { type: "abandoned" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [request?.reqId]);
 
   const { redact } = usePrivacy();
@@ -46,6 +62,23 @@ export function PlanApprovalDialog({
   const planPath = request.planFilePath
     ? redact(request.planFilePath)
     : null;
+  const notes = feedback.trim();
+
+  const approve = () => {
+    onRespond(request.reqId, {
+      type: "approved",
+      ...(notes ? { feedback: notes } : {}),
+    });
+  };
+
+  const requestChanges = () => {
+    if (!notes) {
+      setNeedNotes(true);
+      notesRef.current?.focus();
+      return;
+    }
+    onRespond(request.reqId, { type: "request_changes", feedback: notes });
+  };
 
   return (
     <div
@@ -62,7 +95,6 @@ export function PlanApprovalDialog({
         <div className="modal-header">
           <h2 id="plan-approval-title">Plan ready for review</h2>
           <button
-            ref={closeRef}
             type="button"
             className="btn ghost btn-sm"
             aria-label="Abandon plan"
@@ -81,75 +113,54 @@ export function PlanApprovalDialog({
           <div className="plan-approval-markdown markdown-body">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
           </div>
-
-          {mode === "changes" ? (
-            <label className="plan-feedback-label">
-              <span>What should change?</span>
-              <textarea
-                className="plan-feedback-input"
-                rows={4}
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="Describe revisions for the agent…"
-                autoFocus
-              />
-            </label>
-          ) : null}
         </div>
 
-        <div className="modal-footer plan-approval-footer">
-          {mode === "review" ? (
-            <>
-              <button
-                type="button"
-                className="btn danger"
-                onClick={() =>
-                  onRespond(request.reqId, { type: "abandoned" })
-                }
-              >
-                Abandon
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setMode("changes")}
-              >
-                Request changes
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() =>
-                  onRespond(request.reqId, { type: "approved" })
-                }
-              >
-                Approve &amp; build
-              </button>
-            </>
+        <label className="plan-feedback-label">
+          <span>Comments</span>
+          <textarea
+            ref={notesRef}
+            className={`plan-feedback-input${needNotes ? " invalid" : ""}`}
+            rows={4}
+            value={feedback}
+            onChange={(e) => {
+              setFeedback(e.target.value);
+              if (e.target.value.trim()) setNeedNotes(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+              e.preventDefault();
+              approve();
+            }}
+            placeholder="Answer questions, add notes, or request revisions…"
+            aria-invalid={needNotes || undefined}
+          />
+          {needNotes ? (
+            <span className="plan-feedback-hint warn">
+              Add a comment to request changes, or approve as-is.
+            </span>
           ) : (
-            <>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setMode("review")}
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={!feedback.trim()}
-                onClick={() =>
-                  onRespond(request.reqId, {
-                    type: "request_changes",
-                    feedback: feedback.trim(),
-                  })
-                }
-              >
-                Send feedback
-              </button>
-            </>
+            <span className="plan-feedback-hint">
+              Request changes sends the agent back to planning. Approve with
+              comments starts building and keeps these notes. Ctrl/⌘+Enter
+              approves.
+            </span>
           )}
+        </label>
+
+        <div className="modal-footer plan-approval-footer">
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => onRespond(request.reqId, { type: "abandoned" })}
+          >
+            Abandon
+          </button>
+          <button type="button" className="btn" onClick={requestChanges}>
+            Request changes
+          </button>
+          <button type="button" className="btn primary" onClick={approve}>
+            {notes ? "Approve with comments" : "Approve & build"}
+          </button>
         </div>
       </div>
     </div>

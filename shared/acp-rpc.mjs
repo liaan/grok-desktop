@@ -587,6 +587,33 @@ export function isFolderTrustMethod(method) {
 }
 
 /**
+ * Grok `x.ai/ask_user_question` reverse-request (stdio `_x.ai/ask_user_question`
+ * or nested `ext_method`).
+ * @param {unknown} method
+ */
+export function isAskUserQuestionMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return (
+    m === "x.ai/ask_user_question" ||
+    m === "ask_user_question" ||
+    m.endsWith("/ask_user_question")
+  );
+}
+
+/**
+ * Grok `x.ai/exit_plan_mode` reverse-request.
+ * @param {unknown} method
+ */
+export function isExitPlanModeMethod(method) {
+  const m = String(method || "").replace(/^_/, "");
+  return (
+    m === "x.ai/exit_plan_mode" ||
+    m === "exit_plan_mode" ||
+    m.endsWith("/exit_plan_mode")
+  );
+}
+
+/**
  * Peel `ext_method` wrapping so stdio `_x.ai/…` and nested ExtRequest share params.
  * @param {unknown} method
  * @param {any} params
@@ -641,6 +668,7 @@ export function acpClientCapabilities() {
     terminal: true,
     _meta: {
       "x.ai/folderTrust": { interactive: true },
+      "x.ai/askUserQuestion": { interactive: true },
     },
   };
 }

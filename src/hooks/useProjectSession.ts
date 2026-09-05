@@ -34,6 +34,8 @@ export function useProjectSession(opts: {
   revokeWritesThisSession: () => void | Promise<void>;
   hydrateBackgroundTasks: (tasks: import("../lib/background-tasks").BackgroundTask[]) => void;
   hydrateSessionUsage: (usage: import("../lib/usage").SessionUsage | null | undefined) => void;
+  /** ACP session mode from session/new|load (plan banner on resume). */
+  hydrateSessionMode?: (modeId: string | null) => void;
   /** Mirror open permission + parked gates from main (source of truth). */
   syncAgentGatesFromMain: () => void | Promise<void>;
   hydrateFromInfo: (i: AppInfo) => void;
@@ -72,6 +74,7 @@ export function useProjectSession(opts: {
     revokeWritesThisSession,
     hydrateBackgroundTasks,
     hydrateSessionUsage,
+    hydrateSessionMode,
     syncAgentGatesFromMain,
     hydrateFromInfo,
     refreshAuth,
@@ -116,6 +119,7 @@ export function useProjectSession(opts: {
       // While openingRef is true, live usage is ignored — disk replace is safe.
       hydrateBackgroundTasks(res.backgroundTasks || []);
       hydrateSessionUsage(res.usage);
+      hydrateSessionMode?.(res.sessionMode ?? null);
       // Await so we do not mark online with a stale empty mirror.
       await syncAgentGatesFromMain();
       setAgentCommands([]);
@@ -179,6 +183,7 @@ export function useProjectSession(opts: {
       revokeWritesThisSession,
       hydrateBackgroundTasks,
       hydrateSessionUsage,
+      hydrateSessionMode,
       syncAgentGatesFromMain,
       hydrateFromInfo,
       promptQueueRef,

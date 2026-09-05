@@ -21,6 +21,7 @@ export const ChatTopbar = memo(function ChatTopbar({
   availableModels = [],
   permissionMode,
   reasoningEffort,
+  sessionMode = null,
   allowOutsideProject,
   sandboxTerminal,
   privacyMode,
@@ -48,6 +49,8 @@ export const ChatTopbar = memo(function ChatTopbar({
   availableModels?: AvailableModel[];
   permissionMode: PermissionMode;
   reasoningEffort: ReasoningEffort;
+  /** ACP session mode (`plan` while plan mode is on). */
+  sessionMode?: string | null;
   allowOutsideProject: boolean;
   sandboxTerminal: boolean;
   privacyMode: boolean;
@@ -164,6 +167,15 @@ export const ChatTopbar = memo(function ChatTopbar({
             <option value="xhigh">X-High</option>
           </select>
         </label>
+        {sessionMode === "plan" ? (
+          <span
+            className="status-pill plan-mode-pill"
+            title="Plan mode is on — reply to questions in the composer. File edits stay blocked until you approve a plan."
+            role="status"
+          >
+            Plan mode
+          </span>
+        ) : null}
         {runningTasks.length > 0 ? (
           <span
             className="status-pill"

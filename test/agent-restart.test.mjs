@@ -66,6 +66,7 @@ test("mergeRestartResult attaches backbone without a top-level inspect ok", () =
       resumed: true,
       modelId: "grok-4.6",
       modelName: "Grok 4.6",
+      sessionMode: "plan",
       history: [{ id: "1" }],
       backgroundTasks: [{ id: "t" }],
       usage: { turns: 2 },
@@ -86,6 +87,7 @@ test("mergeRestartResult attaches backbone without a top-level inspect ok", () =
   assert.equal(merged.resumed, true);
   assert.equal(merged.modelId, "grok-4.6");
   assert.equal(merged.modelName, "Grok 4.6");
+  assert.equal(merged.sessionMode, "plan");
   assert.equal(merged.history.length, 1);
   assert.equal(merged.backgroundTasks.length, 1);
   assert.deepEqual(merged.usage, { turns: 2 });
@@ -112,6 +114,7 @@ test("mergeRestartResult does not treat inspect failure as restart failure", () 
   assert.deepEqual(missing.sessions, []);
   assert.equal(missing.modelId, null);
   assert.equal(missing.modelName, null);
+  assert.equal(missing.sessionMode, null);
   assert.equal(missing.resumed, false);
 });
 

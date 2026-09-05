@@ -27,16 +27,22 @@ test("sessionPermissionMeta seeds yoloMode and autoMode (agent contract)", () =>
     yoloMode: false,
     autoMode: false,
     permissionMode: "default",
+    askUserQuestion: true,
+    agentProfile: "grok-build-plan",
   });
   assert.deepEqual(sessionPermissionMeta("auto"), {
     yoloMode: false,
     autoMode: true,
     permissionMode: "auto",
+    askUserQuestion: true,
+    agentProfile: "grok-build-plan",
   });
   assert.deepEqual(sessionPermissionMeta("always-approve"), {
     yoloMode: true,
     autoMode: false,
     permissionMode: "bypassPermissions",
+    askUserQuestion: true,
+    agentProfile: "grok-build-plan",
   });
 });
 
