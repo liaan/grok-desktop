@@ -32,14 +32,18 @@ export type QueuedPrompt = {
   text: string;
   images: PendingImage[];
   imageQuality?: "compact" | "high";
+  /** Timeline bubble; agent still gets `text` (e.g. `/plan …` vs remainder). */
+  timelineText?: string;
   at: number;
 };
 
 export type ComposerSubmit = {
   text: string;
   images: PendingImage[];
-  mode: "auto" | "queue" | "now";
+  mode: "auto" | "queue" | "now" | "interject";
   imageQuality?: "compact" | "high";
+  /** Timeline bubble; agent still gets `text`. */
+  timelineText?: string;
 };
 
 const COMPOSER_HEIGHT_KEY = "grok-desktop-composer-height";
@@ -101,7 +105,7 @@ export const Composer = memo(function Composer({
   /** Return true when the draft should clear (accepted queue/delivery). */
   onSubmit: (payload: ComposerSubmit) => boolean | Promise<boolean>;
   /** Desktop-only slash (e.g. /new, /always-approve) — never reaches the agent. */
-  onLocalCommand: (name: string, args?: string) => void;
+  onLocalCommand: (name: string, args?: string) => void | Promise<void>;
   onSendQueuedNow: (id?: string) => void;
   onRemoveQueued: (id: string) => void;
   onError: (message: string) => void;
@@ -244,23 +248,29 @@ export const Composer = memo(function Composer({
   }, []);
 
   const submit = useCallback(
-    async (overrideText?: string, mode: ComposerSubmit["mode"] = "auto") => {
+    async (
+      overrideText?: string,
+      mode: ComposerSubmit["mode"] = "auto",
+    ) => {
       const text = (overrideText !== undefined ? overrideText : input).trim();
       const draftImages = overrideText !== undefined ? [] : pendingImages;
       if (!text && draftImages.length === 0) return;
       if (conn === "connecting" || !projectOpen) return;
 
-      // Desktop-local slash commands (do not send to agent)
-      const localMatch = text.match(/^\/([^\s]+)(?:\s+(.*))?$/s);
-      if (localMatch) {
-        const name = localMatch[1].toLowerCase();
-        const local = DESKTOP_COMMANDS.find(
-          (c) => c.local && c.name.toLowerCase() === name,
-        );
-        if (local) {
-          clearDraft();
-          onLocalCommand(name, (localMatch[2] || "").trim());
-          return;
+      // Desktop-local slash commands (do not send to agent).
+      // While a turn is running, skip this so Enter still interjects.
+      if (conn !== "busy") {
+        const localMatch = text.match(/^\/([^\s]+)(?:\s+(.*))?$/s);
+        if (localMatch) {
+          const name = localMatch[1].toLowerCase();
+          const local = DESKTOP_COMMANDS.find(
+            (c) => c.local && c.name.toLowerCase() === name,
+          );
+          if (local) {
+            clearDraft();
+            await onLocalCommand(name, (localMatch[2] || "").trim());
+            return;
+          }
         }
       }
 
@@ -489,21 +499,25 @@ export const Composer = memo(function Composer({
                 {promptQueue.length === 1 ? "" : "s"}
               </span>
               <span className="prompt-queue-hint">
-                waits for this turn · Enter interjects now
+                waits for this turn · empty Enter interjects now
               </span>
             </div>
             <ul className="prompt-queue-list">
               {promptQueue.map((q, i) => (
                 <li key={q.id} className="prompt-queue-item">
                   <span className="prompt-queue-idx">{i + 1}</span>
-                  <span className="prompt-queue-text" title={q.text}>
-                    {q.text ||
+                  <span
+                    className="prompt-queue-text"
+                    title={q.timelineText || q.text}
+                  >
+                    {q.timelineText ||
+                      q.text ||
                       `(${q.images.length} image${q.images.length === 1 ? "" : "s"})`}
                   </span>
                   <button
                     type="button"
                     className="btn ghost btn-sm"
-                    title="Send now (stops current turn)"
+                    title="Interject this follow-up now"
                     disabled={conn === "connecting"}
                     onClick={() => onSendQueuedNow(q.id)}
                   >
@@ -528,7 +542,7 @@ export const Composer = memo(function Composer({
           style={{ height: composerHeight }}
           placeholder={
             conn === "busy"
-              ? "Interject: Enter steers this turn · Ctrl/⌘+Enter send now (stops turn)…"
+              ? "Follow-up: Enter waits for this turn · empty Enter interjects now…"
               : "Ask Grok… or type / for skills & commands (review, design, implement…)"
           }
           onChange={(e) => setInput(e.target.value)}
@@ -561,20 +575,28 @@ export const Composer = memo(function Composer({
             </button>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {conn === "busy"
-                ? "Enter interject · Ctrl/⌘+Enter send now · Shift+Enter newline"
+                ? "Enter queues · empty Enter / Interject now · Ctrl/⌘+Enter stops turn"
                 : "/ commands · Enter send · Shift+Enter newline"}
             </span>
           </div>
           <div className="row" style={{ gap: 8 }}>
             {conn === "busy" &&
-              (input.trim() || pendingImages.length > 0) && (
+              (input.trim() ||
+                pendingImages.length > 0 ||
+                promptQueue.length > 0) && (
                 <button
                   type="button"
                   className="btn"
-                  title="Stop current turn and send this message now"
-                  onClick={() => void submit(undefined, "now")}
+                  title="Inject into this turn now (does not cancel). Empty Enter does the same for the queued follow-up."
+                  onClick={() => {
+                    if (!input.trim() && pendingImages.length === 0) {
+                      onSendQueuedNow();
+                      return;
+                    }
+                    void submit(undefined, "interject");
+                  }}
                 >
-                  Send now
+                  Interject now
                 </button>
               )}
             <button

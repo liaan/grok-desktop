@@ -12,7 +12,9 @@ import {
   appendUserMessage,
   applySessionInterjection,
   applySessionUpdate,
+  displayUserMessageText,
   finalizeOpenTools,
+  isAskUserQuestionTool,
   isBashBackgroundedRawOutput,
   looksLikeFinalToolResult,
   removeUserInterjection,
@@ -623,4 +625,84 @@ test("shouldApplySessionInterjection skips opening and other sessions", () => {
     shouldApplySessionInterjection({ sessionId: "a" }, { sessionId: "" }),
     false,
   );
+});
+
+test("isAskUserQuestionTool uses grok-build x.ai/tool kind, not assistant text", () => {
+  assert.equal(
+    isAskUserQuestionTool({
+      _meta: { "x.ai/tool": { kind: "ask_user", name: "ask_user_question" } },
+    }),
+    true,
+  );
+  assert.equal(
+    isAskUserQuestionTool({ title: "Ask User" }),
+    true,
+  );
+  assert.equal(
+    isAskUserQuestionTool({
+      title: "The workspace looks empty at first glance",
+    }),
+    false,
+  );
+  assert.equal(isAskUserQuestionTool({ kind: "execute", title: "ls" }), false);
+});
+
+test("tool_call ask_user stamps askUser; execute does not", () => {
+  const asked = applySessionUpdate([], {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "q1",
+      title: "Ask User",
+      _meta: {
+        "x.ai/tool": { kind: "ask_user", name: "ask_user_question", label: "Ask User" },
+      },
+    },
+  });
+  assert.equal(asked[0].askUser, true);
+
+  const exec = applySessionUpdate([], {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      title: "Execute",
+      kind: "execute",
+    },
+  });
+  assert.equal(exec[0].askUser, false);
+
+  const later = applySessionUpdate(asked, {
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "q1",
+      status: "completed",
+    },
+  });
+  assert.equal(later[0].askUser, true);
+});
+
+test("displayUserMessageText unwraps grok-build user_query envelopes", () => {
+  const wrapped =
+    "The user sent a message while you were working:\n<user_query>\nhi\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.";
+  assert.equal(displayUserMessageText(wrapped), "hi");
+  assert.equal(
+    displayUserMessageText(
+      `${wrapped}The user sent a message while you were working:\n<user_query>\nhi\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.`,
+    ),
+    "hi",
+  );
+  assert.equal(displayUserMessageText("plain hello"), "plain hello");
+});
+
+test("user_message_chunk replay unwraps jsonl envelopes", () => {
+  const items = applySessionUpdate([], {
+    update: {
+      sessionUpdate: "user_message_chunk",
+      content: {
+        type: "text",
+        text: "The user interrupted the previous turn:\n<user_query>\ncontinue\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.",
+      },
+    },
+  });
+  assert.equal(items[0].kind, "user");
+  assert.equal(items[0].text, "continue");
 });

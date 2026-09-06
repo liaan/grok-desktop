@@ -10,6 +10,8 @@ import {
   currentModeIdFromUpdate,
   isPlanMode,
   planSlashAction,
+  planSlashDisplay,
+  looksLikePlanQuestion,
   rememberSessionMode,
   setSessionModeParams,
 } from "../shared/session-mode.mjs";
@@ -84,4 +86,24 @@ test("planSlashAction matches TUI: never send /plan as prompt text", () => {
     type: "already-in-plan",
   });
   assert.match(ALREADY_IN_PLAN_NOTICE, /\/view-plan/);
+});
+
+test("planSlashDisplay keeps /plan in the timeline", () => {
+  assert.equal(planSlashDisplay(""), "/plan");
+  assert.equal(planSlashDisplay("  add auth  "), "/plan add auth");
+});
+
+test("looksLikePlanQuestion is numbered questions, not status chatter", () => {
+  assert.equal(
+    looksLikePlanQuestion(
+      "2. When those approaches conflict, which constraint should win?",
+    ),
+    true,
+  );
+  assert.equal(
+    looksLikePlanQuestion(
+      "The workspace looks empty at first glance — I'll check for hidden files.",
+    ),
+    false,
+  );
 });

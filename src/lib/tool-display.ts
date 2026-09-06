@@ -358,6 +358,7 @@ const KIND_LABELS: Record<string, string> = {
   think: "Think",
   other: "Tool",
   switch_mode: "Switch mode",
+  ask_user: "Ask User",
 };
 
 /**

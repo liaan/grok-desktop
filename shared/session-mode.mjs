@@ -90,3 +90,20 @@ export function planSlashAction(args, opts = {}) {
   }
   return { type: "set-mode", modeId: PLAN_MODE_ID };
 }
+
+/** Timeline text so `/plan` gets the same command chip as other slashes. */
+export function planSlashDisplay(args) {
+  const text = String(args || "").trim();
+  return text ? `/plan ${text}` : "/plan";
+}
+
+/**
+ * Numbered questionnaire in an assistant bubble (plan mode often writes
+ * questions as markdown instead of dispatching ask_user_question).
+ * @param {unknown} text
+ */
+export function looksLikePlanQuestion(text) {
+  const t = String(text || "");
+  if (!t.trim()) return false;
+  return /^\s*\d+[.)]\s+\S[\s\S]{0,240}\?/m.test(t);
+}

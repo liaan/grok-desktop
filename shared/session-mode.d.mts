@@ -23,3 +23,7 @@ export function planSlashAction(
   | { type: "already-in-plan"; modeId?: undefined; text?: undefined }
   | { type: "set-mode"; modeId: string; text?: undefined }
   | { type: "set-mode-then-prompt"; modeId: string; text: string };
+
+export function planSlashDisplay(args?: string): string;
+
+export function looksLikePlanQuestion(text: unknown): boolean;

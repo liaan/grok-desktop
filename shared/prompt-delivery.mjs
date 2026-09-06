@@ -5,19 +5,21 @@ import {
 /**
  * Mid-turn composer routing (busy session).
  *
- * - auto (Enter): `x.ai/interject` into the running turn (does not cancel).
- * - queue (Queue button): local follow-up, sent as session/prompt after the turn.
- * - now (Ctrl/⌘+Enter / Send now): cancel-and-send, existing session/cancel path.
+ * - auto (Enter): queue follow-up until the turn ends (same as TUI).
+ * - queue (Queue button): same as auto.
+ * - interject (empty Enter on a queued item / Interject now): `x.ai/interject`.
+ * - now (Ctrl/⌘+Enter): cancel-and-send.
  *
- * @param {"auto" | "queue" | "now" | string} mode
+ * @param {"auto" | "queue" | "now" | "interject" | string} mode
  * @param {boolean} busy
  * @returns {"prompt" | "interject" | "queue" | "send-now"}
  */
 export function midTurnAction(mode, busy) {
   if (!busy) return "prompt";
   if (mode === "now") return "send-now";
+  if (mode === "interject") return "interject";
   if (mode === "queue") return "queue";
-  return "interject";
+  return "queue";
 }
 
 /**

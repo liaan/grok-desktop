@@ -67,6 +67,10 @@ export type TimelineItem =
       images?: TimelineImage[];
       /** Set when UI inserts the bubble before ACP echoes it */
       optimistic?: boolean;
+      /** Follow-up waiting for the current turn to finish (purple). */
+      queued?: boolean;
+      /** Matches Composer queue id so drain/interject can claim this bubble. */
+      queueId?: string;
       /** Client-minted id so `x.ai/session/interjection` is not painted twice. */
       interjectionId?: string;
       at: number;
@@ -81,6 +85,8 @@ export type TimelineItem =
       status: string;
       raw?: unknown;
       content?: unknown;
+      /** grok-build `_meta["x.ai/tool"].kind === "ask_user"` */
+      askUser?: boolean;
       at: number;
     }
   | { id: string; kind: "plan"; entries: unknown[]; at: number }

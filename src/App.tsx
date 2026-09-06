@@ -38,9 +38,9 @@ import {
 import {
   ALREADY_IN_PLAN_NOTICE,
   PLAN_MODE_ID,
-  PLAN_MODE_ON_NOTICE,
   isPlanMode,
   planSlashAction,
+  planSlashDisplay,
 } from "../shared/session-mode.mjs";
 import { isMissingBinaryError, type ConnState } from "./lib/conn";
 import {
@@ -52,7 +52,7 @@ import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { hideBootSplash } from "./lib/boot-splash";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
-import { finalizeOpenTools, uid } from "./lib/timeline";
+import { appendUserMessage, finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAgentSafety } from "./hooks/useAgentSafety";
 import { useProjectSession } from "./hooks/useProjectSession";
@@ -742,8 +742,8 @@ export default function App() {
   );
 
   const handleLocalCommand = useCallback(
-    (name: string, args = "") => {
-      runDesktopCommand(
+    async (name: string, args = "") => {
+      await runDesktopCommand(
         name,
         {
           newChat: () => void openSession({ mode: "new" }),
@@ -753,11 +753,22 @@ export default function App() {
             void runCompress(hint);
           },
           enterPlanMode: async (description) => {
+            const display = planSlashDisplay(description);
             const action = planSlashAction(description, {
               alreadyInPlan: isPlanMode(sessionMode),
             });
             if (action.type === "already-in-plan") {
-              appendSystem(ALREADY_IN_PLAN_NOTICE);
+              const desc = String(description || "").trim();
+              if (!desc) {
+                appendSystem(ALREADY_IN_PLAN_NOTICE);
+                return;
+              }
+              await submitFromComposer({
+                text: desc,
+                timelineText: display,
+                images: [],
+                mode: "auto",
+              });
               return;
             }
             const prevMode = sessionMode;
@@ -780,15 +791,22 @@ export default function App() {
               return;
             }
             if (action.type === "set-mode") {
-              appendSystem(PLAN_MODE_ON_NOTICE);
+              setItems((prev) =>
+                appendUserMessage(prev, { text: display, optimistic: true }),
+              );
               return;
             }
             const accepted = await submitFromComposer({
               text: action.text || "",
+              timelineText: display,
               images: [],
               mode: "auto",
             });
-            if (!accepted) appendSystem(PLAN_MODE_ON_NOTICE);
+            if (!accepted) {
+              setItems((prev) =>
+                appendUserMessage(prev, { text: display, optimistic: true }),
+              );
+            }
           },
           preview: async (previewArgs) => {
             const a = String(previewArgs || "").trim();
@@ -831,6 +849,7 @@ export default function App() {
       sessionMode,
       setSessionMode,
       submitFromComposer,
+      setItems,
     ],
   );
 

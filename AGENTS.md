@@ -195,7 +195,7 @@ PATH is enriched via `buildGrokEnv` (macOS Dock launches have a thin PATH). **El
 
 **Preview MCP (text-first):** HTTP `desktop-preview` only. Agent drives the window and reads **text** snapshots. Viewport JPEGs are **user-sent**: Preview chrome **Send screenshot** → the chat window whose agent opened/drove Preview (`X-Grok-Desktop-Window`), not whichever chat is focused. MCP `preview_screenshot` does not attach pixels.
 
-**Mid-turn interject (CLI-style):** While a turn is running, **Enter** calls ACP `x.ai/interject` (injects at the next tool/model safe gap; does **not** cancel — wait tools abort when this lands). **Queue** still waits until the turn ends. **Ctrl/⌘+Enter** or **Send now** cancels the current turn and sends that message next. Empty Enter with a non-empty queue force-sends the top item. Queue drains FIFO when each turn ends. Old CLIs without `x.ai/interject` fall back to queue.
+**Mid-turn follow-up (same as TUI):** While a turn is running, **Enter** queues a purple follow-up that waits until the turn ends, then sends as `session/prompt`. Empty **Enter** (or **Interject now**) injects the queued item via `x.ai/interject` without cancelling. **Ctrl/⌘+Enter** cancels the current turn and sends next. Queue drains FIFO when each turn ends. Old CLIs without `x.ai/interject` fall back to queue.
 
 ### Session continuity (same as CLI)
 
@@ -254,11 +254,11 @@ Desktop stores `reasoningEffort` in `desktop-state.json` (`high` default). Spawn
 | Surface | Behavior |
 |---------|----------|
 | `x.ai/exit_plan_mode` | Client extension — Desktop shows **Plan approval** modal (approve / request changes / abandon) with a pinned comment box. Request changes sends `cancelled` + `feedback`. Approve with comments sends `approved` then `x.ai/interject` (same as TUI `a` with pending comments). Must not be no-op (agent reports “client disconnected”). |
-| `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal. Session `_meta` sends `agentProfile: grok-build-plan` (same as TUI plan+ask-user) and `askUserQuestion: true`. The popup only appears when the agent actually dispatches this tool (questions written into `plan.md` or chat are markdown — answer those in the plan Comments box). |
+| `x.ai/ask_user_question` | Client extension — multi-choice **Ask user** modal (yellow frame). Session `_meta` sends `agentProfile: grok-build-plan` and `askUserQuestion: true`. The popup and yellow tool card appear only when the agent dispatches this tool (`_meta["x.ai/tool"].kind === "ask_user"`). Markdown questions in chat are not that tool. |
 | `x.ai/folder_trust/request` | Client extension — **Trust this folder?** (project MCP/hooks). Auto-trust Grok ACP worktrees; must advertise `clientCapabilities._meta["x.ai/folderTrust"].interactive` or the agent silently skips project MCP (Settings cards stay **unknown**). Prompt is re-pushed after session open so Settings does not swallow it. Missed grant: `/hooks-trust` or Settings → MCP → Trust folder, then agent restart. |
 | ACP `fs/*` under session dir | Always allowed for the current session folder (`~/.grok/sessions/<encoded-cwd>/<session-id>/`) so `plan.md` can be written while project path gate stays on |
 | `task_backgrounded` / `task_completed` / `subagent_*` | Right panel **Tasks** bottom dock (agent often sends these on `_x.ai/session/update`, which Desktop must forward like `session/update`) |
-| `current_mode_update` | Topbar **Plan mode** pill + yellow frame on the latest assistant bubble + files-panel banner when `currentModeId === "plan"` |
+| `current_mode_update` | Topbar **Plan mode** pill + files-panel banner when `currentModeId === "plan"` |
 | `/plan` slash | Desktop-local (same as TUI): ACP `session/set_mode` `modeId: "plan"` first. Bare `/plan` only switches mode. `/plan <desc>` waits for that RPC, then sends the remaining text as `session/prompt` (never the `/plan` token). Already-in-plan toasts and does not re-send. |
 
 ### Terminal process sandbox (default on)

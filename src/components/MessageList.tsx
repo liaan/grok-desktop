@@ -20,12 +20,13 @@ import {
   sameCalendarDay,
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
-import { formatOptionLabel } from "../lib/timeline";
+import { displayUserMessageText, formatOptionLabel } from "../lib/timeline";
 import {
   classifyOptionId,
   permissionButtonClass,
 } from "../../shared/permission-options.mjs";
 import { usePrivacy } from "../lib/privacy-context";
+import { looksLikePlanQuestion } from "../../shared/session-mode.mjs";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 import {
   applyFormattedCopy,
@@ -191,7 +192,6 @@ const TimelineRow = memo(function TimelineRow({
   item: TimelineItem;
   showDay: boolean;
   knownCommands: SlashCommand[];
-  /** Last assistant bubble while plan mode is on — yellow question frame. */
   planQuestion?: boolean;
 }) {
   const { redact } = usePrivacy();
@@ -201,7 +201,7 @@ const TimelineRow = memo(function TimelineRow({
     ) : null;
 
   if (item.kind === "user") {
-    const text = item.text || "";
+    const text = displayUserMessageText(item.text || "");
     const displayText = redact(text);
     const inv = parseSlashInvocation(text);
     const isCmd = Boolean(inv);
@@ -217,9 +217,17 @@ const TimelineRow = memo(function TimelineRow({
     return (
       <Fragment>
         {day}
-        <article className={`msg user ${isCmd ? "user-command" : ""}`}>
+        <article
+          className={`msg user${isCmd ? " user-command" : ""}${item.queued ? " queued" : ""}`}
+        >
           <MsgMeta
-            role={isCmd ? "You · command" : "You"}
+            role={
+              item.queued
+                ? "You · waiting"
+                : isCmd
+                  ? "You · command"
+                  : "You"
+            }
             at={item.at}
             actions={
               <CopyReplyButton
@@ -284,7 +292,7 @@ const TimelineRow = memo(function TimelineRow({
     return (
       <Fragment>
         {day}
-        <article className={planQuestion ? "msg plan-question" : "msg"}>
+        <article className={planQuestion ? "msg ask-user-question" : "msg"}>
           <MsgMeta
             role="Grok"
             at={item.at}
@@ -324,7 +332,9 @@ const TimelineRow = memo(function TimelineRow({
     return (
       <Fragment>
         {day}
-        <article className="msg tool">
+        <article
+          className={item.askUser ? "msg tool ask-user-question" : "msg tool"}
+        >
           <MsgMeta role="Tool" at={item.at} />
           <div className="tool-body">
             <div className="tool-header">
@@ -440,6 +450,18 @@ function PendingApprovalCard({
   );
 }
 
+function lastPlanQuestionId(items: TimelineItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind === "thought" || item.kind === "system") continue;
+    if (item.kind === "assistant" && looksLikePlanQuestion(item.text)) {
+      return item.id;
+    }
+    return null;
+  }
+  return null;
+}
+
 export const MessageList = memo(function MessageList({
   items,
   bottomRef,
@@ -455,7 +477,6 @@ export const MessageList = memo(function MessageList({
   scrollerRef: RefObject<HTMLDivElement | null>;
   /** Skills + agent + desktop commands for slash recognition in user bubbles */
   knownCommands?: SlashCommand[];
-  /** ACP plan mode — frame the latest assistant reply as the open question. */
   planMode?: boolean;
   /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
   pendingPermissions?: PermissionRequest[];
@@ -465,15 +486,7 @@ export const MessageList = memo(function MessageList({
 }) {
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
-  let lastAssistantId: string | null = null;
-  if (planMode) {
-    for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i].kind === "assistant") {
-        lastAssistantId = items[i].id;
-        break;
-      }
-    }
-  }
+  const questionId = planMode ? lastPlanQuestionId(items) : null;
 
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
@@ -516,7 +529,7 @@ export const MessageList = memo(function MessageList({
                 item={item}
                 showDay={showDay}
                 knownCommands={cmds}
-                planQuestion={item.id === lastAssistantId}
+                planQuestion={item.id === questionId}
               />
             );
           })}

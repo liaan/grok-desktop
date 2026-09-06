@@ -17,12 +17,13 @@ test("midTurnAction: idle always prompts", () => {
   assert.equal(midTurnAction("nope", false), "prompt");
 });
 
-test("midTurnAction: busy Enter interjects, Queue waits, Send now cancels", () => {
-  assert.equal(midTurnAction("auto", true), "interject");
+test("midTurnAction: busy Enter queues, Interject now injects, Ctrl+Enter cancels", () => {
+  assert.equal(midTurnAction("auto", true), "queue");
   assert.equal(midTurnAction("queue", true), "queue");
+  assert.equal(midTurnAction("interject", true), "interject");
   assert.equal(midTurnAction("now", true), "send-now");
-  assert.equal(midTurnAction(undefined, true), "interject");
-  assert.equal(midTurnAction("enter", true), "interject");
+  assert.equal(midTurnAction(undefined, true), "queue");
+  assert.equal(midTurnAction("enter", true), "queue");
 });
 
 test("INTERJECT_UNSUPPORTED_REASON is the IPC reason literal", () => {

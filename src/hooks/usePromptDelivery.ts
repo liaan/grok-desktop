@@ -16,7 +16,9 @@ import {
 import { isAuthError, type ConnState } from "../lib/conn";
 import {
   appendUserMessage,
+  claimQueuedUserMessage,
   finalizeOpenTools,
+  removeQueuedUserMessage,
   removeUserInterjection,
   uid,
 } from "../lib/timeline";
@@ -25,6 +27,21 @@ import {
   midTurnAction,
 } from "../../shared/prompt-delivery.mjs";
 import type { TimelineImage, TimelineItem } from "../vite-env";
+
+type DeliverPayload = {
+  text: string;
+  images: PendingImage[];
+  imageQuality?: "compact" | "high";
+  timelineText?: string;
+  queueId?: string;
+};
+
+function userBubbleText(payload: {
+  text: string;
+  timelineText?: string;
+}): string {
+  return String(payload.timelineText || payload.text || "").trim();
+}
 
 /**
  * Mid-turn queue + session/prompt delivery (CLI-style Enter / Ctrl+Enter).
@@ -57,11 +74,9 @@ export function usePromptDelivery(opts: {
   const promptQueueRef = useRef<QueuedPrompt[]>([]);
   const sendNowRef = useRef<QueuedPrompt | null>(null);
   const deliveryGenRef = useRef(0);
-  const deliverRef = useRef<(payload: {
-    text: string;
-    images: PendingImage[];
-    imageQuality?: "compact" | "high";
-  }) => Promise<void>>(async () => {});
+  const deliverRef = useRef<(payload: DeliverPayload) => Promise<void>>(
+    async () => {},
+  );
 
   useEffect(() => {
     promptQueueRef.current = promptQueue;
@@ -79,12 +94,14 @@ export function usePromptDelivery(opts: {
       text: string,
       images: PendingImage[],
       imageQuality: "compact" | "high" = "compact",
+      timelineText?: string,
     ) => {
       const item: QueuedPrompt = {
         id: uid("q"),
         text,
         images: images.map((img) => ({ ...img })),
         imageQuality,
+        timelineText,
         at: Date.now(),
       };
       setPromptQueue((prev) => {
@@ -92,9 +109,21 @@ export function usePromptDelivery(opts: {
         promptQueueRef.current = next;
         return next;
       });
+      const shown = String(timelineText || text || "").trim();
+      setItems((prev) =>
+        appendUserMessage(prev, {
+          text: shown || text,
+          images: item.images.map((img) => ({
+            mimeType: img.mimeType,
+            previewUrl: img.previewUrl,
+          })),
+          queued: true,
+          queueId: item.id,
+        }),
+      );
       return item;
     },
-    [],
+    [setItems],
   );
 
   const removeQueued = useCallback((id: string) => {
@@ -104,14 +133,11 @@ export function usePromptDelivery(opts: {
       return next;
     });
     if (sendNowRef.current?.id === id) sendNowRef.current = null;
-  }, []);
+    setItems((prev) => removeQueuedUserMessage(prev, id));
+  }, [setItems]);
 
   const deliverPrompt = useCallback(
-    async (payload: {
-      text: string;
-      images: PendingImage[];
-      imageQuality?: "compact" | "high";
-    }) => {
+    async (payload: DeliverPayload) => {
       if (!project || busyRef.current || openingRef.current) return;
       const text = payload.text.trim();
       const images = payload.images;
@@ -125,13 +151,18 @@ export function usePromptDelivery(opts: {
         mimeType: img.mimeType,
         previewUrl: img.previewUrl,
       }));
-      setItems((prev) =>
-        appendUserMessage(prev, {
-          text,
+      const queueId = String(payload.queueId || "").trim();
+      setItems((prev) => {
+        if (queueId) {
+          const claimed = claimQueuedUserMessage(prev, queueId);
+          if (claimed !== prev) return claimed;
+        }
+        return appendUserMessage(prev, {
+          text: userBubbleText(payload) || text,
           images: timelineImages,
           optimistic: true,
-        }),
-      );
+        });
+      });
       const stale = () =>
         openingRef.current || deliveryGenRef.current !== gen;
       try {
@@ -178,6 +209,8 @@ export function usePromptDelivery(opts: {
             text: nextNow.text,
             images: nextNow.images,
             imageQuality: nextNow.imageQuality,
+            timelineText: nextNow.timelineText,
+            queueId: nextNow.id,
           });
           return;
         }
@@ -192,6 +225,8 @@ export function usePromptDelivery(opts: {
             text: queued.text,
             images: queued.images,
             imageQuality: queued.imageQuality,
+            timelineText: queued.timelineText,
+            queueId: queued.id,
           });
         }
       }
@@ -211,11 +246,7 @@ export function usePromptDelivery(opts: {
   deliverRef.current = deliverPrompt;
 
   const deliverInterject = useCallback(
-    async (payload: {
-      text: string;
-      images: PendingImage[];
-      imageQuality?: "compact" | "high";
-    }) => {
+    async (payload: DeliverPayload) => {
       const text = payload.text.trim();
       const images = payload.images;
       const imageQuality = payload.imageQuality || "compact";
@@ -228,14 +259,21 @@ export function usePromptDelivery(opts: {
         previewUrl: img.previewUrl,
       }));
       pinToBottom();
-      setItems((prev) =>
-        appendUserMessage(prev, {
-          text,
+      const queueId = String(payload.queueId || "").trim();
+      setItems((prev) => {
+        if (queueId) {
+          const claimed = claimQueuedUserMessage(prev, queueId, {
+            interjectionId,
+          });
+          if (claimed !== prev) return claimed;
+        }
+        return appendUserMessage(prev, {
+          text: userBubbleText(payload) || text,
           images: timelineImages,
           optimistic: true,
           interjectionId,
-        }),
-      );
+        });
+      });
       const stale = () =>
         openingRef.current || deliveryGenRef.current !== gen;
       try {
@@ -254,9 +292,15 @@ export function usePromptDelivery(opts: {
         setItems((prev) => removeUserInterjection(prev, interjectionId));
         if (follow === "queue") {
           if (!busyRef.current) {
-            void deliverPrompt({ text, images, imageQuality });
+            void deliverPrompt({
+              text,
+              images,
+              imageQuality,
+              timelineText: payload.timelineText,
+              queueId: payload.queueId,
+            });
           } else {
-            enqueuePrompt(text, images, imageQuality);
+            enqueuePrompt(text, images, imageQuality, payload.timelineText);
           }
           return;
         }
@@ -297,32 +341,41 @@ export function usePromptDelivery(opts: {
       images,
       mode,
       imageQuality = "compact",
+      timelineText,
     }: ComposerSubmit): Promise<boolean> => {
       if (!project || openingRef.current || conn === "connecting") {
         return false;
       }
       if (!text && images.length === 0) return false;
 
-      const action = midTurnAction(mode, busyRef.current);
+      const action = midTurnAction(
+        mode,
+        busyRef.current || conn === "busy",
+      );
       if (action === "send-now") {
-        const item = enqueuePrompt(text, images, imageQuality);
+        const item = enqueuePrompt(
+          text,
+          images,
+          imageQuality,
+          timelineText,
+        );
         sendNowRef.current = item;
         setItems((prev) => finalizeOpenTools(prev, "cancelled"));
         void window.grokDesktop.cancel();
         return true;
       }
       if (action === "queue") {
-        enqueuePrompt(text, images, imageQuality);
+        enqueuePrompt(text, images, imageQuality, timelineText);
         return true;
       }
       if (action === "interject") {
-        void deliverInterject({ text, images, imageQuality });
+        void deliverInterject({ text, images, imageQuality, timelineText });
         return true;
       }
 
       // Do not await the full turn — Composer clears the draft on this true.
       // deliverPrompt owns busy/queue drain for the rest of the turn.
-      void deliverPrompt({ text, images, imageQuality });
+      void deliverPrompt({ text, images, imageQuality, timelineText });
       return true;
     },
     [
@@ -367,24 +420,25 @@ export function usePromptDelivery(opts: {
       const list = promptQueueRef.current;
       const item = id ? list.find((q) => q.id === id) : list[0];
       if (!item) return;
-      sendNowRef.current = item;
+      setPromptQueue((prev) => {
+        const next = prev.filter((q) => q.id !== item.id);
+        promptQueueRef.current = next;
+        return next;
+      });
+      const payload: DeliverPayload = {
+        text: item.text,
+        images: item.images,
+        imageQuality: item.imageQuality,
+        timelineText: item.timelineText,
+        queueId: item.id,
+      };
       if (busyRef.current) {
-        setItems((prev) => finalizeOpenTools(prev, "cancelled"));
-        void window.grokDesktop.cancel();
+        void deliverInterject(payload);
       } else {
-        setPromptQueue((prev) => {
-          const next = prev.filter((q) => q.id !== item.id);
-          promptQueueRef.current = next;
-          return next;
-        });
-        void deliverPrompt({
-          text: item.text,
-          images: item.images,
-          imageQuality: item.imageQuality,
-        });
+        void deliverPrompt(payload);
       }
     },
-    [busyRef, openingRef, setItems, deliverPrompt],
+    [busyRef, openingRef, deliverInterject, deliverPrompt],
   );
 
   return {

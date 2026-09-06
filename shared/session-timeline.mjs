@@ -19,6 +19,37 @@
  *   session dumps that truly omitted final status stay open until turn_completed.
  */
 
+/**
+ * grok-build stamps AskUser on the tool_call, not on agent_message_chunk.
+ * `_meta["x.ai/tool"].kind` is `ask_user`; name is `ask_user_question`.
+ * @param {any} value tool_call / tool_call_update / timeline tool item
+ */
+export function isAskUserQuestionTool(value) {
+  if (!value || typeof value !== "object") return false;
+  if (value.askUser === true) return true;
+  const meta = value._meta?.["x.ai/tool"] || value.meta?.["x.ai/tool"] || null;
+  const kind = String(meta?.kind || "")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  if (kind === "ask_user") return true;
+  const name = String(meta?.name || "")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  if (name === "ask_user_question" || name.endsWith("/ask_user_question")) {
+    return true;
+  }
+  const label = String(meta?.label || "").toLowerCase();
+  if (label === "ask user") return true;
+  const title = String(value.title || value.tool || "")
+    .toLowerCase()
+    .replace(/-/g, "_");
+  return (
+    title === "ask_user" ||
+    title === "ask user" ||
+    title.includes("ask_user_question")
+  );
+}
+
 let seq = 0;
 
 export function uid(prefix = "id") {
@@ -120,6 +151,45 @@ export function finalizeOpenTools(items, status = "completed") {
   return changed ? next : items;
 }
 
+const USER_QUERY_OPEN = "<user_query>";
+const USER_QUERY_CLOSE = "</user_query>";
+const INTERJECTION_NOTE = "The user sent a message while you were working:";
+const INTERRUPT_NOTE = "The user interrupted the previous turn:";
+const UNFINISHED_TASKS_REMINDER =
+  "Make sure to complete any unfinished tasks from previous turns.";
+
+/**
+ * grok-build stores prompts/interjects as
+ * `note + <user_query>…</user_query> + unfinished reminder`.
+ * Live UI paints the short text; jsonl replay must unwrap or the tags show.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function displayUserMessageText(raw) {
+  const s = String(raw || "");
+  if (!s) return "";
+  if (s.includes(USER_QUERY_OPEN)) {
+    const parts = [];
+    const re = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/gi;
+    let m;
+    while ((m = re.exec(s))) {
+      const inner = String(m[1] || "").trim();
+      if (inner && inner !== parts[parts.length - 1]) parts.push(inner);
+    }
+    if (parts.length) return parts.join("\n\n");
+  }
+  let t = s.trim();
+  if (t.startsWith(INTERJECTION_NOTE)) {
+    t = t.slice(INTERJECTION_NOTE.length).trim();
+  } else if (t.startsWith(INTERRUPT_NOTE)) {
+    t = t.slice(INTERRUPT_NOTE.length).trim();
+  }
+  if (t.endsWith(UNFINISHED_TASKS_REMINDER)) {
+    t = t.slice(0, t.length - UNFINISHED_TASKS_REMINDER.length).trim();
+  }
+  return t || s;
+}
+
 /**
  * Append a user bubble (composer send or mid-turn interject).
  * @param {any[]} items
@@ -130,6 +200,8 @@ export function finalizeOpenTools(items, status = "completed") {
  *   at?: number,
  *   id?: string,
  *   interjectionId?: string,
+ *   queued?: boolean,
+ *   queueId?: string,
  * }} payload
  */
 export function appendUserMessage(items, payload = {}) {
@@ -140,6 +212,7 @@ export function appendUserMessage(items, payload = {}) {
   }
   const next = Array.isArray(items) ? [...items] : [];
   const interjectionId = String(payload.interjectionId || "").trim();
+  const queueId = String(payload.queueId || "").trim();
   /** @type {Record<string, unknown>} */
   const item = {
     id: payload.id || uid("user"),
@@ -150,12 +223,49 @@ export function appendUserMessage(items, payload = {}) {
         ? `(${images.length} image${images.length > 1 ? "s" : ""})`
         : ""),
     optimistic: Boolean(payload.optimistic),
+    queued: Boolean(payload.queued),
     at: typeof payload.at === "number" ? payload.at : Date.now(),
   };
   if (images.length) item.images = images;
   if (interjectionId) item.interjectionId = interjectionId;
+  if (queueId) item.queueId = queueId;
   next.push(item);
   return next;
+}
+
+/**
+ * Upgrade a waiting follow-up bubble into an in-flight send/interject.
+ * @param {any[]} items
+ * @param {string} queueId
+ * @param {{ interjectionId?: string }} [extra]
+ */
+export function claimQueuedUserMessage(items, queueId, extra = {}) {
+  const id = String(queueId || "").trim();
+  if (!id || !Array.isArray(items)) return items;
+  let found = false;
+  const next = items.map((item) => {
+    if (item?.kind !== "user" || item.queueId !== id) return item;
+    found = true;
+    const row = { ...item, queued: false, optimistic: true };
+    const ij = String(extra.interjectionId || "").trim();
+    if (ij) row.interjectionId = ij;
+    return row;
+  });
+  return found ? next : items;
+}
+
+/**
+ * Drop a waiting follow-up bubble (removed from the composer queue).
+ * @param {any[]} items
+ * @param {string} queueId
+ */
+export function removeQueuedUserMessage(items, queueId) {
+  const id = String(queueId || "").trim();
+  if (!id || !Array.isArray(items)) return items;
+  const next = items.filter(
+    (item) => !(item?.kind === "user" && item.queueId === id),
+  );
+  return next.length === items.length ? items : next;
 }
 
 /**
@@ -203,7 +313,7 @@ export function applySessionInterjection(items, payload) {
     return items;
   }
   return appendUserMessage(items, {
-    text: payload?.text,
+    text: displayUserMessageText(payload?.text),
     interjectionId: id || undefined,
     optimistic: false,
   });
@@ -225,23 +335,25 @@ export function applySessionUpdate(items, params) {
 
   switch (kind) {
     case "user_message_chunk": {
-      const text = String(update.content?.text ?? update.content ?? "");
+      const chunk = String(update.content?.text ?? update.content ?? "");
       const last = next[next.length - 1];
       // Optimistic UI bubble already has full user text — ignore agent echo chunks
       if (last?.kind === "user" && last.optimistic) {
         return next;
       }
       if (last?.kind === "user") {
+        const text = displayUserMessageText(last.text + chunk);
+        if (text === last.text) return next;
         next[next.length - 1] = {
           ...last,
-          text: last.text + text,
+          text,
           at: last.at || at,
         };
       } else {
         next.push({
           id: uid("user"),
           kind: "user",
-          text,
+          text: displayUserMessageText(chunk),
           at,
         });
       }
@@ -324,6 +436,8 @@ export function applySessionUpdate(items, params) {
             update.raw_input ??
             update.arguments ??
             next[existing].raw,
+          askUser:
+            Boolean(next[existing].askUser) || isAskUserQuestionTool(update),
         };
         return next;
       }
@@ -334,6 +448,7 @@ export function applySessionUpdate(items, params) {
         title: update.title || update.tool || update.kind || "Tool call",
         status: update.status || "pending",
         raw: update.rawInput ?? update.raw_input ?? update.arguments,
+        askUser: isAskUserQuestionTool(update),
         at,
       });
       return next;
@@ -355,6 +470,7 @@ export function applySessionUpdate(items, params) {
           content: update.content ?? prev.content,
           title: update.title || prev.title,
           raw: update.rawInput ?? update.raw_input ?? prev.raw,
+          askUser: Boolean(prev.askUser) || isAskUserQuestionTool(update),
         };
       } else {
         // ACP v2-style upsert: some agents only send tool_call_update
@@ -366,6 +482,7 @@ export function applySessionUpdate(items, params) {
           status: resolveToolUpdateStatus(update, update.status || "pending"),
           content: update.content,
           raw: update.rawInput ?? update.raw_input ?? update.arguments,
+          askUser: isAskUserQuestionTool(update),
           at,
         });
       }

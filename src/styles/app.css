@@ -1146,7 +1146,8 @@ button {
 }
 
 /* Slash / skill invocation — distinct from plain chat */
-.msg.user.user-command {
+.msg.user.user-command,
+.msg.user.queued {
   border-color: rgba(167, 139, 250, 0.45);
   background: linear-gradient(
     135deg,
@@ -1154,6 +1155,10 @@ button {
     var(--user-bubble) 55%
   );
   box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.12);
+}
+
+.msg.user.queued {
+  border-style: dashed;
 }
 
 .msg .body.body-command {
@@ -1517,13 +1522,13 @@ button {
   background: var(--plan-bg);
 }
 
-.msg.plan-question {
+.msg.ask-user-question {
   border-color: rgba(251, 191, 36, 0.85);
   background: rgba(251, 191, 36, 0.07);
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.28);
 }
 
-[data-theme="light"] .msg.plan-question {
+[data-theme="light"] .msg.ask-user-question {
   border-color: rgba(202, 138, 4, 0.75);
   background: rgba(254, 243, 199, 0.7);
   box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.18);
@@ -3118,6 +3123,8 @@ button {
 
 .ask-user-dialog {
   width: min(520px, 96vw);
+  border-color: rgba(251, 191, 36, 0.85);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.28), var(--shadow);
 }
 
 .mcp-elicit-dialog {

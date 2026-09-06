@@ -1,9 +1,12 @@
 // @ts-nocheck — imports shared pure ESM without package types
 import type { TimelineImage, TimelineItem } from "../vite-env";
 import {
+  displayUserMessageText as displayUserShared,
   appendUserMessage as appendShared,
   applySessionInterjection as applyInterjectShared,
   removeUserInterjection as removeShared,
+  claimQueuedUserMessage as claimQueuedShared,
+  removeQueuedUserMessage as removeQueuedShared,
   shouldApplySessionInterjection as shouldApplyShared,
   applySessionUpdate as applyShared,
   finalizeOpenTools as finalizeShared,
@@ -13,6 +16,10 @@ import {
 
 export function uid(prefix = "id") {
   return sharedUid(prefix);
+}
+
+export function displayUserMessageText(raw: unknown): string {
+  return displayUserShared(raw);
 }
 
 export function applySessionUpdate(
@@ -31,9 +38,26 @@ export function appendUserMessage(
     at?: number;
     id?: string;
     interjectionId?: string;
+    queued?: boolean;
+    queueId?: string;
   },
 ): TimelineItem[] {
   return appendShared(items, payload);
+}
+
+export function claimQueuedUserMessage(
+  items: TimelineItem[],
+  queueId: string,
+  extra?: { interjectionId?: string },
+): TimelineItem[] {
+  return claimQueuedShared(items, queueId, extra);
+}
+
+export function removeQueuedUserMessage(
+  items: TimelineItem[],
+  queueId: string,
+): TimelineItem[] {
+  return removeQueuedShared(items, queueId);
 }
 
 export function applySessionInterjection(

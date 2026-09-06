@@ -1,5 +1,7 @@
 export function uid(prefix?: string): string;
 
+export function isAskUserQuestionTool(value: unknown): boolean;
+
 export function isOpenToolStatus(status: unknown): boolean;
 
 export function isTerminalToolStatus(status: unknown): boolean;
@@ -13,6 +15,8 @@ export function resolveToolUpdateStatus(
   previousStatus?: string | null,
 ): string;
 
+export function displayUserMessageText(raw: unknown): string;
+
 export function finalizeOpenTools(items: any[], status?: string): any[];
 
 export function appendUserMessage(
@@ -24,8 +28,18 @@ export function appendUserMessage(
     at?: number;
     id?: string;
     interjectionId?: string;
+    queued?: boolean;
+    queueId?: string;
   },
 ): any[];
+
+export function claimQueuedUserMessage(
+  items: any[],
+  queueId: string,
+  extra?: { interjectionId?: string },
+): any[];
+
+export function removeQueuedUserMessage(items: any[], queueId: string): any[];
 
 export function removeUserInterjection(
   items: any[],

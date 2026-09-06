@@ -24,30 +24,30 @@ export function nextAlwaysApproveMode(
  * Run a desktop-local command by name.
  * @returns true if handled
  */
-export function runDesktopCommand(
+export async function runDesktopCommand(
   name: string,
   handlers: DesktopCommandHandlers,
   args = "",
-): boolean {
+): Promise<boolean> {
   const key = name.toLowerCase().replace(/^\//, "");
   if (key === "new" || key === "clear") {
     handlers.newChat();
     return true;
   }
   if (key === "always-approve") {
-    void handlers.toggleAlwaysApprove();
+    await handlers.toggleAlwaysApprove();
     return true;
   }
   if (key === "preview") {
-    void handlers.preview?.(args);
+    await handlers.preview?.(args);
     return true;
   }
   if (key === "compact") {
-    void handlers.compact?.(args);
+    await handlers.compact?.(args);
     return true;
   }
   if (key === "plan") {
-    void handlers.enterPlanMode?.(args);
+    await handlers.enterPlanMode?.(args);
     return true;
   }
   return false;
