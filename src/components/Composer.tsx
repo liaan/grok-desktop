@@ -257,20 +257,16 @@ export const Composer = memo(function Composer({
       if (!text && draftImages.length === 0) return;
       if (conn === "connecting" || !projectOpen) return;
 
-      // Desktop-local slash commands (do not send to agent).
-      // While a turn is running, skip this so Enter still interjects.
-      if (conn !== "busy") {
-        const localMatch = text.match(/^\/([^\s]+)(?:\s+(.*))?$/s);
-        if (localMatch) {
-          const name = localMatch[1].toLowerCase();
-          const local = DESKTOP_COMMANDS.find(
-            (c) => c.local && c.name.toLowerCase() === name,
-          );
-          if (local) {
-            clearDraft();
-            await onLocalCommand(name, (localMatch[2] || "").trim());
-            return;
-          }
+      const localMatch = text.match(/^\/([^\s]+)(?:\s+(.*))?$/s);
+      if (localMatch) {
+        const name = localMatch[1].toLowerCase();
+        const local = DESKTOP_COMMANDS.find(
+          (c) => c.local && c.name.toLowerCase() === name,
+        );
+        if (local) {
+          clearDraft();
+          await onLocalCommand(name, (localMatch[2] || "").trim());
+          return;
         }
       }
 

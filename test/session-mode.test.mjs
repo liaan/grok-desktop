@@ -96,9 +96,15 @@ test("planSlashDisplay keeps /plan in the timeline", () => {
 test("looksLikePlanQuestion is numbered questions, not status chatter", () => {
   assert.equal(
     looksLikePlanQuestion(
-      "2. When those approaches conflict, which constraint should win?",
+      "1. What should this plan be about?\n2. When those approaches conflict, which constraint should win?",
     ),
     true,
+  );
+  assert.equal(
+    looksLikePlanQuestion(
+      "1. I'll inspect the tree first?",
+    ),
+    false,
   );
   assert.equal(
     looksLikePlanQuestion(

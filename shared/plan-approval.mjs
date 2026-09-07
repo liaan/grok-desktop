@@ -1,10 +1,4 @@
-/**
- * Plan-approval helpers shared by the renderer and tests.
- *
- * grok-build `ExitPlanModeExtResponse.feedback` is only consumed on
- * `cancelled` (request changes). Approve-with-comments is a separate
- * `x.ai/interject` after `{ outcome: "approved" }` — same as the TUI.
- */
+/** Plan-approval helpers. Approve-with-comments is interject after approved. */
 
 /**
  * @param {unknown} feedback

@@ -19,6 +19,7 @@ import {
   claimQueuedUserMessage,
   finalizeOpenTools,
   removeQueuedUserMessage,
+  restoreQueuedUserMessage,
   removeUserInterjection,
   uid,
 } from "../lib/timeline";
@@ -45,7 +46,7 @@ function userBubbleText(payload: {
 
 /**
  * Mid-turn queue + session/prompt delivery (CLI-style Enter / Ctrl+Enter).
- * Capture uses this path so a running turn interjects the JPEG like composer Enter.
+ * Preview screenshots use mode "interject" while a turn is running.
  */
 export function usePromptDelivery(opts: {
   project: string | null;
@@ -246,11 +247,11 @@ export function usePromptDelivery(opts: {
   deliverRef.current = deliverPrompt;
 
   const deliverInterject = useCallback(
-    async (payload: DeliverPayload) => {
+    async (payload: DeliverPayload): Promise<"ok" | "queue" | "error"> => {
       const text = payload.text.trim();
       const images = payload.images;
       const imageQuality = payload.imageQuality || "compact";
-      if (!text && images.length === 0) return;
+      if (!text && images.length === 0) return "error";
 
       const interjectionId = uid("ij");
       const gen = deliveryGenRef.current;
@@ -276,6 +277,13 @@ export function usePromptDelivery(opts: {
       });
       const stale = () =>
         openingRef.current || deliveryGenRef.current !== gen;
+      const revertBubble = () => {
+        if (queueId) {
+          setItems((prev) => restoreQueuedUserMessage(prev, queueId));
+          return;
+        }
+        setItems((prev) => removeUserInterjection(prev, interjectionId));
+      };
       try {
         const result = await window.grokDesktop.interject(text, {
           images: images.map(({ data, mimeType }) => ({ data, mimeType })),
@@ -283,26 +291,25 @@ export function usePromptDelivery(opts: {
           interjectionId,
         });
         if (stale()) {
-          // Id-scoped; no-op if restart already replaced the timeline.
-          setItems((prev) => removeUserInterjection(prev, interjectionId));
-          return;
+          revertBubble();
+          return "error";
         }
         const follow = interjectRpcFollowUp(result);
-        if (follow === "ok") return;
-        setItems((prev) => removeUserInterjection(prev, interjectionId));
+        if (follow === "ok") return "ok";
+        revertBubble();
         if (follow === "queue") {
+          if (queueId) return "queue";
           if (!busyRef.current) {
             void deliverPrompt({
               text,
               images,
               imageQuality,
               timelineText: payload.timelineText,
-              queueId: payload.queueId,
             });
-          } else {
-            enqueuePrompt(text, images, imageQuality, payload.timelineText);
+            return "ok";
           }
-          return;
+          enqueuePrompt(text, images, imageQuality, payload.timelineText);
+          return "queue";
         }
         const fail =
           result && typeof result === "object"
@@ -313,11 +320,13 @@ export function usePromptDelivery(opts: {
               )
             : "Interject failed";
         setError(fail);
+        return "error";
       } catch (e: unknown) {
-        setItems((prev) => removeUserInterjection(prev, interjectionId));
-        if (stale()) return;
+        revertBubble();
+        if (stale()) return "error";
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
+        return "error";
       }
     },
     [
@@ -401,11 +410,15 @@ export function usePromptDelivery(opts: {
         setError(parsed.error);
         return;
       }
-      void submitFromComposer(parsed.submit).then((ok) => {
+      const busy = busyRef.current || conn === "busy";
+      void submitFromComposer({
+        ...parsed.submit,
+        mode: busy ? "interject" : "auto",
+      }).then((ok) => {
         if (!ok) setError(previewCaptureRefuseError(project));
       });
     },
-    [project, submitFromComposer, setError],
+    [project, submitFromComposer, setError, busyRef, conn],
   );
 
   useEffect(() => {
@@ -420,11 +433,6 @@ export function usePromptDelivery(opts: {
       const list = promptQueueRef.current;
       const item = id ? list.find((q) => q.id === id) : list[0];
       if (!item) return;
-      setPromptQueue((prev) => {
-        const next = prev.filter((q) => q.id !== item.id);
-        promptQueueRef.current = next;
-        return next;
-      });
       const payload: DeliverPayload = {
         text: item.text,
         images: item.images,
@@ -432,11 +440,26 @@ export function usePromptDelivery(opts: {
         timelineText: item.timelineText,
         queueId: item.id,
       };
+      const take = () => {
+        const next = promptQueueRef.current.filter((q) => q.id !== item.id);
+        promptQueueRef.current = next;
+        setPromptQueue(next);
+      };
+      const restore = () => {
+        if (promptQueueRef.current.some((q) => q.id === item.id)) return;
+        const next = [item, ...promptQueueRef.current];
+        promptQueueRef.current = next;
+        setPromptQueue(next);
+      };
       if (busyRef.current) {
-        void deliverInterject(payload);
-      } else {
-        void deliverPrompt(payload);
+        take();
+        void deliverInterject(payload).then((follow) => {
+          if (follow !== "ok") restore();
+        });
+        return;
       }
+      take();
+      void deliverPrompt(payload);
     },
     [busyRef, openingRef, deliverInterject, deliverPrompt],
   );

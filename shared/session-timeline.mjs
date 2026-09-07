@@ -255,6 +255,25 @@ export function claimQueuedUserMessage(items, queueId, extra = {}) {
 }
 
 /**
+ * Put a claimed follow-up bubble back to waiting after a failed interject.
+ * @param {any[]} items
+ * @param {string} queueId
+ */
+export function restoreQueuedUserMessage(items, queueId) {
+  const id = String(queueId || "").trim();
+  if (!id || !Array.isArray(items)) return items;
+  let found = false;
+  const next = items.map((item) => {
+    if (item?.kind !== "user" || item.queueId !== id) return item;
+    found = true;
+    const row = { ...item, queued: true, optimistic: false };
+    delete row.interjectionId;
+    return row;
+  });
+  return found ? next : items;
+}
+
+/**
  * Drop a waiting follow-up bubble (removed from the composer queue).
  * @param {any[]} items
  * @param {string} queueId

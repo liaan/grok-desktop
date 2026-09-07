@@ -35,13 +35,7 @@ import {
   nextAlwaysApproveMode,
   runDesktopCommand,
 } from "./lib/desktop-commands";
-import {
-  ALREADY_IN_PLAN_NOTICE,
-  PLAN_MODE_ID,
-  isPlanMode,
-  planSlashAction,
-  planSlashDisplay,
-} from "../shared/session-mode.mjs";
+import { enterPlanMode } from "./lib/enter-plan-mode";
 import { isMissingBinaryError, type ConnState } from "./lib/conn";
 import {
   normalizeAutoCompactAt,
@@ -52,7 +46,7 @@ import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { hideBootSplash } from "./lib/boot-splash";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
-import { appendUserMessage, finalizeOpenTools, uid } from "./lib/timeline";
+import { finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAgentSafety } from "./hooks/useAgentSafety";
 import { useProjectSession } from "./hooks/useProjectSession";
@@ -158,41 +152,6 @@ export default function App() {
     applySandboxTerminal,
   } = useAgentSafety({ setError, appendSystem });
 
-  const {
-    permissions,
-    backgroundTasks,
-    sessionUsage,
-    sessionMode,
-    setSessionMode,
-    planApproval,
-    userQuestion,
-    folderTrust,
-    mcpElicit,
-    clearSessionScoped,
-    revokeWritesThisSession,
-    hydrateBackgroundTasks,
-    hydrateSessionUsage,
-    syncAgentGatesFromMain,
-    onPermission,
-    onAllowAllPermissions,
-    allowWritesThisSession,
-    onAllowWritesThisSession,
-    onRevokeWritesThisSession,
-    onPlanApproval,
-    onUserQuestion,
-    onFolderTrust,
-    onMcpElicit,
-  } = useAgentEvents({
-    openingRef,
-    sessionIdRef,
-    setConn,
-    setError,
-    setSessionId,
-    setItems,
-    setAgentCommands,
-    setSettingsOpen,
-  });
-
   const refreshAuth = useCallback(async () => {
     const status = await window.grokDesktop.getAuthStatus();
     setAuth(status);
@@ -274,6 +233,44 @@ export default function App() {
     setItems,
     refreshAuth: () => {
       void refreshAuth();
+    },
+  });
+
+  const {
+    permissions,
+    backgroundTasks,
+    sessionUsage,
+    sessionMode,
+    setSessionMode,
+    planApproval,
+    userQuestion,
+    folderTrust,
+    mcpElicit,
+    clearSessionScoped,
+    revokeWritesThisSession,
+    hydrateBackgroundTasks,
+    hydrateSessionUsage,
+    syncAgentGatesFromMain,
+    onPermission,
+    onAllowAllPermissions,
+    allowWritesThisSession,
+    onAllowWritesThisSession,
+    onRevokeWritesThisSession,
+    onPlanApproval,
+    onUserQuestion,
+    onFolderTrust,
+    onMcpElicit,
+  } = useAgentEvents({
+    openingRef,
+    sessionIdRef,
+    setConn,
+    setError,
+    setSessionId,
+    setItems,
+    setAgentCommands,
+    setSettingsOpen,
+    deliverPlanComments: (text) => {
+      void submitFromComposer({ text, images: [], mode: "auto" });
     },
   });
 
@@ -752,62 +749,16 @@ export default function App() {
           compact: (hint) => {
             void runCompress(hint);
           },
-          enterPlanMode: async (description) => {
-            const display = planSlashDisplay(description);
-            const action = planSlashAction(description, {
-              alreadyInPlan: isPlanMode(sessionMode),
-            });
-            if (action.type === "already-in-plan") {
-              const desc = String(description || "").trim();
-              if (!desc) {
-                appendSystem(ALREADY_IN_PLAN_NOTICE);
-                return;
-              }
-              await submitFromComposer({
-                text: desc,
-                timelineText: display,
-                images: [],
-                mode: "auto",
-              });
-              return;
-            }
-            const prevMode = sessionMode;
-            setSessionMode(PLAN_MODE_ID);
-            try {
-              const result =
-                await window.grokDesktop.setSessionMode(PLAN_MODE_ID);
-              if (!result.agentSynced) {
-                setSessionMode(prevMode);
-                const msg = result.error || "Could not enter plan mode";
-                setError(msg);
-                appendSystem(`Plan mode failed: ${msg}`);
-                return;
-              }
-            } catch (e: unknown) {
-              setSessionMode(prevMode);
-              const msg = e instanceof Error ? e.message : String(e);
-              setError(msg || "Could not enter plan mode");
-              appendSystem(`Plan mode failed: ${msg}`);
-              return;
-            }
-            if (action.type === "set-mode") {
-              setItems((prev) =>
-                appendUserMessage(prev, { text: display, optimistic: true }),
-              );
-              return;
-            }
-            const accepted = await submitFromComposer({
-              text: action.text || "",
-              timelineText: display,
-              images: [],
-              mode: "auto",
-            });
-            if (!accepted) {
-              setItems((prev) =>
-                appendUserMessage(prev, { text: display, optimistic: true }),
-              );
-            }
-          },
+          enterPlanMode: (description) =>
+            enterPlanMode({
+              description,
+              sessionMode,
+              setSessionMode,
+              setError,
+              appendSystem,
+              setItems,
+              submitFromComposer,
+            }),
           preview: async (previewArgs) => {
             const a = String(previewArgs || "").trim();
             try {

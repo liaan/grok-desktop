@@ -1,7 +1,6 @@
 export const PLAN_MODE_ID: "plan";
 export const DEFAULT_SESSION_MODE_ID: "default";
 export const ALREADY_IN_PLAN_NOTICE: string;
-export const PLAN_MODE_ON_NOTICE: string;
 
 export function isPlanMode(modeId: unknown): boolean;
 

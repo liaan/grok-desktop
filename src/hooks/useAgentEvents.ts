@@ -140,6 +140,8 @@ export function useAgentEvents(opts: {
   setItems: Dispatch<SetStateAction<TimelineItem[]>>;
   setAgentCommands: Dispatch<SetStateAction<SlashCommand[]>>;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
+  /** After plan approve-with-comments: queue if busy, else session/prompt. */
+  deliverPlanComments?: (text: string) => void | Promise<void>;
 }) {
   const {
     openingRef,
@@ -150,6 +152,7 @@ export function useAgentEvents(opts: {
     setItems,
     setAgentCommands,
     setSettingsOpen,
+    deliverPlanComments,
   } = opts;
 
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
@@ -797,16 +800,12 @@ export function useAgentEvents(opts: {
       try {
         const result = await window.grokDesktop.interject(comments);
         if (interjectRpcFollowUp(result) === "ok") return;
-        await window.grokDesktop.prompt(comments);
       } catch {
-        try {
-          await window.grokDesktop.prompt(comments);
-        } catch {
-          /* plan already approved */
-        }
+        /* fall through to follow-up */
       }
+      await deliverPlanComments?.(comments);
     },
-    [],
+    [deliverPlanComments],
   );
 
   const onUserQuestion = useCallback(

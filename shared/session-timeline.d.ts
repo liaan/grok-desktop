@@ -39,6 +39,8 @@ export function claimQueuedUserMessage(
   extra?: { interjectionId?: string },
 ): any[];
 
+export function restoreQueuedUserMessage(items: any[], queueId: string): any[];
+
 export function removeQueuedUserMessage(items: any[], queueId: string): any[];
 
 export function removeUserInterjection(

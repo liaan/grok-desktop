@@ -6,6 +6,7 @@ import {
   applySessionInterjection as applyInterjectShared,
   removeUserInterjection as removeShared,
   claimQueuedUserMessage as claimQueuedShared,
+  restoreQueuedUserMessage as restoreQueuedShared,
   removeQueuedUserMessage as removeQueuedShared,
   shouldApplySessionInterjection as shouldApplyShared,
   applySessionUpdate as applyShared,
@@ -51,6 +52,13 @@ export function claimQueuedUserMessage(
   extra?: { interjectionId?: string },
 ): TimelineItem[] {
   return claimQueuedShared(items, queueId, extra);
+}
+
+export function restoreQueuedUserMessage(
+  items: TimelineItem[],
+  queueId: string,
+): TimelineItem[] {
+  return restoreQueuedShared(items, queueId);
 }
 
 export function removeQueuedUserMessage(

@@ -1,10 +1,4 @@
-/**
- * ACP session mode (plan / default / ask).
- *
- * TUI `/plan` is pager-owned: `session/set_mode` with modeId "plan", then the
- * remaining text as a normal prompt. Desktop must not send `/plan` as
- * session/prompt — the agent never enters plan mode that way.
- */
+/** ACP session mode ids (`session/set_mode`). */
 
 export const PLAN_MODE_ID = "plan";
 export const DEFAULT_SESSION_MODE_ID = "default";
@@ -12,10 +6,6 @@ export const DEFAULT_SESSION_MODE_ID = "default";
 /** Toast when `/plan` is typed while already in plan mode (same as TUI). */
 export const ALREADY_IN_PLAN_NOTICE =
   "Already in plan mode. Use /view-plan to view the current plan.";
-
-/** Shown after a bare `/plan` (mode on, no first prompt yet). */
-export const PLAN_MODE_ON_NOTICE =
-  "Plan mode on — describe what you want to plan. File edits stay blocked until you approve.";
 
 /**
  * @param {unknown} modeId
@@ -98,12 +88,10 @@ export function planSlashDisplay(args) {
 }
 
 /**
- * Numbered questionnaire in an assistant bubble (plan mode often writes
- * questions as markdown instead of dispatching ask_user_question).
+ * Numbered questionnaire (two or more "N. …?" stems on their own lines).
  * @param {unknown} text
  */
 export function looksLikePlanQuestion(text) {
-  const t = String(text || "");
-  if (!t.trim()) return false;
-  return /^\s*\d+[.)]\s+\S[\s\S]{0,240}\?/m.test(t);
+  const hits = String(text || "").match(/^\s*\d+[.)]\s+\S[^\n]{0,200}\?/gm);
+  return Boolean(hits && hits.length >= 2);
 }
