@@ -6,6 +6,7 @@
  * Network is allowed. Docker sockets are never exposed. The rest of $HOME
  * stays blocked. Git is special: Seatbelt EPERM on an existing ~/.gitconfig
  * is fatal, so jailed spawns null GIT_CONFIG_* and copy host user.name/email.
+ * SSH host keys live under GROK_HOME/ssh (not ~/.ssh — private keys stay denied).
  *
  * Backends:
  *   darwin  → /usr/bin/sandbox-exec (Seatbelt)
@@ -21,6 +22,11 @@ import os from "node:os";
 import path from "node:path";
 import { grokHomeDir } from "./grok-home.mjs";
 import { shellJoin } from "./shell-argv.mjs";
+import {
+  dockerGitSshCommand,
+  gitSshCommand,
+  grokKnownHostsPath,
+} from "./tool-git-env.mjs";
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 /**
@@ -1326,6 +1332,18 @@ function planWslBwrap(p) {
     }
   }
 
+  const env = { ...p.env };
+  if (grokWsl) {
+    const hostKnown = grokKnownHostsPath(env.GROK_HOME);
+    const current = env.GIT_SSH_COMMAND || "";
+    const hostFwd = hostKnown.replace(/\\/g, "/");
+    if (current.includes(hostKnown) || current.includes(hostFwd)) {
+      env.GIT_SSH_COMMAND = gitSshCommand(
+        `${grokWsl.replace(/\/$/, "")}/ssh/known_hosts`,
+      );
+    }
+  }
+
   return {
     file: wslPath,
     fileArgs: [
@@ -1338,7 +1356,7 @@ function planWslBwrap(p) {
     ],
     shell: false,
     cwd: p.projectRoot,
-    env: p.env,
+    env,
     backend: "wsl-bwrap",
   };
 }
@@ -1407,8 +1425,8 @@ function planDocker(p) {
     "-e",
     "PAGER=cat",
     "-e",
-    // Ephemeral container: accept-new is OK (no durable host known_hosts)
-    "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
+    // GROK_HOME is /grok in the container; host keys live under GROK_HOME/ssh.
+    `GIT_SSH_COMMAND=${dockerGitSshCommand()}`,
     "-e",
     "GCM_INTERACTIVE=never",
     "-e",

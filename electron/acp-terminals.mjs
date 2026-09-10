@@ -27,7 +27,16 @@ export {
   resolveSpawnPlan,
 } from "./terminal-spawn.mjs";
 import { planSandboxedSpawn } from "./terminal-sandbox.mjs";
+import { applyNonInteractiveToolEnv } from "./tool-git-env.mjs";
 import { debugLog } from "./debug-log.mjs";
+
+export {
+  applyNonInteractiveToolEnv,
+  dockerGitSshCommand,
+  ensureGrokKnownHosts,
+  gitSshCommand,
+  grokKnownHostsPath,
+} from "./tool-git-env.mjs";
 
 const DEFAULT_OUTPUT_BYTE_LIMIT = 1_048_576; // 1 MiB
 const KILL_ESCALATE_MS = 1500;
@@ -52,37 +61,6 @@ const KILL_ESCALATE_MS = 1500;
  *   sandboxBackend?: string | null,
  * }} ManagedTerminal
  */
-
-/**
- * Env so agent tool shells never block on editors / credential TTY prompts.
- * ACP terminals use stdin "ignore" — interactive git/gpg hangs forever ("pending").
- * @param {Record<string, string | undefined>} env
- */
-function applyNonInteractiveToolEnv(env) {
-  const defaults = {
-    GIT_EDITOR: "true",
-    EDITOR: "true",
-    VISUAL: "true",
-    GIT_TERMINAL_PROMPT: "0",
-    GCM_INTERACTIVE: "never",
-    GIT_PAGER: "cat",
-    PAGER: "cat",
-    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
-    GPG_TTY: "",
-    // Prefer plain stdout for tools that honor these (pytest, chalk, cargo, …).
-    // UI also strips ANSI; this reduces noise at the source.
-    NO_COLOR: "1",
-    FORCE_COLOR: "0",
-    CLICOLOR: "0",
-    CLICOLOR_FORCE: "0",
-    PY_COLORS: "0",
-    TERM: "dumb",
-  };
-  for (const [k, v] of Object.entries(defaults)) {
-    if (env[k] == null || env[k] === "") env[k] = v;
-  }
-  return env;
-}
 
 /**
  * Run and clear a terminal's optional post-spawn cleanup (e.g. temp files).

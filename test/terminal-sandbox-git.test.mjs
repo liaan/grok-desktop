@@ -83,6 +83,20 @@ test("dockerGitConfigEnvFlags emit -e GIT_CONFIG_* pairs", () => {
   assert.equal(flags[globalIdx - 1], "-e");
 });
 
+test("buildSeatbeltProfile does not bind ~/.ssh (private keys stay denied)", () => {
+  const home = path.join(os.tmpdir(), "grok-seatbelt-home-keys");
+  const project = path.join(home, "proj");
+  const grokHome = path.join(home, ".grok");
+  const profile = buildSeatbeltProfile({
+    projectRoot: project,
+    homeDir: home,
+    grokHome,
+  });
+  assert.equal(profile.includes(".ssh"), false);
+  assert.equal(profile.includes("known_hosts"), false);
+  assert.ok(profile.includes(".grok") || profile.includes(seatbeltLiteral(grokHome)));
+});
+
 test("buildSeatbeltProfile exempts git identity files from home read deny", () => {
   const home = path.join(os.tmpdir(), "grok-seatbelt-home");
   const project = path.join(home, "proj");
