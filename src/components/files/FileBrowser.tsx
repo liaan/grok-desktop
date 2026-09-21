@@ -341,7 +341,8 @@ export function FileBrowser({
             {refreshBtn}
           </div>
           <p className="file-browser-hint">
-            Click a file to preview. Edit opens it in {editorLabel}.
+            Click a file to preview. Markdown renders in the preview. Edit
+            opens it in {editorLabel}.
           </p>
           {openError ? (
             <p style={{ color: "var(--danger, #f87171)", fontSize: 12 }}>

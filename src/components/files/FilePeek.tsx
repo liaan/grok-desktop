@@ -1,14 +1,17 @@
-import { useMemo, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { basen } from "../../lib/path-utils";
 import { fileFromDiffPayload, shouldRenderDiff } from "../../lib/line-diff";
 import { usePrivacy } from "../../lib/privacy-context";
 import { DiffView } from "../DiffView";
+import { MarkdownPeek } from "./MarkdownPeek";
+import { isMarkdownPath } from "./markdown-doc";
 import { canEditFile, isDirty, type FileDocument } from "./types";
 
 const PEEK_CHAR_CAP = 200_000;
 
 export function FilePeek({
   doc,
+  project,
   editorLabel,
   copied,
   saving,
@@ -17,10 +20,12 @@ export function FilePeek({
   onDraftChange,
   onSave,
   onOpenEditor,
+  onOpenLinkedFile,
   onCopyPath,
   onClose,
 }: {
   doc: FileDocument;
+  project: string;
   editorLabel: string;
   copied: boolean;
   saving: boolean;
@@ -29,6 +34,7 @@ export function FilePeek({
   onDraftChange: (draft: string) => void;
   onSave: () => void;
   onOpenEditor: () => void;
+  onOpenLinkedFile: (absPath: string) => boolean;
   onCopyPath: () => void;
   onClose: () => void;
 }) {
@@ -37,7 +43,34 @@ export function FilePeek({
   const canEdit = canEditFile(doc);
   const peekIsBinary =
     doc.binary || Boolean(doc.saved && doc.saved.includes("\u0000"));
-  const sourceText = doc.kind === "file" ? doc.draft || doc.saved : doc.saved;
+  // Ready files use the draft, including an emptied buffer. Falling through
+  // to `saved` on a falsy draft would hide unsaved deletions in preview.
+  const sourceText =
+    doc.kind === "file"
+      ? doc.status === "ready"
+        ? doc.draft
+        : doc.saved
+      : doc.saved;
+  const markdownFile =
+    doc.kind === "file" &&
+    !peekIsBinary &&
+    doc.error !== "Binary file" &&
+    isMarkdownPath(doc.path);
+  const [viewFor, setViewFor] = useState(doc.absPath);
+  const [sourceMode, setSourceMode] = useState(false);
+  if (viewFor !== doc.absPath) {
+    setViewFor(doc.absPath);
+    setSourceMode(false);
+  }
+  const pendingHash = useRef<string | null>(null);
+  const showMarkdown =
+    markdownFile && !sourceMode && doc.status === "ready" && !doc.error;
+  // A link hash is consumed by the markdown view. Drop it when that view
+  // is not what mounted, so a later file does not scroll to a stale anchor.
+  useEffect(() => {
+    if (doc.status !== "ready") return;
+    if (!showMarkdown) pendingHash.current = null;
+  }, [doc.status, doc.absPath, showMarkdown]);
 
   const peekDiff = useMemo(() => {
     if (doc.kind !== "diff" || doc.saved == null) return null;
@@ -70,6 +103,18 @@ export function FilePeek({
           {dirty ? "• " : ""}
           {basen(doc.path)}
         </span>
+        {markdownFile && doc.status === "ready" && !doc.error ? (
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            title={
+              sourceMode ? "Show rendered markdown" : "Show markdown source"
+            }
+            onClick={() => setSourceMode((on) => !on)}
+          >
+            {sourceMode ? "Preview" : "Source"}
+          </button>
+        ) : null}
         {canEdit ? (
           <button
             type="button"
@@ -136,6 +181,22 @@ export function FilePeek({
           <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
             Binary file — open it in {editorLabel} instead.
           </p>
+        ) : showMarkdown ? (
+          <>
+            {doc.truncated ? (
+              <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                File is too large to edit here. Showing the start of it.
+              </p>
+            ) : null}
+            <MarkdownPeek
+              text={redact(peekFileText ?? "")}
+              label={`Preview of ${basen(doc.path)}`}
+              fileAbsPath={doc.absPath}
+              project={project}
+              onOpenFile={onOpenLinkedFile}
+              pendingHash={pendingHash}
+            />
+          </>
         ) : doc.truncated ? (
           <>
             <p style={{ color: "var(--text-muted)", fontSize: 12 }}>

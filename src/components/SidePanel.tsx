@@ -1,5 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { normalizePathKey } from "../lib/path-utils";
+import {
+  isLexicallyUnder,
+  normalizePathKey,
+  parentDir,
+  relativeDisplay,
+  samePathKey,
+} from "../lib/path-utils";
 import type { BackgroundTask } from "../lib/background-tasks";
 import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
@@ -114,6 +120,44 @@ export const SidePanel = memo(function SidePanel({
     visibleChanges.length > 0
       ? `Changes (${visibleChanges.length})`
       : "Changes";
+
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+  const browseRef = useRef(files.browseCwd);
+  browseRef.current = files.browseCwd;
+  const loadDirRef = useRef(files.loadDir);
+  loadDirRef.current = files.loadDir;
+
+  const openLinkedFile = useCallback(
+    (absPath: string) => {
+      if (!project || !isLexicallyUnder(project, absPath)) return false;
+      const current = peekRef.current.doc;
+      if (
+        current?.kind === "file" &&
+        normalizePathKey(current.absPath) === normalizePathKey(absPath)
+      ) {
+        return true;
+      }
+      const opened = peekRef.current.openPeek({
+        kind: "file",
+        path: relativeDisplay(project, absPath),
+        absPath,
+      });
+      if (!opened) return false;
+      const parent = parentDir(absPath);
+      const browseCwd = browseRef.current;
+      if (
+        parent &&
+        browseCwd &&
+        !samePathKey(parent, browseCwd) &&
+        isLexicallyUnder(project, parent)
+      ) {
+        void loadDirRef.current(parent);
+      }
+      return true;
+    },
+    [project],
+  );
 
   const selectFile = (file: FileEntry) => {
     if (file.isDirectory) {
@@ -253,6 +297,7 @@ export const SidePanel = memo(function SidePanel({
         {peek.doc && project ? (
           <FilePeek
             doc={peek.doc}
+            project={project}
             editorLabel={editorLabel}
             copied={copiedKey === peek.doc.absPath}
             saving={peek.saving}
@@ -261,6 +306,7 @@ export const SidePanel = memo(function SidePanel({
             onDraftChange={peek.setDraft}
             onSave={() => void peek.savePeek()}
             onOpenEditor={() => void peek.openEditor(peek.doc!.absPath)}
+            onOpenLinkedFile={openLinkedFile}
             onCopyPath={() => void copyPath(peek.doc!.absPath)}
             onClose={peek.closePeek}
           />

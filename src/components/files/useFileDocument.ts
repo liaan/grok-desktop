@@ -81,8 +81,8 @@ export function useFileDocument({
   }, []);
 
   const openPeek = useCallback(
-    (next: PeekTarget) => {
-      if (!confirmLeave()) return;
+    (next: PeekTarget): boolean => {
+      if (!confirmLeave()) return false;
       const seq = ++peekSeq.current;
       setSaving(false);
       setSaveError(null);
@@ -100,6 +100,7 @@ export function useFileDocument({
         error: null,
       });
       void loadInto(next, seq);
+      return true;
     },
     [confirmLeave, loadInto],
   );
