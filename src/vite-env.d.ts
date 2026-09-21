@@ -610,7 +610,7 @@ declare global {
       respondUserQuestion: (
         reqId: string,
         decision:
-          | { type: "answered"; answers: Record<string, string> }
+          | { type: "answered"; answers: Record<string, string | string[]> }
           | { type: "declined" },
       ) => Promise<boolean>;
       respondFolderTrust: (

@@ -228,7 +228,128 @@ test("handleAskUserQuestion accepts nested params.questions", async () => {
     },
   );
   assert.equal(result.outcome, "accepted");
-  assert.equal(result.answers.a || result.answers["0"], "a");
+  assert.deepEqual(result.answers, { "Pick?": ["A"] });
+  assert.equal(result.partial_answers, undefined);
+});
+
+test("handleAskUserQuestion keys multi-select by question text and labels", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("user-question-request", (payload) => {
+    payload.respond({
+      type: "answered",
+      answers: { 0: ["tests", "lint"] },
+    });
+  });
+  await handleAskUserQuestion(
+    {
+      emitter,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    2,
+    {
+      questions: [
+        {
+          question: "What do you lean on?",
+          multiSelect: true,
+          options: [
+            { id: "tests", label: "Tests", preview: "unit" },
+            { id: "lint", label: "Lint, format" },
+          ],
+        },
+      ],
+    },
+  );
+  assert.deepEqual(result, {
+    outcome: "accepted",
+    answers: { "What do you lean on?": ["Tests", "Lint, format"] },
+  });
+});
+
+test("handleAskUserQuestion attaches single-select preview", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("user-question-request", (payload) => {
+    payload.respond({ type: "answered", answers: { "Which cache?": ["Redis"] } });
+  });
+  await handleAskUserQuestion(
+    {
+      emitter,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    5,
+    {
+      questions: [
+        {
+          question: "Which cache?",
+          options: [
+            { label: "Redis", preview: "in-memory" },
+            { label: "None" },
+          ],
+        },
+      ],
+    },
+  );
+  assert.deepEqual(result, {
+    outcome: "accepted",
+    answers: { "Which cache?": ["Redis"] },
+    annotations: { "Which cache?": { preview: "in-memory" } },
+  });
+});
+
+test("handleAskUserQuestion dismiss is cancelled, not skip_interview", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("user-question-request", (payload) => {
+    payload.respond({ type: "declined" });
+  });
+  await handleAskUserQuestion(
+    {
+      emitter,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    3,
+    { questions: [{ question: "Pick?" }] },
+  );
+  assert.deepEqual(result, { outcome: "cancelled" });
+});
+
+test("handleAskUserQuestion skip_interview keeps partial labels", async () => {
+  const emitter = new EventEmitter();
+  let result = null;
+  emitter.on("user-question-request", (payload) => {
+    payload.respond({
+      type: "skip_interview",
+      answers: { "Which cache?": ["Redis"] },
+    });
+  });
+  await handleAskUserQuestion(
+    {
+      emitter,
+      respond: (_id, value) => {
+        result = value;
+      },
+    },
+    4,
+    {
+      questions: [
+        {
+          question: "Which cache?",
+          options: [{ label: "Redis" }, { label: "None" }],
+        },
+      ],
+    },
+  );
+  assert.deepEqual(result, {
+    outcome: "skip_interview",
+    partial_answers: { "Which cache?": "Redis" },
+  });
 });
 
 test("plan request_changes maps to cancelled + feedback", async () => {

@@ -8,7 +8,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { normalizeAskUserAnswersMap } from "./ask-user-answers.mjs";
+import {
+  acceptedAskUserWire,
+  partialAskUserAnswers,
+} from "./ask-user-answers.mjs";
 import {
   folderTrustResponse,
   isFolderTrustMethod,
@@ -128,28 +131,37 @@ export async function handleAskUserQuestion(ctx, id, params) {
     .toLowerCase()
     .replace(/-/g, "_");
   if (type === "answered" || type === "answers" || type === "accepted") {
-    ctx.respond(id, {
-      outcome: "accepted",
-      answers: normalizeAskUserAnswersMap(decision?.answers, questions),
-      partial_answers: normalizeAskUserAnswersMap(
-        decision?.partial_answers ?? decision?.partialAnswers,
-        questions,
-      ),
-    });
+    const wire = acceptedAskUserWire(decision?.answers, questions);
+    ctx.respond(id, { outcome: "accepted", ...wire });
     return;
   }
   if (type === "chat" || type === "chat_about_this") {
     ctx.respond(id, {
       outcome: "chat_about_this",
-      message: String(decision?.message || decision?.feedback || ""),
+      partial_answers: partialAskUserAnswers(
+        decision?.partial_answers ??
+          decision?.partialAnswers ??
+          decision?.answers,
+        questions,
+      ),
     });
     return;
   }
-  if (type === "cancelled" || type === "canceled") {
-    ctx.respond(id, { outcome: "cancelled" });
+  if (type === "skip_interview" || type === "skipinterview") {
+    ctx.respond(id, {
+      outcome: "skip_interview",
+      partial_answers: partialAskUserAnswers(
+        decision?.partial_answers ??
+          decision?.partialAnswers ??
+          decision?.answers,
+        questions,
+      ),
+    });
     return;
   }
-  ctx.respond(id, { outcome: "skip_interview" });
+  // Dismiss, timeout, and the dialog's Skip/Cancel are Cancelled.
+  // skip_interview is only the plan-mode "stop interviewing and write the plan" action.
+  ctx.respond(id, { outcome: "cancelled" });
 }
 
 /**

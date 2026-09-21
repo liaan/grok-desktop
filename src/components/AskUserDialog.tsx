@@ -29,7 +29,7 @@ export function AskUserDialog({
   onRespond: (
     reqId: string,
     decision:
-      | { type: "answered"; answers: Record<string, string> }
+      | { type: "answered"; answers: Record<string, string | string[]> }
       | { type: "declined" },
   ) => void;
 }) {
@@ -66,14 +66,19 @@ export function AskUserDialog({
   };
 
   const submit = () => {
-    // Map form for agent (not an array of rows)
-    /** @type {Record<string, string>} */
-    const map: Record<string, string> = {};
+    const map: Record<string, string[]> = {};
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       const key = String(q.id ?? i);
       const selected = answers[key] || [];
-      if (selected.length) map[key] = selected.join(",");
+      if (!selected.length) continue;
+      const opts = Array.isArray(q.options) ? q.options : [];
+      const labels = selected.map((id) => {
+        const opt = opts.find((candidate, j) => String(candidate.id ?? j) === id);
+        return String(opt?.label || id);
+      });
+      const questionText = String(q.question || "").trim() || key;
+      map[questionText] = labels;
     }
     onRespond(request.reqId, { type: "answered", answers: map });
   };
@@ -140,7 +145,7 @@ export function AskUserDialog({
             className="btn"
             onClick={() => onRespond(request.reqId, { type: "declined" })}
           >
-            Skip
+            Cancel
           </button>
           <button
             type="button"

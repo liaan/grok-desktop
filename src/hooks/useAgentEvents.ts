@@ -812,7 +812,7 @@ export function useAgentEvents(opts: {
     async (
       reqId: string,
       decision:
-        | { type: "answered"; answers: Record<string, string> }
+        | { type: "answered"; answers: Record<string, string | string[]> }
         | { type: "declined" },
     ) => {
       const ok = await window.grokDesktop.respondUserQuestion(reqId, decision);
