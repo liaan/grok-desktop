@@ -2,6 +2,7 @@ import {
   Fragment,
   memo,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
   type RefObject,
@@ -32,6 +33,7 @@ import {
   applyFormattedCopy,
   copyMarkdownRich,
   installCopySelectionMarkdownHook,
+  writeRichClipboard,
 } from "../lib/copy-formatted";
 
 /** Stable empties so default props do not bust React.memo every parent render. */
@@ -75,9 +77,41 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   return <img src={src} alt={alt || ""} loading="lazy" />;
 }
 
+function MarkdownCodeBlock({ children }: { children?: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="md-codeblock">
+      <button
+        type="button"
+        className="btn ghost btn-sm md-code-copy"
+        title="Copy code"
+        aria-label="Copy code"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const text = (preRef.current?.textContent || "").replace(/\n$/, "");
+          if (!text) return;
+          void writeRichClipboard({ text })
+            .then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            })
+            .catch(() => {});
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <pre ref={preRef}>{children}</pre>
+    </div>
+  );
+}
+
 const MD_COMPONENTS = {
   a: MarkdownLink,
   img: MarkdownImage,
+  pre: MarkdownCodeBlock,
 };
 
 function MsgMeta({

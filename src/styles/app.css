@@ -1446,6 +1446,26 @@ button {
   background: var(--table-stripe);
 }
 
+:is(.msg .body.markdown, .file-peek-markdown) .md-codeblock {
+  position: relative;
+  margin: 0.65em 0 1em;
+}
+
+:is(.msg .body.markdown, .file-peek-markdown) .md-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  user-select: none;
+  background: var(--code-bg);
+  opacity: 0.9;
+}
+
+:is(.msg .body.markdown, .file-peek-markdown) .md-codeblock:hover .md-code-copy,
+:is(.msg .body.markdown, .file-peek-markdown) .md-code-copy:focus-visible {
+  opacity: 1;
+}
+
 :is(.msg .body.markdown, .file-peek-markdown) pre {
   margin: 0.65em 0 1em;
   background: var(--code-bg);
@@ -1457,6 +1477,11 @@ button {
   font-size: 12.5px;
   line-height: 1.45;
   white-space: pre;
+}
+
+:is(.msg .body.markdown, .file-peek-markdown) .md-codeblock pre {
+  margin: 0;
+  padding-right: 64px;
 }
 
 :is(.msg .body.markdown, .file-peek-markdown) pre code {
