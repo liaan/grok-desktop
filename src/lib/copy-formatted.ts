@@ -4,6 +4,7 @@
 
 import {
   clipboardPayloadFromMarkdown,
+  escapeHtml,
   sanitizeCopiedHtml,
   wrapHtmlFragment,
 } from "../../shared/rich-clipboard.mjs";
@@ -61,7 +62,13 @@ function htmlToMarkdown(root: ParentNode): string {
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
+    if (el.classList.contains("md-code-copy")) return "";
     const inner = () => Array.from(el.childNodes).map(walk).join("");
+    if (el.classList.contains("md-codeblock")) {
+      const pre = el.querySelector("pre");
+      const body = (pre?.textContent || inner()).replace(/\n$/, "");
+      return `\n\`\`\`\n${body}\n\`\`\`\n`;
+    }
     switch (tag) {
       case "strong":
       case "b":
@@ -134,6 +141,91 @@ function htmlToMarkdown(root: ParentNode): string {
     .trim();
 }
 
+function elementOf(node: Node | null): Element | null {
+  if (!node) return null;
+  return node instanceof Element ? node : node.parentElement;
+}
+
+/** A rendered block usually ends with a newline that should not be part of the command. */
+function trimCodeBlock(text: string): string {
+  return text.replace(/\n$/, "");
+}
+
+type CodePlain = { text: string; block: boolean };
+
+/**
+ * Selection sits entirely inside one code block or one inline code span.
+ * The characters on screen are the command or identifier — markdown fences
+ * are not part of that text.
+ */
+function plainTextFromCodeSelection(sel: Selection): CodePlain | null {
+  const a = elementOf(sel.anchorNode);
+  const f = elementOf(sel.focusNode);
+  if (!a || !f) return null;
+  const preA = a.closest("pre");
+  const preF = f.closest("pre");
+  if (preA && preA === preF && preA.closest(".body.markdown")) {
+    const raw = sel.toString();
+    const full = preA.textContent || "";
+    return {
+      text: raw === full ? trimCodeBlock(full) : raw,
+      block: true,
+    };
+  }
+  const codeA = a.closest("code");
+  const codeF = f.closest("code");
+  if (
+    codeA &&
+    codeA === codeF &&
+    !codeA.closest("pre") &&
+    codeA.closest(".body.markdown")
+  ) {
+    return { text: sel.toString(), block: false };
+  }
+  return null;
+}
+
+/** Cloned range is only code blocks (a highlighted fence), not surrounding prose. */
+function plainTextFromCodeFragment(holder: HTMLElement): CodePlain | null {
+  const parts: string[] = [];
+  let block = false;
+  for (const n of Array.from(holder.childNodes)) {
+    if (n.nodeType === Node.TEXT_NODE) {
+      if ((n.textContent || "").trim()) return null;
+      continue;
+    }
+    if (n.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = n as HTMLElement;
+    if (el.classList.contains("md-code-copy") || el.tagName === "BUTTON") {
+      continue;
+    }
+    if (el.classList.contains("md-codeblock")) {
+      const pre = el.querySelector("pre");
+      if (!pre) return null;
+      block = true;
+      parts.push(trimCodeBlock(pre.textContent || ""));
+      continue;
+    }
+    if (el.tagName === "PRE") {
+      block = true;
+      parts.push(trimCodeBlock(el.textContent || ""));
+      continue;
+    }
+    if (el.tagName === "CODE") {
+      parts.push(el.textContent || "");
+      continue;
+    }
+    return null;
+  }
+  if (parts.length === 0) return null;
+  return { text: parts.join("\n"), block };
+}
+
+function htmlForCodePlain(plain: CodePlain): string {
+  const body = escapeHtml(plain.text);
+  return plain.block ? `<pre><code>${body}</code></pre>` : `<code>${body}</code>`;
+}
+
 /** Rich payload for the current selection inside a rendered reply, or null. */
 export function selectionRichPayload(): { text: string; html: string } | null {
   const sel = window.getSelection();
@@ -148,8 +240,11 @@ export function selectionRichPayload(): { text: string; html: string } | null {
   holder.appendChild(sel.getRangeAt(0).cloneContents());
   const clean = sanitizeCopiedHtml(holder.innerHTML);
   if (!clean.trim() && !sel.toString().trim()) return null;
-  const text = htmlToMarkdown(holder) || sel.toString();
-  return { text, html: wrapHtmlFragment(clean) };
+  const plain =
+    plainTextFromCodeSelection(sel) ?? plainTextFromCodeFragment(holder);
+  const text = (plain ? plain.text : htmlToMarkdown(holder)) || sel.toString();
+  const html = wrapHtmlFragment(plain ? htmlForCodePlain(plain) : clean);
+  return { text, html };
 }
 
 export function applyFormattedCopy(e: ClipboardEvent): boolean {
