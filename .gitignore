@@ -15,3 +15,5 @@ desktop-state.json
 /reviews/
 /.grok-review-*.md
 /tmp-*.mjs
+# Temp scripts for multi-line tool shells (project cwd)
+/.grok-desktop/
