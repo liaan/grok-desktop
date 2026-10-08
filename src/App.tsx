@@ -1295,6 +1295,7 @@ export default function App() {
             scrollerRef={timelineRef}
             knownCommands={allCommands}
             planMode={sessionMode === "plan"}
+            streaming={conn === "busy"}
             pendingPermissions={permissions}
             onPermission={onPermission}
             onAllowAllPermissions={() => void onAllowAllPermissions()}

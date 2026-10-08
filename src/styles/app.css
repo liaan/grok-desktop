@@ -1577,9 +1577,103 @@ button {
   font-size: 0.92em;
 }
 
+/* Folded by default: a full card per thought filled the thread (issue #2). */
 .msg.thought {
   border-style: dashed;
-  opacity: 0.9;
+  padding: 0;
+  background: transparent;
+}
+
+.msg.thought.is-folded {
+  border-color: transparent;
+  margin-block: -6px;
+}
+
+.msg.thought.is-open {
+  padding: 8px 12px 10px;
+  background: var(--assistant-bubble);
+  border-color: var(--border);
+}
+
+.thought-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 3px 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.thought-toggle:hover,
+.thought-toggle:focus-visible {
+  color: var(--text);
+}
+
+.thought-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.thought-chevron {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  transform: rotate(-90deg);
+  flex: 0 0 auto;
+}
+
+.msg.thought.is-open .thought-chevron {
+  transform: rotate(0deg);
+}
+
+.thought-label {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.msg.thought.is-live .thought-label {
+  color: var(--accent);
+}
+
+.thought-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thought-preview--hint {
+  opacity: 0.7;
+}
+
+.thought-toggle .meta-time {
+  margin-left: auto;
+}
+
+.thought-body {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .msg.tool {

@@ -28,6 +28,7 @@ import {
 } from "../../shared/permission-options.mjs";
 import { usePrivacy } from "../lib/privacy-context";
 import { looksLikePlanQuestion } from "../../shared/session-mode.mjs";
+import { thoughtPreview } from "../../shared/thought-preview.mjs";
 import { buildToolCard, ToolCardView } from "./ToolCardView";
 import {
   applyFormattedCopy,
@@ -213,6 +214,71 @@ function planEntryLabel(e: unknown): string {
 }
 
 /**
+ * Thinking stays a one-line trace. Full cards stacked over the thread and
+ * made the feed unusable (issue #2). Click to read; the body scrolls inside
+ * a cap so one block still cannot fill the screen.
+ */
+function ThoughtBlock({
+  item,
+  live,
+  day,
+}: {
+  item: Extract<TimelineItem, { kind: "thought" }>;
+  live: boolean;
+  day: ReactNode;
+}) {
+  const { redact } = usePrivacy();
+  const [open, setOpen] = useState(false);
+  const text = redact(item.text || "");
+  const preview = thoughtPreview(text);
+  const bodyId = `${item.id}-thought`;
+  const clock = formatClock(item.at);
+
+  return (
+    <Fragment>
+      {day}
+      <article
+        className={`msg thought${open ? " is-open" : " is-folded"}${live ? " is-live" : ""}`}
+      >
+        <button
+          type="button"
+          className="thought-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="thought-chevron" aria-hidden="true" />
+          <span className="thought-label">{live ? "Thinking" : "Thought"}</span>
+          {open ? (
+            <span className="thought-preview thought-preview--hint">Hide</span>
+          ) : preview ? (
+            <span className="thought-preview">{preview}</span>
+          ) : (
+            <span className="thought-preview thought-preview--hint">
+              {live ? "…" : "Empty"}
+            </span>
+          )}
+          {clock ? (
+            <time
+              className="meta-time"
+              dateTime={new Date(item.at).toISOString()}
+              title={formatFullTimestamp(item.at)}
+            >
+              {clock}
+            </time>
+          ) : null}
+        </button>
+        {open ? (
+          <div id={bodyId} className="body thought-body">
+            {text}
+          </div>
+        ) : null}
+      </article>
+    </Fragment>
+  );
+}
+
+/**
  * One timeline row. Memoized so streaming / typing only re-renders rows whose
  * props actually changed (assistant markdown is the expensive case).
  * Relies on applySessionUpdate preserving object identity for unchanged items.
@@ -222,11 +288,14 @@ const TimelineRow = memo(function TimelineRow({
   showDay,
   knownCommands,
   planQuestion = false,
+  liveThought = false,
 }: {
   item: TimelineItem;
   showDay: boolean;
   knownCommands: SlashCommand[];
   planQuestion?: boolean;
+  /** Tail thought while a turn is running. Folded either way; this only labels it. */
+  liveThought?: boolean;
 }) {
   const { redact } = usePrivacy();
   const day =
@@ -347,13 +416,7 @@ const TimelineRow = memo(function TimelineRow({
 
   if (item.kind === "thought") {
     return (
-      <Fragment>
-        {day}
-        <article className="msg thought">
-          <MsgMeta role="Thinking" at={item.at} />
-          <div className="body">{redact(item.text)}</div>
-        </article>
-      </Fragment>
+      <ThoughtBlock item={item} live={liveThought} day={day} />
     );
   }
 
@@ -502,6 +565,7 @@ export const MessageList = memo(function MessageList({
   scrollerRef,
   knownCommands,
   planMode = false,
+  streaming = false,
   pendingPermissions,
   onPermission,
   onAllowAllPermissions,
@@ -512,6 +576,8 @@ export const MessageList = memo(function MessageList({
   /** Skills + agent + desktop commands for slash recognition in user bubbles */
   knownCommands?: SlashCommand[];
   planMode?: boolean;
+  /** True while a turn is running, so the tail thought can read as live. */
+  streaming?: boolean;
   /** Open session/request_permission gates (renderer-only; not from ACP timeline) */
   pendingPermissions?: PermissionRequest[];
   onPermission?: (reqId: string, optionId: string | "cancelled") => void;
@@ -521,6 +587,9 @@ export const MessageList = memo(function MessageList({
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
   const questionId = planMode ? lastPlanQuestionId(items) : null;
+  const tail = items[items.length - 1];
+  const liveThoughtId =
+    streaming && tail?.kind === "thought" ? tail.id : null;
 
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
@@ -564,6 +633,7 @@ export const MessageList = memo(function MessageList({
                 showDay={showDay}
                 knownCommands={cmds}
                 planQuestion={item.id === questionId}
+                liveThought={item.id === liveThoughtId}
               />
             );
           })}
