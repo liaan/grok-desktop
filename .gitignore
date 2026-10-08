@@ -13,4 +13,5 @@ desktop-state.json
 
 # Local review dumps and scratch scripts
 /reviews/
+/.grok-review-*.md
 /tmp-*.mjs
