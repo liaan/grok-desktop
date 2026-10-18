@@ -9,6 +9,7 @@ import { PluginsPage } from "./settings/PluginsPage";
 import { SafetyPage } from "./settings/SafetyPage";
 import { SkillsPage } from "./settings/SkillsPage";
 import { UpdatesPage } from "./settings/UpdatesPage";
+import { useI18n } from "../lib/i18n";
 import {
   PAGE_TITLES,
   SETTINGS_NAV,
@@ -69,6 +70,7 @@ export function SettingsDialog({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [page, setPage] = useState<SettingsPageId>("general");
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!open) {
@@ -139,23 +141,23 @@ export function SettingsDialog({
       inert={overlayInert || undefined}
     >
       <div className="settings-page-header">
-        <h2 id="settings-title">Settings</h2>
+        <h2 id="settings-title">{t("settings.title")}</h2>
         <button
           ref={closeRef}
           type="button"
           className="btn ghost btn-sm"
           onClick={onClose}
-          aria-label="Close settings"
+          aria-label={t("settings.close")}
         >
-          Done
+          {t("settings.done")}
         </button>
       </div>
 
       <div className="settings-page-body">
-        <nav className="settings-nav" aria-label="Settings">
+        <nav className="settings-nav" aria-label={t("settings.navAria")}>
           {SETTINGS_NAV.map((group) => (
             <div className="settings-nav-group" key={group.label}>
-              <div className="settings-nav-heading">{group.label}</div>
+              <div className="settings-nav-heading">{t(group.label)}</div>
               {group.items.map((item) => (
                 <button
                   key={item.id}
@@ -168,7 +170,7 @@ export function SettingsDialog({
                   }
                   onClick={() => setPage(item.id)}
                 >
-                  {item.label}
+                  {t(item.label)}
                 </button>
               ))}
             </div>
@@ -177,7 +179,7 @@ export function SettingsDialog({
 
         <div className="settings-content">
           <div className="settings-content-inner">
-            <h3 className="settings-page-title">{PAGE_TITLES[page]}</h3>
+            <h3 className="settings-page-title">{t(PAGE_TITLES[page])}</h3>
             <SettingsPageBody
               page={page}
               theme={theme}

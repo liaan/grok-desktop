@@ -3,7 +3,6 @@ import type { ComposerSubmit } from "../components/Composer";
 import type { TimelineItem } from "../vite-env";
 import { appendUserMessage } from "./timeline";
 import {
-  ALREADY_IN_PLAN_NOTICE,
   PLAN_MODE_ID,
   isPlanMode,
   planSlashAction,
@@ -22,6 +21,7 @@ export async function enterPlanMode(opts: {
   appendSystem: (text: string) => void;
   setItems: Dispatch<SetStateAction<TimelineItem[]>>;
   submitFromComposer: (payload: ComposerSubmit) => boolean | Promise<boolean>;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }): Promise<void> {
   const display = planSlashDisplay(opts.description);
   const action = planSlashAction(opts.description, {
@@ -35,7 +35,7 @@ export async function enterPlanMode(opts: {
   if (action.type === "already-in-plan") {
     const desc = String(opts.description || "").trim();
     if (!desc) {
-      opts.appendSystem(ALREADY_IN_PLAN_NOTICE);
+      opts.appendSystem(opts.t("sys.alreadyInPlan"));
       return;
     }
     await opts.submitFromComposer({
@@ -53,16 +53,16 @@ export async function enterPlanMode(opts: {
     const result = await window.grokDesktop.setSessionMode(PLAN_MODE_ID);
     if (!result.agentSynced) {
       opts.setSessionMode(prevMode);
-      const msg = result.error || "Could not enter plan mode";
+      const msg = result.error || opts.t("err.couldNotEnterPlan");
       opts.setError(msg);
-      opts.appendSystem(`Plan mode failed: ${msg}`);
+      opts.appendSystem(opts.t("sys.planModeFailed", { msg }));
       return;
     }
   } catch (e: unknown) {
     opts.setSessionMode(prevMode);
     const msg = e instanceof Error ? e.message : String(e);
-    opts.setError(msg || "Could not enter plan mode");
-    opts.appendSystem(`Plan mode failed: ${msg}`);
+    opts.setError(msg || opts.t("err.couldNotEnterPlan"));
+    opts.appendSystem(opts.t("sys.planModeFailed", { msg }));
     return;
   }
 

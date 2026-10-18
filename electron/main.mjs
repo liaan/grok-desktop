@@ -100,6 +100,11 @@ import {
   windowListMenuItems,
 } from "./window-menu.mjs";
 import {
+  normalizeLocalePref,
+  resolveLocale,
+  translate,
+} from "../shared/ui-copy.mjs";
+import {
   agentForWorktreeRpc,
   commitFamilyAfterOpen,
   configureDesktopInstance,
@@ -240,6 +245,7 @@ function loadState() {
     merged.allowPrerelease = Boolean(merged.allowPrerelease);
     merged.externalEditor = normalizeExternalEditor(merged.externalEditor);
     merged.autoCompactAt = normalizeAutoCompactAt(merged.autoCompactAt);
+    merged.localePref = normalizeLocalePref(merged.localePref);
     delete merged.worktreeSources;
     return merged;
   } catch {
@@ -254,6 +260,7 @@ function loadState() {
       allowPrerelease: false,
       externalEditor: "auto",
       autoCompactAt: "off",
+      localePref: "system",
       lastProject: null,
       recentProjects: [],
     };
@@ -400,12 +407,24 @@ function wireWindowMenuRefresh() {
   });
 }
 
+function menuLocale() {
+  const pref = normalizeLocalePref(loadState().localePref);
+  let system = "en";
+  try {
+    system = app.getLocale();
+  } catch {
+    /* app not ready */
+  }
+  return resolveLocale(pref, system);
+}
+
 function installApplicationMenu() {
   const isMac = process.platform === "darwin";
   const cycleKind = windowCycleKind();
+  const L = (key) => translate(menuLocale(), key);
   /** @type {import('electron').MenuItemConstructorOptions} */
   const settingsItem = {
-    label: "Settings…",
+    label: L("menu.settings"),
     accelerator: "CmdOrCtrl+,",
     click: () => openSettingsFromMenu(),
   };
@@ -417,12 +436,12 @@ function installApplicationMenu() {
    * @returns {import('electron').MenuItemConstructorOptions}
    */
   const newWindowItem = (opts = {}) => ({
-    label: "New Window",
+    label: L("menu.newWindow"),
     ...(opts.accelerator ? { accelerator: opts.accelerator } : {}),
     click: () => newWindowFromMenu(),
   });
   const newWorktreeItem = () => ({
-    label: "New Worktree Window…",
+    label: L("menu.newWorktree"),
     click: () => {
       const ws = focusedSession();
       if (!ws) return;
@@ -453,63 +472,65 @@ function installApplicationMenu() {
           {
             label: app.name,
             submenu: [
-              { role: "about" },
+              { role: "about", label: L("menu.about") },
               { type: "separator" },
               // Most discoverable place on Mac (same row as Settings)
               newWindowItem(),
               newWorktreeItem(),
               settingsItem,
               { type: "separator" },
-              { role: "services" },
+              { role: "services", label: L("menu.services") },
               { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
+              { role: "hide", label: L("menu.hide") },
+              { role: "hideOthers", label: L("menu.hideOthers") },
+              { role: "unhide", label: L("menu.unhide") },
               { type: "separator" },
-              { role: "quit" },
+              { role: "quit", label: L("menu.quit") },
             ],
           },
         ]
       : []),
     {
-      label: "File",
+      label: L("menu.file"),
       submenu: [
         newWindowItem({ accelerator: "CmdOrCtrl+N" }),
         newWorktreeItem(),
         { type: "separator" },
         ...(isMac ? [] : [settingsItem, { type: "separator" }]),
-        isMac ? { role: "close" } : { role: "quit" },
+        isMac
+          ? { role: "close", label: L("menu.close") }
+          : { role: "quit", label: L("menu.quit") },
       ],
     },
     {
-      label: "Edit",
+      label: L("menu.edit"),
       submenu: [
-        { role: "undo" },
-        { role: "redo" },
+        { role: "undo", label: L("menu.undo") },
+        { role: "redo", label: L("menu.redo") },
         { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "pasteAndMatchStyle" },
-        { role: "delete" },
-        { role: "selectAll" },
+        { role: "cut", label: L("menu.cut") },
+        { role: "copy", label: L("menu.copy") },
+        { role: "paste", label: L("menu.paste") },
+        { role: "pasteAndMatchStyle", label: L("menu.pasteAndMatchStyle") },
+        { role: "delete", label: L("menu.delete") },
+        { role: "selectAll", label: L("menu.selectAll") },
       ],
     },
     {
-      label: "View",
+      label: L("menu.view"),
       submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
+        { role: "reload", label: L("menu.reload") },
+        { role: "forceReload", label: L("menu.forceReload") },
+        { role: "toggleDevTools", label: L("menu.toggleDevTools") },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { role: "resetZoom", label: L("menu.resetZoom") },
+        { role: "zoomIn", label: L("menu.zoomIn") },
+        { role: "zoomOut", label: L("menu.zoomOut") },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        { role: "togglefullscreen", label: L("menu.togglefullscreen") },
         { type: "separator" },
         {
-          label: "Preview Window",
+          label: L("menu.preview"),
           accelerator: "CmdOrCtrl+Shift+E",
           click: () => {
             void openPreviewFromMenu();
@@ -523,62 +544,62 @@ function installApplicationMenu() {
       // literally labeled "Window" and is not needed.
       // Windows / Linux: Electron does not append that list — we add radio
       // items from appShellWindows() and rebuild when shells change.
-      label: "Window",
+      label: L("menu.window"),
       role: "window",
       submenu: [
         newWindowItem(),
         newWorktreeItem(),
         { type: "separator" },
-        { role: "minimize" },
-        { role: "zoom" },
+        { role: "minimize", label: L("menu.minimize") },
+        { role: "zoom", label: L("menu.zoom") },
         ...(cycleKind === "cmd-backtick"
           ? [
               { type: "separator" },
               // Cmd+Tab = apps. Same-app windows = Cmd+` (Mac standard).
               {
-                label: "Cycle Through Windows",
+                label: L("menu.cycle"),
                 accelerator: "Cmd+`",
                 click: () => cycleAppWindows(1),
               },
               {
-                label: "Cycle Through Windows (Reverse)",
+                label: L("menu.cycleReverse"),
                 accelerator: "Cmd+Shift+`",
                 click: () => cycleAppWindows(-1),
               },
               { type: "separator" },
-              { role: "front" },
+              { role: "front", label: L("menu.front") },
             ]
           : cycleKind === "ctrl-tab"
             ? [
                 {
-                  label: "Next Window",
+                  label: L("menu.nextWindow"),
                   accelerator: "Ctrl+Tab",
                   click: () => cycleAppWindows(1),
                 },
                 {
-                  label: "Previous Window",
+                  label: L("menu.prevWindow"),
                   accelerator: "Ctrl+Shift+Tab",
                   click: () => cycleAppWindows(-1),
                 },
-                { role: "close" },
+                { role: "close", label: L("menu.close") },
               ]
-            : [{ role: "close" }]),
+            : [{ role: "close", label: L("menu.close") }]),
         ...(listedWindows.length
           ? [{ type: "separator" }, ...listedWindows]
           : []),
       ],
     },
     {
-      label: "Help",
+      label: L("menu.help"),
       submenu: [
         {
-          label: "Check for updates…",
+          label: L("menu.checkUpdates"),
           click: () => {
             void checkForUpdatesInteractive({ disposeAgent: disposeAgentQuick });
           },
         },
         {
-          label: "Open Releases page",
+          label: L("menu.releases"),
           click: () => {
             void shell.openExternal(
               "https://github.com/liaan/grok-desktop/releases",
@@ -587,7 +608,7 @@ function installApplicationMenu() {
         },
         { type: "separator" },
         {
-          label: "Install guide (Mac “damaged” fix)",
+          label: L("menu.installGuide"),
           click: () => {
             shell.openExternal(
               "https://github.com/liaan/grok-desktop#mac-damaged-and-cant-be-opened",
@@ -614,7 +635,7 @@ const revealByWebContents = new WeakMap();
 function createWindow(opts = {}) {
   const theme = loadState().theme;
   const useSplash = Boolean(opts.splash);
-  if (useSplash) createSplashWindow(theme);
+  if (useSplash) createSplashWindow(theme, menuLocale());
 
   /** @type {import('electron').BrowserWindowConstructorOptions} */
   const winOpts = {
@@ -645,7 +666,7 @@ function createWindow(opts = {}) {
   // Session owns page-title guard + empty-shell title.
   const created = createWindowSession(win);
   if (opts.cwd) created.pendingOpenCwd = String(opts.cwd);
-  attachContextMenu(win);
+  attachContextMenu(win, () => loadState().localePref);
 
   win.on("close", (e) => {
     if (appQuitting || isQuittingForUpdate()) return;
@@ -765,6 +786,7 @@ function registerIpc() {
       sandboxStatus: sandboxStatusLabel({ lazy: true }),
       sandboxBackend: probeSandbox({ lazy: true }).backend,
       theme: state.theme === "light" ? "light" : "dark",
+      localePref: normalizeLocalePref(state.localePref),
       privacyMode: Boolean(state.privacyMode),
       /** SpaceXAI coding-data share (auth.json); default opt-in */
       codingDataOptIn: codingData.optedIn,
@@ -1544,6 +1566,15 @@ function registerIpc() {
       maybeWarmDockerSandbox();
     }
     return state.sandboxTerminal;
+  });
+
+  ipcMain.handle("app:set-locale", async (_e, value) => {
+    const localePref = normalizeLocalePref(value);
+    const state = loadState();
+    state.localePref = localePref;
+    saveState(state);
+    installApplicationMenu();
+    return localePref;
   });
 
   ipcMain.handle("app:set-theme", async (_e, value) => {

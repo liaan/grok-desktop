@@ -2,6 +2,7 @@ import {
   PERMISSION_MODE_OPTIONS,
   type PermissionMode,
 } from "../../lib/permission-mode";
+import { useI18n } from "../../lib/i18n";
 
 export function SafetyPage({
   permissionMode,
@@ -20,28 +21,36 @@ export function SafetyPage({
   onSetSandboxTerminal: (next: boolean) => void;
   onToggleAllowOutside: () => void;
 }) {
-  const modeMeta =
-    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode) ||
-    PERMISSION_MODE_OPTIONS[0];
+  const { t } = useI18n();
+  const permKey: Record<PermissionMode, string> = {
+    ask: "perm.ask",
+    auto: "perm.auto",
+    "always-approve": "perm.always",
+  };
+  const descKey: Record<PermissionMode, string> = {
+    ask: "safety.descAsk",
+    auto: "safety.descAuto",
+    "always-approve": "safety.descAlways",
+  };
 
   return (
     <section className="settings-section">
       <label className="settings-row settings-row-stack">
         <div className="settings-row-text">
-          <span className="settings-label">Tool permission mode</span>
-          <span className="settings-desc">{modeMeta.description}</span>
+          <span className="settings-label">{t("safety.mode")}</span>
+          <span className="settings-desc">{t(descKey[permissionMode])}</span>
         </div>
         <select
           className="settings-select"
           value={permissionMode}
-          aria-label="Tool permission mode"
+          aria-label={t("safety.mode")}
           onChange={(e) =>
             onSetPermissionMode(e.target.value as PermissionMode)
           }
         >
           {PERMISSION_MODE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {t(permKey[o.value])}
             </option>
           ))}
         </select>
@@ -49,11 +58,9 @@ export function SafetyPage({
 
       <label className="settings-row">
         <div className="settings-row-text">
-          <span className="settings-label">Sandbox terminal</span>
+          <span className="settings-label">{t("safety.sandbox")}</span>
           <span className="settings-desc">
-            When on (recommended), tool shells run in a project filesystem jail.
-            Host secrets and the Docker daemon stay out of reach; network still
-            works. Backend: {sandboxStatus || "…"}.
+            {t("safety.sandboxDesc", { status: sandboxStatus || "…" })}
           </span>
         </div>
         <input
@@ -64,16 +71,8 @@ export function SafetyPage({
       </label>
       <label className="settings-row">
         <div className="settings-row-text">
-          <span className="settings-label">Allow outside project</span>
-          <span className="settings-desc">
-            When off (recommended), ACP file ops and terminal cwd must stay
-            inside the open project, a <strong>linked git worktree</strong> of
-            this repo, or a Grok worktree of this repo (
-            <code>~/.grok/worktrees</code>). File browser stays the open
-            folder and linked git worktrees — not the Grok worktree family.
-            Independent of terminal sandbox. Turn on only for unrelated host
-            paths.
-          </span>
+          <span className="settings-label">{t("safety.outside")}</span>
+          <span className="settings-desc">{t("safety.outsideDesc")}</span>
         </div>
         <input
           type="checkbox"

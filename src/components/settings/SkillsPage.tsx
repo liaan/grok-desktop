@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../../lib/i18n";
 
 function skillRowDetail(s: {
   description?: string;
@@ -21,6 +22,7 @@ export function SkillsPage({
   focus: boolean;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (open && focus) {
@@ -30,15 +32,11 @@ export function SkillsPage({
 
   return (
     <section className="settings-section" ref={sectionRef} id="settings-skills">
-      <h3>Skills</h3>
-      <p className="settings-desc settings-lead">
-        From <code>grok inspect</code> — same names as the composer{" "}
-        <code>/</code> menu. Desktop does not install or edit skills; add them
-        under <code>~/.grok/skills</code>.
-      </p>
-      {loading ? <p className="settings-desc">Loading skills…</p> : null}
+      <h3>{t("nav.skills")}</h3>
+      <p className="settings-desc settings-lead">{t("skills.lead")}</p>
+      {loading ? <p className="settings-desc">{t("skills.loading")}</p> : null}
       {!loading && skills.length === 0 && !error ? (
-        <p className="settings-desc">No skills discovered.</p>
+        <p className="settings-desc">{t("skills.none")}</p>
       ) : null}
       {skills.map((s) => (
         <div className="settings-row mcp-row" key={s.name}>

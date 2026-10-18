@@ -7,6 +7,7 @@ import {
   type StructuredDiff,
 } from "../lib/line-diff";
 import { usePrivacy } from "../lib/privacy-context";
+import { useI18n } from "../lib/i18n";
 
 function lineMark(kind: DiffLine["kind"]): string {
   if (kind === "add") return "+";
@@ -22,6 +23,7 @@ export function DiffView({
   className?: string;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const totalLines = countDiffLines(diff);
   const large = totalLines > DIFF_COLLAPSE_LINES;
@@ -67,14 +69,14 @@ export function DiffView({
       </div>
       {truncated || large ? (
         <div className="diff-footer">
-          {truncated ? <div className="diff-truncated">… (truncated)</div> : null}
+          {truncated ? <div className="diff-truncated">{t("diff.truncated")}</div> : null}
           {large ? (
             <button
               type="button"
               className="btn btn-sm ghost diff-more"
               onClick={() => setExpanded((v) => !v)}
             >
-              {expanded ? "Show less" : "Show more"}
+              {expanded ? t("diff.less") : t("diff.more")}
             </button>
           ) : null}
         </div>

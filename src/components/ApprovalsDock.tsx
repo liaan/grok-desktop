@@ -3,8 +3,9 @@ import {
   classifyOptionId,
   permissionButtonClass,
 } from "../../shared/permission-options.mjs";
-import { formatOptionLabel } from "../lib/timeline";
+import { localizeOptionLabel } from "../lib/permission-labels";
 import type { PermissionRequest } from "../vite-env";
+import { useI18n } from "../lib/i18n";
 
 /**
  * Sticky dock under the timeline: agent escalations must stay visible while
@@ -21,53 +22,51 @@ export const ApprovalsDock = memo(function ApprovalsDock({
   onAllowAll: () => void;
   onAllowWritesThisSession?: () => void;
 }) {
+  const { t } = useI18n();
   if (permissions.length === 0) return null;
 
   return (
     <div
       className="approvals-dock"
       role="region"
-      aria-label="Tool approvals required"
+      aria-label={t("approvals.aria")}
     >
       <div className="approvals-dock-head">
         <strong>
           {permissions.length === 1
-            ? "Approval required"
-            : `${permissions.length} approvals required`}
+            ? t("approvals.required")
+            : t("approvals.requiredN", { n: permissions.length })}
         </strong>
-        <span className="approvals-dock-hint">
-          Reads and browsing are auto-allowed. This is an edit, post, or
-          changing command — the agent is blocked until you choose.
-        </span>
+        <span className="approvals-dock-hint">{t("approvals.hint")}</span>
         {permissions.length > 1 ? (
           <button
             type="button"
             className="btn primary btn-sm"
             onClick={() => onAllowAll()}
           >
-            Allow all once
+            {t("approvals.allowAll")}
           </button>
         ) : null}
         {onAllowWritesThisSession ? (
           <button
             type="button"
             className="btn btn-sm"
-            title="Auto-allow remaining edits, posts, and shells in this chat"
+            title={t("approvals.allowWrites")}
             onClick={() => onAllowWritesThisSession()}
           >
-            Allow writes this session
+            {t("approvals.allowSession")}
           </button>
         ) : null}
       </div>
       <div className="approvals-dock-list">
         {permissions.map((p) => {
           const tool = p.params?.toolCall;
-          const title = tool?.title || tool?.kind || "Tool needs approval";
+          const title = tool?.title || tool?.kind || t("approvals.tool");
           const options = p.params?.options?.length
             ? p.params.options
             : [
-                { optionId: "allow-once", name: "Allow once" },
-                { optionId: "reject", name: "Reject" },
+                { optionId: "allow-once", name: t("msg.allowOnce") },
+                { optionId: "reject", name: t("msg.reject") },
               ];
           return (
             <div key={p.reqId} className="approvals-dock-item">
@@ -84,7 +83,7 @@ export const ApprovalsDock = memo(function ApprovalsDock({
                       className={permissionButtonClass(cls, { size: "sm" })}
                       onClick={() => onPermission(p.reqId, opt.optionId)}
                     >
-                      {formatOptionLabel(opt.optionId, opt.name)}
+                      {localizeOptionLabel(opt.optionId, opt.name, t)}
                     </button>
                   );
                 })}
@@ -93,7 +92,7 @@ export const ApprovalsDock = memo(function ApprovalsDock({
                   className="btn danger btn-sm"
                   onClick={() => onPermission(p.reqId, "cancelled")}
                 >
-                  Cancel
+                  {t("msg.cancel")}
                 </button>
               </div>
             </div>

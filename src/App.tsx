@@ -46,6 +46,7 @@ import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { hideBootSplash } from "./lib/boot-splash";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
+import { useI18n } from "./lib/i18n";
 import { readHideThinking, storeHideThinking } from "./lib/hide-thinking";
 import { finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
@@ -66,6 +67,7 @@ import type {
 } from "./vite-env";
 
 export default function App() {
+  const { t } = useI18n();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [backbone, setBackbone] = useState<BackboneSummary | null>(null);
@@ -367,7 +369,7 @@ export default function App() {
       if (!project) return;
       const wasCurrent = opts.sessionId === sessionId;
       if (wasCurrent && conn === "busy") {
-        throw new Error("Stop the current turn before deleting this chat.");
+        throw new Error(t("err.stopBeforeDelete"));
       }
       try {
         const res = await window.grokDesktop.deleteSession({
@@ -452,7 +454,7 @@ export default function App() {
 
   const pickProject = async () => {
     if (!signedIn || conn === "connecting") {
-      if (!signedIn) setError("Sign in to Grok first.");
+      if (!signedIn) setError(t("welcome.signInFirst"));
       return;
     }
     if (!confirmDiscardFiles()) return;
@@ -491,7 +493,7 @@ export default function App() {
   useEffect(() => {
     return window.grokDesktop.on("app:new-worktree", () => {
       if (!project) {
-        setError("Open a git project first, then create a worktree.");
+        setError(t("err.openGitFirst"));
         return;
       }
       void createWorktreeInNewWindow(project);
@@ -504,9 +506,7 @@ export default function App() {
     setLoginDeviceAuth(deviceAuth);
     setLoginProgress(null);
     setAuthMessage(
-      deviceAuth
-        ? "Starting device-code login…"
-        : "Opening browser for Grok sign-in…",
+      deviceAuth ? t("auth.startingDevice") : t("auth.openingBrowser"),
     );
     setError(null);
     try {
@@ -516,7 +516,7 @@ export default function App() {
       if (result.output) setAuthMessage(result.output);
       if (result.ok || result.status?.authenticated) {
         setLoginProgress(null);
-        setAuthMessage(result.output || "Signed in successfully.");
+        setAuthMessage(result.output || t("auth.signedInOk"));
         await refreshBackbone();
         await bootstrap();
       } else if (result.error) {
@@ -548,17 +548,17 @@ export default function App() {
     setAuthBusy(false);
     setLoginDeviceAuth(false);
     setLoginProgress(null);
-    setAuthMessage("Login cancelled.");
+    setAuthMessage(t("auth.loginCancelled"));
     void refreshAuth();
   };
 
   const handleSubmitLoginCode = async (code: string) => {
     const result = await window.grokDesktop.submitLoginInput(code);
     if (result.ok) {
-      setAuthMessage("Code sent. Waiting for Grok to finish sign-in…");
+      setAuthMessage(t("auth.codeSent"));
       return;
     }
-    setAuthMessage(result.error || "Could not send the code.");
+    setAuthMessage(result.error || t("err.sendCode"));
   };
 
   // Model is session-scoped; drop the label when the agent/session goes away.
@@ -593,8 +593,8 @@ export default function App() {
           setModelSelectEpoch((n) => n + 1);
           setError(
             result.error
-              ? `Could not switch model (${result.error}).`
-              : "Could not switch model.",
+              ? t("err.switchModelErr", { error: result.error })
+              : t("err.switchModel"),
           );
           return;
         }
@@ -610,7 +610,7 @@ export default function App() {
             ? `${result.modelName} (${result.modelId})`
             : result.modelName
           : result.modelId || nextId;
-        appendSystem(`Model: ${label}`);
+        appendSystem(t("sys.model", { label }));
       } catch (e: unknown) {
         if (
           gen !== modelApplyGen.current ||
@@ -621,14 +621,14 @@ export default function App() {
         setPendingModelId(null);
         setModelSelectEpoch((n) => n + 1);
         const msg = e instanceof Error ? e.message : String(e);
-        setError(`Failed to set model: ${msg}`);
+        setError(t("err.setModel", { msg }));
       } finally {
         if (gen === modelApplyGen.current) {
           modelApplyLock.current = false;
         }
       }
     },
-    [modelId, appendSystem],
+    [modelId, appendSystem, t],
   );
 
   const handleLogout = async () => {
@@ -638,7 +638,7 @@ export default function App() {
       await leaveProject();
       const res = await window.grokDesktop.logout();
       if (res.status) setAuth(res.status);
-      setAuthMessage(res.message || "Signed out");
+      setAuthMessage(res.message || t("auth.signedOut"));
       setBackbone(null);
     } finally {
       setAuthBusy(false);
@@ -652,7 +652,7 @@ export default function App() {
       const res = await window.grokDesktop.setApiKey(key);
       setAuth(res.status);
       if (res.ok) {
-        setAuthMessage("API key set for this session.");
+        setAuthMessage(t("auth.apiKeySet"));
         await refreshBackbone();
       }
     } finally {
@@ -677,14 +677,12 @@ export default function App() {
     async (hint?: unknown) => {
       if (!project || openingRef.current) return false;
       if (conn !== "online") {
-        appendSystem("Compress is available when the agent is idle.");
+        appendSystem(t("err.compressIdle"));
         return false;
       }
       if (compactingRef.current) return false;
       if (typeof window.grokDesktop.compact !== "function") {
-        appendSystem(
-          "Restart this Grok Desktop window to enable Compress (Electron preload does not hot-reload).",
-        );
+        appendSystem(t("err.compressRestart"));
         return false;
       }
       const note = typeof hint === "string" ? hint.trim() : "";
@@ -700,7 +698,7 @@ export default function App() {
           tokensAfter?: number;
         } | null;
         if (result && result.ok === false) {
-          throw new Error(result.message || "Compress failed");
+          throw new Error(result.message || t("err.compressFailed"));
         }
         const before = Number(result?.tokens_before ?? result?.tokensBefore);
         const after = Number(result?.tokens_after ?? result?.tokensAfter);
@@ -708,7 +706,10 @@ export default function App() {
         // session_notification, not the RPC body.
         if (Number.isFinite(before) && Number.isFinite(after) && before > 0) {
           appendSystem(
-            `Conversation compacted: ${before.toLocaleString()} → ${after.toLocaleString()} tokens.`,
+            t("sys.compacted", {
+              before: before.toLocaleString(),
+              after: after.toLocaleString(),
+            }),
           );
         }
         const mark = Math.max(
@@ -729,15 +730,15 @@ export default function App() {
         ) {
           autoCompactUnsupportedRef.current = true;
         }
-        setError(msg || "Compress failed");
-        appendSystem(`Compress failed: ${msg}`);
+        setError(msg || t("err.compressFailed"));
+        appendSystem(t("err.compressFailedMsg", { msg }));
         return false;
       } finally {
         compactingRef.current = false;
         setCompacting(false);
       }
     },
-    [project, conn, sessionUsage.lastContextTokens, appendSystem, setError],
+    [project, conn, sessionUsage.lastContextTokens, appendSystem, setError, t],
   );
 
   const handleLocalCommand = useCallback(
@@ -760,32 +761,33 @@ export default function App() {
               appendSystem,
               setItems,
               submitFromComposer,
+              t,
             }),
           preview: async (previewArgs) => {
             const a = String(previewArgs || "").trim();
             try {
               if (a.toLowerCase() === "close") {
                 await window.grokDesktop.closePreview();
-                appendSystem("Preview window closed.");
+                appendSystem(t("sys.previewClosed"));
                 return;
               }
               if (a.toLowerCase() === "snapshot") {
                 const snap = await window.grokDesktop.previewSnapshot();
                 const tokens = Math.ceil((snap.chars || snap.text.length) / 4);
                 appendSystem(
-                  `Preview snapshot (~${tokens} tokens):\n${snap.text}`,
+                  t("sys.previewSnapshot", { tokens, text: snap.text }),
                 );
                 return;
               }
               await window.grokDesktop.openPreview(a);
               appendSystem(
                 a
-                  ? `Preview opened · ${a} (drag that window to another screen).`
-                  : "Preview window opened — drag it to another screen.",
+                  ? t("sys.previewOpened", { target: a })
+                  : t("sys.previewOpenedPlain"),
               );
             } catch (e: unknown) {
               const msg = e instanceof Error ? e.message : String(e);
-              setError(msg || "Preview failed");
+              setError(msg || t("err.previewFailed"));
             }
           },
         },
@@ -803,6 +805,7 @@ export default function App() {
       setSessionMode,
       submitFromComposer,
       setItems,
+      t,
     ],
   );
 
@@ -842,7 +845,7 @@ export default function App() {
       return;
     }
     appendSystem(
-      `Auto-compress: context is ${ctx.toLocaleString()} tokens (threshold ${autoCompactAt}).`,
+      t("sys.autoCompact", { ctx: ctx.toLocaleString(), at: autoCompactAt }),
     );
     autoCompactInFlightRef.current = true;
     void runCompress().then((ok) => {
@@ -861,6 +864,7 @@ export default function App() {
     autoCompactAt,
     runCompress,
     appendSystem,
+    t,
   ]);
 
   const applyAutoCompactAt = async (next: AutoCompactAt) => {
@@ -870,7 +874,7 @@ export default function App() {
       setAutoCompactAt(normalizeAutoCompactAt(value));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Failed to save auto-compress setting");
+      setError(msg || t("err.saveCompact"));
     }
   };
 
@@ -891,7 +895,7 @@ export default function App() {
     } catch (e: unknown) {
       setPrivacyMode(!next);
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Failed to set privacy mode");
+      setError(msg || t("err.privacy"));
     }
   };
 
@@ -905,28 +909,19 @@ export default function App() {
       if (status.note) {
         appendSystem(status.note);
       } else {
-        appendSystem(
-          next
-            ? "Coding data: Opt in (stored in ~/.grok/auth.json). Restart the agent so the running process picks it up."
-            : "Coding data: Opt out. Restart the agent so the running process picks it up.",
-        );
+        appendSystem(next ? t("sys.codingOptIn") : t("sys.codingOptOut"));
       }
       setOfferAgentRestart(true);
     } catch (e: unknown) {
       setCodingDataOptIn(!next);
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Failed to set coding data preference");
+      setError(msg || t("err.codingData"));
     }
   };
 
   const applyAllowPrerelease = async (next: boolean) => {
     if (next === allowPrerelease) return;
-    if (
-      next &&
-      !window.confirm(
-        "Preview updates can install untested prerelease builds.\n\nThe rest of the team stays on stable unless they turn this on too.\n\nAfter you turn this on, use Help → Check for updates.",
-      )
-    ) {
+    if (next && !window.confirm(t("updates.confirm"))) {
       return;
     }
     setAllowPrerelease(next);
@@ -936,7 +931,7 @@ export default function App() {
     } catch (e: unknown) {
       setAllowPrerelease(!next);
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Failed to set preview updates");
+      setError(msg || t("err.previewUpdates"));
     }
   };
 
@@ -950,7 +945,7 @@ export default function App() {
     } catch (e: unknown) {
       setDebugLogging(!next);
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Failed to set debug logging");
+      setError(msg || t("err.debugLogging"));
     }
   };
 
@@ -996,21 +991,21 @@ export default function App() {
     [homeDir, privacyMode],
   );
 
-  const restarting = openingLabel === "Restarting agent…";
+  const restarting = openingLabel === t("status.restarting");
   const statusLabel = useMemo(() => {
     if (conn === "connecting") {
-      return restarting ? "Restarting agent…" : "Starting agent…";
+      return restarting ? t("status.restarting") : t("status.starting");
     }
-    if (conn === "error") return "Error";
+    if (conn === "error") return t("status.error");
     if (permissions.length > 0) {
       return permissions.length === 1
-        ? "Waiting for approval…"
-        : `Waiting for approval… (${permissions.length})`;
+        ? t("status.waitingApproval")
+        : t("status.waitingApprovalN", { n: permissions.length });
     }
-    if (conn === "busy") return "Working…";
-    if (conn === "online") return "Connected";
-    return "Idle";
-  }, [conn, permissions.length, restarting]);
+    if (conn === "busy") return t("status.working");
+    if (conn === "online") return t("status.connected");
+    return t("status.idle");
+  }, [conn, permissions.length, restarting, t]);
 
   const platform =
     info?.platform ||
@@ -1104,7 +1099,7 @@ export default function App() {
       onFocusWindow={(windowId) => {
         void window.grokDesktop.focusProjectWindow(windowId).then((ok) => {
           if (ok) closeWorktreeDialog();
-          else setWorktreeError("Could not find that window.");
+          else setWorktreeError(t("err.windowNotFound"));
         });
       }}
       onOpenAnyway={(cwd) => {
@@ -1136,7 +1131,7 @@ export default function App() {
           error={error ? redact(error) : null}
           recentProjects={info?.recentProjects || []}
           appVersion={info?.version}
-          grokBinary={redact(info?.grokBinary || auth?.binary || "detecting…")}
+          grokBinary={redact(info?.grokBinary || auth?.binary || t("welcome.detecting"))}
           onRefreshAuth={() => {
             void refreshAuth().then((s) => {
               if (s.authenticated && !s.expired) void refreshBackbone();
@@ -1263,14 +1258,14 @@ export default function App() {
               <Spinner size={16} />
               <div>
                 <strong>
-                  {restarting ? "Restarting agent…" : "Starting agent…"}
+                  {restarting ? t("status.restarting") : t("status.starting")}
                 </strong>
                 <span>
                   {restarting
-                    ? "Reconnecting to Grok backbone"
+                    ? t("status.reconnecting")
                     : openingLabel
-                      ? `Opening ${openingLabel}`
-                      : "Connecting to Grok backbone"}
+                      ? t("status.opening", { label: openingLabel })
+                      : t("status.connecting")}
                 </span>
               </div>
             </div>
@@ -1289,7 +1284,7 @@ export default function App() {
                     void leaveProject();
                   }}
                 >
-                  Sign in again
+                  {t("auth.signInAgain")}
                 </button>
               ) : null}
             </div>

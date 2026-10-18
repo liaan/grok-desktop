@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "../lib/i18n";
 import {
   normalizePermissionMode,
   type PermissionMode,
@@ -18,6 +19,7 @@ export function useAgentSafety(opts: {
   appendSystem?: (text: string) => void;
 }) {
   const { setError, appendSystem } = opts;
+  const { t } = useI18n();
   const [permissionMode, setPermissionMode] =
     useState<PermissionMode>("ask");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
@@ -63,9 +65,7 @@ export function useAgentSafety(opts: {
       if (
         next === "always-approve" &&
         permissionMode !== "always-approve" &&
-        !window.confirm(
-          "Enable Always approve?\n\nTools will run without inline approval cards. Deny rules and plan-mode edit gates still apply.",
-        )
+        !window.confirm(t("safety.confirmAlways"))
       ) {
         return;
       }
@@ -75,18 +75,21 @@ export function useAgentSafety(opts: {
         setPermissionMode(mode);
         if (result.agentSynced === false && result.error) {
           setError(
-            `Permission mode set to ${mode} on the client, but the agent did not sync (${result.error}). New chats will pick up the mode from session meta.`,
+            t("err.permissionModeNotSynced", {
+              mode,
+              error: result.error,
+            }),
           );
         } else {
           setError(null);
         }
-        appendSystem?.(`Tool permission mode: ${mode}`);
+        appendSystem?.(t("sys.permMode", { mode }));
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        setError(`Failed to set permission mode: ${msg}`);
+        setError(t("err.setPermissionModeFailed", { msg }));
       }
     },
-    [permissionMode, setError, appendSystem],
+    [permissionMode, setError, appendSystem, t],
   );
 
   const applyReasoningEffort = useCallback(
@@ -97,35 +100,36 @@ export function useAgentSafety(opts: {
         setReasoningEffort(effort);
         if (result.agentSynced === false && result.error) {
           setError(
-            `Effort set to ${effort} on the client, but the agent did not sync (${result.error}). New agent processes pick it up via --reasoning-effort.`,
+            t("err.effortNotSynced", { effort, error: result.error }),
           );
         } else {
           setError(null);
         }
         appendSystem?.(
-          `Reasoning effort: ${reasoningEffortLabel(effort)} (/effort ${effort})`,
+          t("sys.reasoningEffort", {
+            label: reasoningEffortLabel(effort),
+            effort,
+          }),
         );
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        setError(`Failed to set reasoning effort: ${msg}`);
+        setError(t("err.setReasoningEffortFailed", { msg }));
       }
     },
-    [setError, appendSystem],
+    [setError, appendSystem, t],
   );
 
   const toggleAllowOutside = useCallback(async () => {
     const next = !allowOutsideProject;
     if (
       next &&
-      !window.confirm(
-        "Allow the agent to read/write files and use working directories outside this project?\n\nThis reduces safety. Prefer leaving it off unless you need it.",
-      )
+      !window.confirm(t("safety.confirmOutside"))
     ) {
       return;
     }
     const value = await window.grokDesktop.setAllowOutsideProject(next);
     setAllowOutsideProject(value);
-  }, [allowOutsideProject]);
+  }, [allowOutsideProject, t]);
 
   const applySandboxTerminal = useCallback(
     async (next: boolean) => {
@@ -133,9 +137,7 @@ export function useAgentSafety(opts: {
       if (next === sandboxTerminal) return;
       if (
         next === false &&
-        !window.confirm(
-          "Disable terminal sandbox?\n\nTool shells will run with your full user account on the host. The agent can read ~/.ssh, talk to Docker, and wipe containers.\n\nLeave sandbox on unless you need unrestricted host access.",
-        )
+        !window.confirm(t("safety.confirmNoSandbox"))
       ) {
         return;
       }
@@ -147,7 +149,7 @@ export function useAgentSafety(opts: {
         sandboxApplyLock.current = false;
       }
     },
-    [sandboxTerminal],
+    [sandboxTerminal, t],
   );
 
   return {

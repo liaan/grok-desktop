@@ -11,6 +11,7 @@ import { formatSessionWhen } from "../lib/time";
 import { usePrivacy } from "../lib/privacy-context";
 import { BrandMark, Spinner } from "./BrandMark";
 import { ColToggle } from "./ColToggle";
+import { useI18n } from "../lib/i18n";
 
 export const AppSidebar = memo(function AppSidebar({
   infoVersion,
@@ -65,6 +66,7 @@ export const AppSidebar = memo(function AppSidebar({
   inert?: boolean;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const busyGate = isOpening || conn === "busy";
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -101,8 +103,8 @@ export const AppSidebar = memo(function AppSidebar({
     const current = (s.title || "").trim();
     setChatMenu(null);
     setRenamingId(s.id);
-    setRenameDraft(current === "(no summary)" ? "" : current);
-  }, []);
+    setRenameDraft(current === t("sidebar.noSummary") ? "" : current);
+  }, [t]);
 
   const openChatMenu = useCallback(
     (e: { clientX: number; clientY: number; preventDefault: () => void }, s: SessionSummary) => {
@@ -123,12 +125,8 @@ export const AppSidebar = memo(function AppSidebar({
     async (s: SessionSummary) => {
       setChatMenu(null);
       if (!onDeleteSession) return;
-      const label = (s.title || "").trim() || "this chat";
-      if (
-        !window.confirm(
-          `Delete “${label}”? This cannot be undone.`,
-        )
-      ) {
+      const label = (s.title || "").trim() || t("sidebar.thisChat");
+      if (!window.confirm(t("sidebar.deleteConfirm", { label }))) {
         return;
       }
       try {
@@ -137,7 +135,7 @@ export const AppSidebar = memo(function AppSidebar({
         /* App surfaces the error */
       }
     },
-    [onDeleteSession],
+    [onDeleteSession, t],
   );
 
   const cancelRename = useCallback(() => {
@@ -184,14 +182,14 @@ export const AppSidebar = memo(function AppSidebar({
             <ColToggle
               collapsed={collapsed}
               expandToward="right"
-              labelExpand="Expand sidebar"
-              labelCollapse="Collapse sidebar"
+              labelExpand={t("sidebar.expand")}
+              labelCollapse={t("sidebar.collapse")}
               onClick={onToggleCollapsed}
             />
             <button
               type="button"
               className="brand-mark-btn"
-              title="Expand sidebar"
+              title={t("sidebar.expand")}
               onClick={onToggleCollapsed}
             >
               <BrandMark size={28} />
@@ -202,13 +200,13 @@ export const AppSidebar = memo(function AppSidebar({
             <BrandMark size={32} />
             <div className="brand-text">
               <h1>Grok Desktop</h1>
-              <p>xAI · Grok Build GUI</p>
+              <p>{t("sidebar.tagline")}</p>
             </div>
             <ColToggle
               collapsed={collapsed}
               expandToward="right"
-              labelExpand="Expand sidebar"
-              labelCollapse="Collapse sidebar"
+              labelExpand={t("sidebar.expand")}
+              labelCollapse={t("sidebar.collapse")}
               onClick={onToggleCollapsed}
             />
           </>
@@ -227,10 +225,10 @@ export const AppSidebar = memo(function AppSidebar({
           {isOpening ? (
             <span className="btn-inline">
               <Spinner size={14} />
-              Opening…
+              {t("sidebar.opening")}
             </span>
           ) : (
-            "Open project…"
+            t("sidebar.openProject")
           )}
         </button>
         {onNewWorktree ? (
@@ -239,19 +237,19 @@ export const AppSidebar = memo(function AppSidebar({
             type="button"
             style={{ marginTop: 8 }}
             disabled={busyGate}
-            title="Create a Grok worktree and open it in a new window"
+            title={t("sidebar.newWorktreeTitle")}
             onClick={onNewWorktree}
           >
-            New worktree…
+            {t("sidebar.newWorktree")}
           </button>
         ) : null}
       </div>
 
       <div className="sidebar-section">
-        <h2>Account</h2>
+        <h2>{t("sidebar.account")}</h2>
         <div className="sidebar-account">
           <div className="name">
-            {auth?.displayName || auth?.email || "Signed in"}
+            {auth?.displayName || auth?.email || t("sidebar.signedIn")}
           </div>
           <div className="path">
             {backbone?.ok ? (
@@ -262,7 +260,7 @@ export const AppSidebar = memo(function AppSidebar({
                     className="auth-link"
                     onClick={() => onOpenSettingsSection("skills")}
                   >
-                    {backbone.skills.length} skills
+                    {t("sidebar.skills", { n: backbone.skills.length })}
                   </button>
                   {" · "}
                   <button
@@ -270,7 +268,7 @@ export const AppSidebar = memo(function AppSidebar({
                     className="auth-link"
                     onClick={() => onOpenSettingsSection("mcp")}
                   >
-                    {backbone.mcpServers.length} MCP
+                    {t("sidebar.mcp", { n: backbone.mcpServers.length })}
                   </button>
                   {" · "}
                   <button
@@ -278,12 +276,16 @@ export const AppSidebar = memo(function AppSidebar({
                     className="auth-link"
                     onClick={() => onOpenSettingsSection("plugins")}
                   >
-                    {backbone.plugins.length} plugin
-                    {backbone.plugins.length === 1 ? "" : "s"}
+                    {t(
+                      backbone.plugins.length === 1
+                        ? "sidebar.plugin"
+                        : "sidebar.plugins",
+                      { n: backbone.plugins.length },
+                    )}
                   </button>
                 </span>
               ) : (
-                `${backbone.skills.length} skills · ${backbone.mcpServers.length} MCP · ${backbone.plugins.length} plugin${backbone.plugins.length === 1 ? "" : "s"}`
+                `${t("sidebar.skills", { n: backbone.skills.length })} · ${t("sidebar.mcp", { n: backbone.mcpServers.length })} · ${t(backbone.plugins.length === 1 ? "sidebar.plugin" : "sidebar.plugins", { n: backbone.plugins.length })}`
               )
             ) : (
               auth?.method || "session"
@@ -296,7 +298,7 @@ export const AppSidebar = memo(function AppSidebar({
             onClick={onLogout}
             disabled={authBusy || isOpening}
           >
-            Sign out
+            {t("sidebar.signOut")}
           </button>
         </div>
       </div>
@@ -304,25 +306,23 @@ export const AppSidebar = memo(function AppSidebar({
       <div className="sidebar-scroll">
         <div className="sidebar-section">
           <div className="sidebar-section-head">
-            <h2>Chats</h2>
+            <h2>{t("sidebar.chats")}</h2>
             <button
               type="button"
               className="btn ghost btn-sm"
               disabled={busyGate}
               title={
-                conn === "busy"
-                  ? "Stop the current turn before starting a new chat"
-                  : "Start a new chat (same as CLI /new)"
+                conn === "busy" ? t("sidebar.newBusy") : t("sidebar.newTitle")
               }
               onClick={() => onOpenSession({ mode: "new" })}
             >
-              New
+              {t("sidebar.new")}
             </button>
           </div>
           <div className="recent-list session-list">
             {sessions.length === 0 ? (
               <p className="sidebar-hint">
-                No saved chats yet for this project.
+                {t("sidebar.noChats")}
               </p>
             ) : (
               sessions.map((s) =>
@@ -341,8 +341,8 @@ export const AppSidebar = memo(function AppSidebar({
                       value={renameDraft}
                       disabled={renameBusy}
                       maxLength={100}
-                      aria-label="Chat title"
-                      placeholder="Chat title"
+                      aria-label={t("sidebar.chatTitle")}
+                      placeholder={t("sidebar.chatTitle")}
                       onChange={(e) => setRenameDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") {
@@ -371,7 +371,7 @@ export const AppSidebar = memo(function AppSidebar({
                       type="button"
                       className={`recent-item ${s.id === sessionId ? "active" : ""}`}
                       disabled={busyGate}
-                      title={`${s.title || s.id}\nRight-click for rename or delete`}
+                      title={t("sidebar.rightClick", { title: s.title || s.id })}
                       onClick={() =>
                         onOpenSession({ mode: "resume", sessionId: s.id })
                       }
@@ -386,18 +386,22 @@ export const AppSidebar = memo(function AppSidebar({
                         openChatMenu(e, s);
                       }}
                     >
-                      <span className="name">{s.title || "(no summary)"}</span>
+                      <span className="name">{s.title || t("sidebar.noSummary")}</span>
                       <span className="path">
                         {formatSessionWhen(s.lastActiveAt || s.updatedAt)}
-                        {s.numChatMessages ? ` · ${s.numChatMessages} msgs` : ""}
+                        {s.numChatMessages
+                          ? ` · ${t("sidebar.msgs", { n: s.numChatMessages })}`
+                          : ""}
                       </span>
                     </button>
                     {onRenameSession || onDeleteSession ? (
                       <button
                         type="button"
                         className="session-more-btn"
-                        title="Chat options"
-                        aria-label={`Options for ${s.title || "chat"}`}
+                        title={t("sidebar.chatOptions")}
+                        aria-label={t("sidebar.optionsFor", {
+                          name: s.title || t("sidebar.thisChat"),
+                        })}
                         disabled={renameBusy}
                         onClick={(e) => {
                           e.preventDefault();
@@ -416,7 +420,7 @@ export const AppSidebar = memo(function AppSidebar({
         </div>
 
         <div className="sidebar-section">
-          <h2>Recent projects</h2>
+          <h2>{t("sidebar.recent")}</h2>
           <div className="recent-list">
             {recentProjects.map((p) => (
               <button
@@ -429,7 +433,7 @@ export const AppSidebar = memo(function AppSidebar({
                 <span className="name">
                   {basen(p)}
                   {openCheckouts.some((row) => samePathKey(row.cwd, p)) ? (
-                    <span className="open-badge">open</span>
+                    <span className="open-badge">{t("sidebar.openBadge")}</span>
                   ) : null}
                 </span>
                 <span className="path">{redact(p)}</span>
@@ -441,14 +445,18 @@ export const AppSidebar = memo(function AppSidebar({
 
       <div className="sidebar-footer">
         <div className="sidebar-meta" title={sessionId || undefined}>
-          Session: {sessionId ? sessionId.slice(0, 8) : "—"}…
+          {t("sidebar.session", {
+            id: sessionId ? sessionId.slice(0, 8) : "—",
+          })}
         </div>
-        <div className="sidebar-meta">App v{infoVersion || "…"}</div>
+        <div className="sidebar-meta">
+          {t("sidebar.appVersion", { version: infoVersion || "…" })}
+        </div>
         <div
           className="sidebar-meta"
           title={redact(grokBinary || "") || undefined}
         >
-          Binary: {redact(grokBinary)}
+          {t("sidebar.binary", { path: redact(grokBinary) || "" })}
         </div>
       </div>
       </>
@@ -467,7 +475,7 @@ export const AppSidebar = memo(function AppSidebar({
               role="menuitem"
               onClick={() => startRename(chatMenu.session)}
             >
-              Rename
+              {t("sidebar.rename")}
             </button>
           ) : null}
           {onDeleteSession ? (
@@ -477,7 +485,7 @@ export const AppSidebar = memo(function AppSidebar({
               className="danger"
               onClick={() => void confirmDelete(chatMenu.session)}
             >
-              Delete
+              {t("sidebar.delete")}
             </button>
           ) : null}
         </div>

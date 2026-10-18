@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "../lib/i18n";
 
 export type McpElicitField = {
   name: string;
@@ -177,6 +178,7 @@ export function McpElicitDialog({
   request: McpElicitRequest | null;
   onRespond: (reqId: string, decision: McpElicitDecision) => void;
 }) {
+  const { t } = useI18n();
   const fields = useMemo(
     () => parseFormFields(request?.requestedSchema),
     [request?.reqId, request?.requestedSchema],
@@ -201,8 +203,8 @@ export function McpElicitDialog({
   if (!request) return null;
 
   const title = request.serverName
-    ? `${request.serverName} needs input`
-    : "MCP server needs input";
+    ? t("elicit.titleFor", { server: request.serverName })
+    : t("elicit.title");
 
   const setField = (name: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -236,7 +238,7 @@ export function McpElicitDialog({
       if (field.type === "multi") {
         const list = Array.isArray(raw) ? raw : [];
         if (field.required && list.length === 0) {
-          nextErrors[field.name] = "Select at least one option";
+          nextErrors[field.name] = t("elicit.selectOne");
         } else {
           content[field.name] = list;
         }
@@ -245,7 +247,7 @@ export function McpElicitDialog({
       if (field.type === "number") {
         const n = raw === "" || raw == null ? NaN : Number(raw);
         if (field.required && !Number.isFinite(n)) {
-          nextErrors[field.name] = "Enter a number";
+          nextErrors[field.name] = t("elicit.enterNumber");
         } else if (Number.isFinite(n)) {
           content[field.name] = n;
         }
@@ -253,7 +255,7 @@ export function McpElicitDialog({
       }
       const text = String(raw ?? "").trim();
       if (field.required && !text) {
-        nextErrors[field.name] = "Required";
+        nextErrors[field.name] = t("elicit.required");
       } else if (text) {
         content[field.name] = text;
       }
@@ -275,7 +277,7 @@ export function McpElicitDialog({
       await window.grokDesktop.openExternal(url);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setOpenError(msg || "Could not open the URL");
+      setOpenError(msg || t("elicit.openFailed"));
       return;
     }
     onRespond(request.reqId, { outcome: "accept" });
@@ -298,7 +300,7 @@ export function McpElicitDialog({
           <button
             type="button"
             className="btn ghost btn-sm"
-            aria-label="Cancel"
+            aria-label={t("elicit.cancel")}
             onClick={() => onRespond(request.reqId, { outcome: "cancel" })}
           >
             ✕
@@ -332,14 +334,14 @@ export function McpElicitDialog({
             className="btn"
             onClick={() => onRespond(request.reqId, { outcome: "cancel" })}
           >
-            Cancel
+            {t("elicit.cancel")}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => onRespond(request.reqId, { outcome: "decline" })}
           >
-            Decline
+            {t("elicit.decline")}
           </button>
           {request.mode === "url" ? (
             <button
@@ -348,11 +350,11 @@ export function McpElicitDialog({
               disabled={!isHttpUrl(request.url || "")}
               onClick={acceptUrl}
             >
-              Open and continue
+              {t("elicit.openAndAccept")}
             </button>
           ) : (
             <button type="button" className="btn primary" onClick={acceptForm}>
-              Submit
+              {t("elicit.submit")}
             </button>
           )}
         </div>

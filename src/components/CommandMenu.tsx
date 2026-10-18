@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { SlashCommand } from "../lib/commands";
+import { commandDescription, type SlashCommand } from "../lib/commands";
+import { useI18n } from "../lib/i18n";
 
 export function CommandMenu({
   items,
@@ -14,6 +15,7 @@ export function CommandMenu({
   onHover: (index: number) => void;
 }) {
   const listRef = useRef<HTMLUListElement | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     const list = listRef.current;
@@ -26,17 +28,15 @@ export function CommandMenu({
 
   if (items.length === 0) {
     return (
-      <div className="command-menu" role="listbox" aria-label="Slash commands">
-        <div className="command-menu-empty">No matching commands</div>
+      <div className="command-menu" role="listbox" aria-label={t("cmd.aria")}>
+        <div className="command-menu-empty">{t("cmd.empty")}</div>
       </div>
     );
   }
 
   return (
-    <div className="command-menu" role="listbox" aria-label="Slash commands">
-      <div className="command-menu-hint">
-        Skills &amp; commands · ↑↓ · Enter run · Tab/click complete · Esc dismiss
-      </div>
+    <div className="command-menu" role="listbox" aria-label={t("cmd.aria")}>
+      <div className="command-menu-hint">{t("cmd.hint")}</div>
       <ul className="command-menu-list" ref={listRef}>
         {items.map((cmd, i) => {
           const active = i === activeIndex;
@@ -57,8 +57,8 @@ export function CommandMenu({
                 <span className="command-menu-name">/{cmd.name}</span>
                 <span className="command-menu-desc">
                   {cmd.inputHint
-                    ? `${cmd.description} · ${cmd.inputHint}`
-                    : cmd.description}
+                    ? `${commandDescription(cmd, t)} · ${cmd.inputHint}`
+                    : commandDescription(cmd, t)}
                 </span>
                 <span className={`command-menu-badge ${cmd.source}`}>
                   {cmd.source === "desktop"

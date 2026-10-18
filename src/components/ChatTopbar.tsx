@@ -7,6 +7,7 @@ import { basen } from "../lib/path-utils";
 import { usePrivacy } from "../lib/privacy-context";
 import type { AvailableModel } from "../vite-env";
 import { ElevatedSafetyChips } from "./ElevatedSafetyChips";
+import { useI18n } from "../lib/i18n";
 import { Spinner } from "./BrandMark";
 
 export const ChatTopbar = memo(function ChatTopbar({
@@ -73,6 +74,7 @@ export const ChatTopbar = memo(function ChatTopbar({
   onStop: () => void;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const runningTasks = backgroundTasks.filter((t) => t.status === "running");
   const modelLabel = modelName || modelId || null;
   const modelTitle = modelId
@@ -107,15 +109,15 @@ export const ChatTopbar = memo(function ChatTopbar({
         {canPickModel ? (
           <label
             className="perm-mode-topbar"
-            title={modelTitle || "Session model"}
+            title={modelTitle || t("topbar.modelAria")}
           >
-            <span className="perm-mode-topbar-label">Model</span>
+            <span className="perm-mode-topbar-label">{t("topbar.model")}</span>
             <select
               className="perm-mode-select"
               key={`${modelId || "none"}:${modelSelectEpoch}`}
               value={selectModelId}
               disabled={Boolean(pendingModelId)}
-              aria-label="Session model"
+              aria-label={t("topbar.modelAria")}
               onChange={(e) => onModel?.(e.target.value)}
             >
               {modelOptions.map((m) => (
@@ -129,65 +131,67 @@ export const ChatTopbar = memo(function ChatTopbar({
           <span
             className="model-topbar"
             title={modelTitle}
-            aria-label={`Current model: ${modelTitle || modelLabel}`}
+            aria-label={t("topbar.currentModel", {
+              name: modelTitle || modelLabel,
+            })}
           >
-            <span className="perm-mode-topbar-label">Model</span>
+            <span className="perm-mode-topbar-label">{t("topbar.model")}</span>
             <span className="model-topbar-value">{modelLabel}</span>
           </span>
         ) : null}
         <label
           className="perm-mode-topbar"
-          title="Ask = approve every tool. Auto = reads and browsing go through; edits/posts still ask (or Allow writes this session). Always = skip approvals. Switching Auto mid-turn allows any safe prompts already waiting — no Stop needed."
+          title={t("topbar.permsTitle")}
         >
-          <span className="perm-mode-topbar-label">Perms</span>
+          <span className="perm-mode-topbar-label">{t("topbar.perms")}</span>
           <select
             className="perm-mode-select"
             value={permissionMode}
-            aria-label="Tool permission mode"
+            aria-label={t("topbar.permsAria")}
             onChange={(e) =>
               onPermissionMode(e.target.value as PermissionMode)
             }
           >
-            <option value="ask">Ask</option>
-            <option value="auto">Auto</option>
-            <option value="always-approve">Always</option>
+            <option value="ask">{t("topbar.ask")}</option>
+            <option value="auto">{t("topbar.auto")}</option>
+            <option value="always-approve">{t("topbar.always")}</option>
           </select>
         </label>
         <label
           className="perm-mode-topbar"
-          title="Reasoning effort for the current model (/effort)"
+          title={t("topbar.effortTitle")}
         >
-          <span className="perm-mode-topbar-label">Effort</span>
+          <span className="perm-mode-topbar-label">{t("topbar.effort")}</span>
           <select
             className="perm-mode-select"
             value={reasoningEffort}
-            aria-label="Reasoning effort"
+            aria-label={t("topbar.effortAria")}
             onChange={(e) =>
               onReasoningEffort(e.target.value as ReasoningEffort)
             }
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="xhigh">X-High</option>
+            <option value="low">{t("topbar.low")}</option>
+            <option value="medium">{t("topbar.medium")}</option>
+            <option value="high">{t("topbar.high")}</option>
+            <option value="xhigh">{t("topbar.xhigh")}</option>
           </select>
         </label>
         {sessionMode === "plan" ? (
           <span
             className="status-pill plan-mode-pill"
-            title="Plan mode is on — reply to questions in the composer. File edits stay blocked until you approve a plan."
+            title={t("topbar.planTitle")}
             role="status"
           >
-            Plan mode
+            {t("topbar.planMode")}
           </span>
         ) : null}
         {runningTasks.length > 0 ? (
           <span
             className="status-pill"
-            title="Background tasks running — see Tasks dock (bottom-right)"
+            title={t("topbar.tasksTitle")}
           >
             <span className="status-dot busy" />
-            Tasks {runningTasks.length}
+            {t("topbar.tasks", { n: runningTasks.length })}
           </span>
         ) : null}
         <span
@@ -214,34 +218,34 @@ export const ChatTopbar = memo(function ChatTopbar({
           <button
             className="btn btn-sm topbar-btn"
             type="button"
-            title="Summarize older turns to free context. Does not send a chat message."
+            title={t("topbar.compressTitle")}
             disabled={conn !== "online" || isOpening || compacting}
             onClick={() => onCompress?.()}
           >
-            {compacting ? "Compressing…" : "Compress"}
+            {compacting ? t("topbar.compressing") : t("topbar.compress")}
           </button>
         ) : null}
         {onOpenPreview ? (
           <button
             className="btn btn-sm topbar-btn"
             type="button"
-            title="Open a detachable Preview window (move it to another screen)"
+            title={t("topbar.previewTitle")}
             onClick={onOpenPreview}
           >
-            Preview
+            {t("topbar.preview")}
           </button>
         ) : null}
         <label
           className="hide-thinking"
-          title="Thinking stays folded in the transcript. Untick to show it in the scroll."
+          title={t("topbar.hideThinkingTitle")}
         >
           <input
             type="checkbox"
             checked={hideThinking}
-            aria-label="Hide thinking"
+            aria-label={t("topbar.hideThinking")}
             onChange={(e) => onHideThinking?.(e.target.checked)}
           />
-          Hide thinking
+          {t("topbar.hideThinking")}
         </label>
         {conn === "busy" && (
           <button
@@ -249,7 +253,7 @@ export const ChatTopbar = memo(function ChatTopbar({
             type="button"
             onClick={onStop}
           >
-            Stop
+            {t("topbar.stop")}
           </button>
         )}
         </div>

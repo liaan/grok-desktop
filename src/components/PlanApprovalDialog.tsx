@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { usePrivacy } from "../lib/privacy-context";
+import { useI18n } from "../lib/i18n";
 
 export type PlanApprovalRequest = {
   reqId: string;
@@ -26,6 +27,7 @@ export function PlanApprovalDialog({
   request: PlanApprovalRequest | null;
   onRespond: (reqId: string, decision: PlanApprovalDecision) => void;
 }) {
+  const { t } = useI18n();
   const [feedback, setFeedback] = useState("");
   const [needNotes, setNeedNotes] = useState(false);
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -58,7 +60,7 @@ export function PlanApprovalDialog({
 
   const body = request.planContent?.trim()
     ? redact(request.planContent)
-    : "_No plan was written yet. You can still approve to start implementing, request changes, or abandon plan mode._";
+    : t("plan.empty");
   const planPath = request.planFilePath
     ? redact(request.planFilePath)
     : null;
@@ -93,11 +95,11 @@ export function PlanApprovalDialog({
         aria-labelledby="plan-approval-title"
       >
         <div className="modal-header">
-          <h2 id="plan-approval-title">Plan ready for review</h2>
+          <h2 id="plan-approval-title">{t("plan.title")}</h2>
           <button
             type="button"
             className="btn ghost btn-sm"
-            aria-label="Abandon plan"
+            aria-label={t("plan.abandon")}
             onClick={() => onRespond(request.reqId, { type: "abandoned" })}
           >
             ✕
@@ -116,7 +118,7 @@ export function PlanApprovalDialog({
         </div>
 
         <label className="plan-feedback-label">
-          <span>Comments</span>
+          <span>{t("plan.comments")}</span>
           <textarea
             ref={notesRef}
             className={`plan-feedback-input${needNotes ? " invalid" : ""}`}
@@ -131,18 +133,16 @@ export function PlanApprovalDialog({
               e.preventDefault();
               approve();
             }}
-            placeholder="Answer questions, add notes, or request revisions…"
+            placeholder={t("plan.placeholder")}
             aria-invalid={needNotes || undefined}
           />
           {needNotes ? (
             <span className="plan-feedback-hint warn">
-              Add a comment to request changes, or approve as-is.
+              {t("plan.commentRequired")}
             </span>
           ) : (
             <span className="plan-feedback-hint">
-              Request changes sends the agent back to planning. Approve with
-              comments starts building and keeps these notes. Ctrl/⌘+Enter
-              approves.
+              {t("plan.hint")}
             </span>
           )}
         </label>
@@ -153,13 +153,13 @@ export function PlanApprovalDialog({
             className="btn danger"
             onClick={() => onRespond(request.reqId, { type: "abandoned" })}
           >
-            Abandon
+            {t("plan.abandonShort")}
           </button>
           <button type="button" className="btn" onClick={requestChanges}>
-            Request changes
+            {t("plan.requestChanges")}
           </button>
           <button type="button" className="btn primary" onClick={approve}>
-            {notes ? "Approve with comments" : "Approve & build"}
+            {notes ? t("plan.approveComments") : t("plan.approveBuild")}
           </button>
         </div>
       </div>

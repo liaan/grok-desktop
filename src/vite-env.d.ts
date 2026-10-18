@@ -418,6 +418,8 @@ export type AppInfo = {
   sandboxBackend: string;
   /** UI appearance */
   theme: "dark" | "light";
+  /** system | en | zh-CN */
+  localePref?: "system" | "en" | "zh-CN";
   /**
    * Display-only: redact $HOME → ~ in the UI (screenshots / demos).
    * Does not change agent paths or on-disk data.
@@ -654,6 +656,7 @@ declare global {
       setAllowOutsideProject: (value: boolean) => Promise<boolean>;
       setSandboxTerminal: (value: boolean) => Promise<boolean>;
       setTheme: (value: "dark" | "light") => Promise<"dark" | "light">;
+      setLocale: (value: "system" | "en" | "zh-CN") => Promise<"system" | "en" | "zh-CN">;
       setPrivacyMode: (value: boolean) => Promise<boolean>;
       setAutoCompactAt: (
         value: "off" | "64k" | "128k" | "192k",

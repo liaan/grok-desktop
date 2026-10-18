@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePathKey } from "../../lib/path-utils";
+import { useI18n } from "../../lib/i18n";
 import {
   canEditFile,
   finishSave,
@@ -17,6 +18,7 @@ export function useFileDocument({
   onDirtyChange?: (dirty: boolean) => void;
   onAfterSave?: () => void;
 }) {
+  const { t } = useI18n();
   const [doc, setDoc] = useState<FileDocument | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -28,8 +30,8 @@ export function useFileDocument({
 
   const confirmLeave = useCallback(() => {
     if (!dirty) return true;
-    return window.confirm("Discard unsaved edits?");
-  }, [dirty]);
+    return window.confirm(t("files.discardEdits"));
+  }, [dirty, t]);
 
   const loadInto = useCallback(async (next: PeekTarget, seq: number) => {
     try {
@@ -134,9 +136,7 @@ export function useFileDocument({
         normalizePathKey(doc.absPath) === normalizePathKey(absPath)
       ) {
         if (
-          !window.confirm(
-            "This file has unsaved edits. Open the on-disk version anyway?",
-          )
+          !window.confirm(t("files.openDiskConfirm"))
         ) {
           return;
         }
@@ -164,7 +164,7 @@ export function useFileDocument({
         setOpenError(err instanceof Error ? err.message : String(err));
       }
     },
-    [dirty, doc],
+    [dirty, doc, t],
   );
 
   const savePeek = useCallback(async () => {

@@ -7,6 +7,7 @@ import {
   relativeDisplay,
 } from "../../lib/path-utils";
 import { usePrivacy } from "../../lib/privacy-context";
+import { useI18n } from "../../lib/i18n";
 import { RefreshIcon } from "../BrandMark";
 import {
   joinProjectPath,
@@ -40,39 +41,40 @@ function FileRowActions({
   onEdit: () => void;
   onCopy: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="file-actions">
       {!isDir ? (
         <button
           type="button"
           className="btn ghost btn-sm file-action"
-          title={`Open in ${editorLabel}`}
-          aria-label={`Open ${name} in ${editorLabel}`}
+          title={t("files.openIn", { editor: editorLabel })}
+          aria-label={t("files.openInAria", { name, editor: editorLabel })}
           onClick={(e) => {
             e.stopPropagation();
             onEdit();
           }}
         >
-          Edit
+          {t("files.edit")}
         </button>
       ) : null}
       <button
         type="button"
         className="btn ghost btn-sm file-action"
-        title="Copy path"
-        aria-label={`Copy path of ${name}`}
+        title={t("files.copyPath")}
+        aria-label={t("files.copyPathOf", { name })}
         onClick={(e) => {
           e.stopPropagation();
           onCopy();
         }}
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? t("peek.copied") : t("peek.copy")}
       </button>
       <button
         type="button"
         className="btn ghost btn-sm file-reveal"
-        title="Show in folder"
-        aria-label={`Show ${name} in folder`}
+        title={t("files.showFolder")}
+        aria-label={t("files.showInFolderAria", { name })}
         onClick={(e) => {
           e.stopPropagation();
           void window.grokDesktop.showItem(absPath);
@@ -251,6 +253,7 @@ export function FileBrowser({
   isNavQuiet: () => boolean;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
 
   useEffect(() => {
@@ -293,8 +296,8 @@ export function FileBrowser({
         "btn ghost btn-sm file-refresh-btn" +
         (listingBusy ? " is-loading" : "")
       }
-      title={tab === "files" ? "Refresh files" : "Refresh changes"}
-      aria-label={tab === "files" ? "Refresh files" : "Refresh changes"}
+      title={tab === "files" ? t("files.refreshFiles") : t("files.refreshChanges")}
+      aria-label={tab === "files" ? t("files.refreshFiles") : t("files.refreshChanges")}
       aria-busy={listingBusy}
       disabled={listingBusy}
       onClick={onRefresh}
@@ -331,7 +334,7 @@ export function FileBrowser({
               <button
                 type="button"
                 className="btn ghost btn-sm"
-                title="Up one folder"
+                title={t("files.up")}
                 onClick={() => upPath && onNavigate(upPath)}
               >
                 ↑
@@ -341,8 +344,7 @@ export function FileBrowser({
             {refreshBtn}
           </div>
           <p className="file-browser-hint">
-            Click a file to preview. Markdown renders in the preview. Edit
-            opens it in {editorLabel}.
+            {t("files.clickHint", { editor: editorLabel })}
           </p>
           {openError ? (
             <p style={{ color: "var(--danger, #f87171)", fontSize: 12 }}>
@@ -351,7 +353,7 @@ export function FileBrowser({
           ) : null}
           {filesLoading && files.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              Loading…
+              {t("files.loading")}
             </p>
           ) : null}
           {filesError ? (
@@ -361,7 +363,7 @@ export function FileBrowser({
           ) : null}
           {!filesLoading && !filesError && files.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              No files (or empty folder).
+              {t("files.emptyFolder")}
             </p>
           ) : null}
           {files.map((f) => {
@@ -415,14 +417,14 @@ export function FileBrowser({
       ) : (
         <>
           <div className="file-browser-path">
-            <span className="file-browser-label">Local changes</span>
+            <span className="file-browser-label">{t("files.localChanges")}</span>
             <label className="hide-ignored">
               <input
                 type="checkbox"
                 checked={hideIgnored}
                 onChange={(e) => onHideIgnoredChange(e.target.checked)}
               />
-              Hide ignored
+              {t("files.hideIgnored")}
             </label>
             {refreshBtn}
           </div>
@@ -433,7 +435,7 @@ export function FileBrowser({
           ) : null}
           {changesLoading && changes.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-              Loading…
+              {t("files.loading")}
             </p>
           ) : null}
           {changesError ? (
@@ -444,8 +446,8 @@ export function FileBrowser({
           {!changesLoading && !changesError && visibleChanges.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
               {hideIgnored && ignoredChangeCount
-                ? `No local changes (${ignoredChangeCount} ignored hidden).`
-                : "No local changes."}
+                ? t("files.noChangesHidden", { n: ignoredChangeCount })
+                : t("files.noChanges")}
             </p>
           ) : null}
           {visibleChanges.map((entry) => {
@@ -460,16 +462,16 @@ export function FileBrowser({
                 : entry.status || "M";
             const badgeLabel =
               badge === "I"
-                ? "Ignored"
+                ? t("files.badgeIgnored")
                 : badge === "U"
-                  ? "Untracked"
+                  ? t("files.badgeUntracked")
                   : badge === "D"
-                    ? "Deleted"
+                    ? t("files.badgeDeleted")
                     : badge === "A"
-                      ? "Added"
+                      ? t("files.badgeAdded")
                       : badge === "R"
-                        ? "Renamed"
-                        : "Modified";
+                        ? t("files.badgeRenamed")
+                        : t("files.badgeModified");
             const abs = joinProjectPath(project, entry.path);
             return (
               <div
@@ -537,7 +539,7 @@ export function FileBrowser({
                 setCtxMenu(null);
               }}
             >
-              Open in {editorLabel}
+              {t("files.openIn", { editor: editorLabel })}
             </button>
           ) : null}
           <button
@@ -548,7 +550,7 @@ export function FileBrowser({
               setCtxMenu(null);
             }}
           >
-            Copy path
+            {t("files.copyPath")}
           </button>
           <button
             type="button"
@@ -558,7 +560,7 @@ export function FileBrowser({
               setCtxMenu(null);
             }}
           >
-            Show in folder
+            {t("files.showFolder")}
           </button>
         </div>
       ) : null}

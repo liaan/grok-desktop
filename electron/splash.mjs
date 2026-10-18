@@ -33,7 +33,7 @@ export function hasSplash() {
  * @param {unknown} theme
  * @returns {import('electron').BrowserWindow}
  */
-export function createSplashWindow(theme) {
+export function createSplashWindow(theme, lang = "en") {
   closeSplash();
   splashAllowed = true;
   const t = bootTheme(theme);
@@ -60,7 +60,7 @@ export function createSplashWindow(theme) {
   splash.setMenu(null);
   splashWindow = splash;
   void splash.loadFile(path.join(__dirname, "splash.html"), {
-    query: { theme: t },
+    query: { theme: t, lang: lang === "zh-CN" ? "zh-CN" : "en" },
   });
   splash.once("ready-to-show", () => {
     if (!splashAllowed || splash.isDestroyed()) {

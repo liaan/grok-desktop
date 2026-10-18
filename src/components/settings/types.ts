@@ -24,46 +24,46 @@ export type SettingsNavGroup = {
 
 export const SETTINGS_NAV: SettingsNavGroup[] = [
   {
-    label: "App",
+    label: "nav.app",
     items: [
-      { id: "general", label: "General" },
-      { id: "engine", label: "Engine" },
+      { id: "general", label: "nav.general" },
+      { id: "engine", label: "nav.engine" },
     ],
   },
   {
-    label: "Agent",
+    label: "nav.agent",
     items: [
-      { id: "agent", label: "Safety" },
-      { id: "coding-data", label: "Coding data" },
+      { id: "agent", label: "nav.safety" },
+      { id: "coding-data", label: "nav.codingData" },
     ],
   },
   {
-    label: "Extensions",
+    label: "nav.extensions",
     items: [
-      { id: "mcp", label: "MCP" },
-      { id: "plugins", label: "Plugins" },
-      { id: "skills", label: "Skills" },
+      { id: "mcp", label: "nav.mcp" },
+      { id: "plugins", label: "nav.plugins" },
+      { id: "skills", label: "nav.skills" },
     ],
   },
   {
-    label: "Advanced",
+    label: "nav.advanced",
     items: [
-      { id: "updates", label: "Updates" },
-      { id: "diagnostics", label: "Diagnostics" },
+      { id: "updates", label: "nav.updates" },
+      { id: "diagnostics", label: "nav.diagnostics" },
     ],
   },
 ];
 
 export const PAGE_TITLES: Record<SettingsPageId, string> = {
-  general: "General",
-  engine: "Engine",
-  agent: "Safety",
-  "coding-data": "Coding data",
-  mcp: "MCP servers",
-  plugins: "Plugins",
-  skills: "Skills",
-  updates: "Updates",
-  diagnostics: "Diagnostics",
+  general: "nav.general",
+  engine: "nav.engine",
+  agent: "nav.safety",
+  "coding-data": "nav.codingData",
+  mcp: "page.mcp",
+  plugins: "nav.plugins",
+  skills: "nav.skills",
+  updates: "nav.updates",
+  diagnostics: "nav.diagnostics",
 };
 
 export function pageFromFocus(

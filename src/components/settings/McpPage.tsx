@@ -12,6 +12,7 @@ import type {
   McpDoctorServer,
   McpServerInfo,
 } from "../../vite-env";
+import { useI18n } from "../../lib/i18n";
 import {
   FolderTrustBanner,
   folderTrustBannerVisible,
@@ -29,6 +30,17 @@ type TestView = {
   toolCount?: number | null;
   error?: string | null;
   needsAuth?: boolean;
+};
+
+type TFunc = (key: string, vars?: Record<string, string | number>) => string;
+
+const MCP_STATUS_KEYS: Record<string, string> = {
+  ready: "mcp.status.ready",
+  initializing: "mcp.status.initializing",
+  "needs auth": "mcp.status.needsAuth",
+  "needs setup": "mcp.status.needsSetup",
+  unavailable: "mcp.status.unavailable",
+  unknown: "mcp.status.unknown",
 };
 
 function looksLikeOauthFail(text: string | null | undefined): boolean {
@@ -90,7 +102,7 @@ function reportKey(s: { name: string }): string {
   return s.name;
 }
 
-function viewFromDoctorServer(row: McpDoctorServer): TestView {
+function viewFromDoctorServer(row: McpDoctorServer, t: TFunc): TestView {
   const needsAuth =
     Boolean(row.needsAuth) ||
     (row.checks || []).some(
@@ -105,8 +117,8 @@ function viewFromDoctorServer(row: McpDoctorServer): TestView {
     error: row.healthy
       ? null
       : needsAuth
-        ? "This server needs a browser sign-in before Test can handshake."
-        : "Doctor reported this server as failing.",
+        ? t("mcp.needsBrowser")
+        : t("mcp.doctorFail"),
     needsAuth,
   };
 }
@@ -114,13 +126,14 @@ function viewFromDoctorServer(row: McpDoctorServer): TestView {
 function applyDoctorResult(
   res: McpDoctorResult,
   names: string[],
+  t: TFunc,
 ): Record<string, TestView> {
   const byName = new Map((res.servers || []).map((row) => [row.name, row]));
   const next: Record<string, TestView> = {};
   for (const name of names) {
     const row = byName.get(name);
     if (row) {
-      next[name] = viewFromDoctorServer(row);
+      next[name] = viewFromDoctorServer(row, t);
       continue;
     }
     const fallback = [res.stdout, res.stderr, res.error]
@@ -132,25 +145,23 @@ function applyDoctorResult(
       healthy: res.ok,
       error:
         fallback ||
-        (res.ok
-          ? "Doctor finished with no report for this server."
-          : "Doctor failed."),
+        (res.ok ? t("mcp.doctorNoReport") : t("mcp.doctorFailed")),
       needsAuth: looksLikeOauthFail(fallback),
     };
   }
   return next;
 }
 
-function testHeadline(view: TestView): string {
-  if (view.status === "running") return "Testing…";
+function testHeadline(view: TestView, t: TFunc): string {
+  if (view.status === "running") return t("mcp.testing");
   const n = view.toolCount;
   if (view.healthy) {
-    if (n === 1) return "Healthy · 1 tool";
-    if (n != null) return `Healthy · ${n} tools`;
-    return "Healthy";
+    if (n === 1) return t("mcp.healthyOne");
+    if (n != null) return t("mcp.healthyN", { n });
+    return t("mcp.healthy");
   }
-  if (n != null) return `Failed · ${n} tools`;
-  return "Failed";
+  if (n != null) return t("mcp.failedN", { n });
+  return t("mcp.failed");
 }
 
 export function McpPage({
@@ -177,6 +188,7 @@ export function McpPage({
   const [adding, setAdding] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [authing, setAuthing] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "http" | "sse">("stdio");
@@ -355,7 +367,7 @@ export function McpPage({
 
   const afterWrite = async (ok: boolean, error?: string | null) => {
     if (!ok) {
-      setNote(error || "MCP command failed.");
+      setNote(error || t("mcp.cmdFailed"));
       return;
     }
     setNote(null);
@@ -382,11 +394,7 @@ export function McpPage({
   };
 
   const onRemove = async (s: McpServerInfo) => {
-    if (
-      !window.confirm(
-        `Remove MCP server “${s.name}”? This runs grok mcp remove (does not edit config.toml in the app).`,
-      )
-    ) {
+    if (!window.confirm(t("mcp.removeConfirm", { name: s.name }))) {
       return;
     }
     setWriteBusy(true);
@@ -409,7 +417,7 @@ export function McpPage({
   const onDoctor = async (s?: McpServerInfo) => {
     const names = s ? [s.name] : servers.map((row) => row.name);
     if (names.length === 0) {
-      setNote("No MCP servers to test.");
+      setNote(t("mcp.noneToTest"));
       return;
     }
     setTesting(s ? s.name : "all");
@@ -421,7 +429,7 @@ export function McpPage({
     });
     try {
       const res = await window.grokDesktop.doctorMcp(s?.name);
-      const mapped = applyDoctorResult(res, names);
+      const mapped = applyDoctorResult(res, names, t);
       setReports((prev) => ({ ...prev, ...mapped }));
       setServerList((prev) =>
         prev.map((row) => {
@@ -464,11 +472,7 @@ export function McpPage({
   };
 
   const onLogout = async (s: McpServerInfo) => {
-    if (
-      !window.confirm(
-        `Sign out of “${s.displayName || s.name}”? This removes the stored OAuth token. You will need to sign in again.`,
-      )
-    ) {
+    if (!window.confirm(t("mcp.signOutConfirm", { name: s.displayName || s.name }))) {
       return;
     }
     setWriteBusy(true);
@@ -476,7 +480,7 @@ export function McpPage({
     try {
       const res = await window.grokDesktop.logoutMcpServer(s.name);
       if (!res.ok) {
-        setNote(res.error || `Sign-out failed for “${s.name}”.`);
+        setNote(res.error || t("mcp.signOutFailed", { name: s.name }));
         return;
       }
       setReports((prev) => {
@@ -499,8 +503,8 @@ export function McpPage({
       await afterWrite(true);
       setNote(
         res.removed
-          ? `Signed out of “${s.name}”. Sign in again to reconnect.`
-          : `No stored token for “${s.name}”.`,
+          ? t("mcp.signedOut", { name: s.name })
+          : t("mcp.noToken", { name: s.name }),
       );
     } catch (e: unknown) {
       setNote(e instanceof Error ? e.message : String(e));
@@ -515,7 +519,7 @@ export function McpPage({
     try {
       const res = await window.grokDesktop.authenticateMcpServer(s.name);
       if (res.ok) {
-        setNote(`Signed in to “${s.name}”.`);
+        setNote(t("mcp.signedIn", { name: s.name }));
         setReports((prev) => {
           const next = { ...prev };
           delete next[s.name];
@@ -531,13 +535,13 @@ export function McpPage({
         await reload();
         return;
       }
-      setNote(res.error || `Sign-in failed for “${s.name}”.`);
+      setNote(res.error || t("mcp.signInFailedFor", { name: s.name }));
       setReports((prev) => ({
         ...prev,
         [s.name]: {
           status: "fail",
           healthy: false,
-          error: res.error || "Sign-in failed.",
+          error: res.error || t("mcp.signInFailed"),
           needsAuth: res.status !== "setup_required",
         },
       }));
@@ -551,7 +555,7 @@ export function McpPage({
   const onAdd = async () => {
     const trimmed = (editingName || name).trim();
     if (!trimmed) {
-      setNote("Name is required.");
+      setNote(t("mcp.nameRequired"));
       return;
     }
     const existing = editingName
@@ -570,7 +574,7 @@ export function McpPage({
     ) {
       if (
         !window.confirm(
-          `Save “${trimmed}”? grok mcp add replaces the server definition. Env/header values left blank will be removed. OAuth tokens are kept unless you change the URL.`,
+          t("mcp.saveConfirm", { name: trimmed }),
         )
       ) {
         return;
@@ -619,21 +623,15 @@ export function McpPage({
 
   return (
     <section className="settings-section" ref={sectionRef} id="settings-mcp">
-      <h3>MCP servers</h3>
-      <p className="settings-desc settings-lead">
-        Same as <code>grok mcp</code> and the TUI <code>/mcps</code> modal —
-        add, edit, toggle, test, sign in, or log out here. Status matches the TUI
-        (initializing → ready / needs auth / unavailable). Desktop never edits{" "}
-        <code>config.toml</code>. Sign in only appears when a server needs
-        OAuth. Log out removes the stored token for that server.
-      </p>
+      <h3>{t("page.mcp")}</h3>
+      <p className="settings-desc settings-lead">{t("mcp.lead")}</p>
       <div className="mcp-toolbar">
         <span className="settings-desc">
           {loading
-            ? "Loading…"
+            ? t("files.loading")
             : servers.length === 1
-              ? "1 server"
-              : `${servers.length} servers`}
+              ? t("mcp.serverOne")
+              : t("mcp.serverN", { n: servers.length })}
         </span>
         <div className="mcp-actions">
           <button
@@ -642,7 +640,7 @@ export function McpPage({
             disabled={testLocked || loading || servers.length === 0}
             onClick={() => void onDoctor()}
           >
-            {testing === "all" ? "Testing…" : "Test all"}
+            {testing === "all" ? t("mcp.testing") : t("mcp.testAll")}
           </button>
           <button
             type="button"
@@ -657,7 +655,7 @@ export function McpPage({
               setAdding(true);
             }}
           >
-            {formOpen ? "Cancel" : "Add server"}
+            {formOpen ? t("mcp.cancel") : t("mcp.addServer")}
           </button>
         </div>
       </div>
@@ -671,9 +669,9 @@ export function McpPage({
         onTrust={() => void onTrustFolder()}
       />
 
-      {loading ? <p className="settings-desc">Loading MCP servers…</p> : null}
+      {loading ? <p className="settings-desc">{t("mcp.loadingServers")}</p> : null}
       {!loading && servers.length === 0 ? (
-        <p className="settings-desc">No MCP servers. Add one here — no terminal.</p>
+        <p className="settings-desc">{t("mcp.none")}</p>
       ) : null}
 
       <div className="mcp-list">
@@ -682,7 +680,10 @@ export function McpPage({
           const target = mcpTarget(s);
           const testingThis = testing === s.name || testing === "all";
           const status = resolveMcpCardStatus(s, view);
-          const statusLabel = mcpLiveLabel(status) || "unknown";
+          const liveLabel = mcpLiveLabel(status);
+          const statusLabel = liveLabel
+            ? t(MCP_STATUS_KEYS[liveLabel] || "mcp.status.unknown")
+            : t("mcp.status.unknown");
           return (
             <article
               className={`mcp-card ${cardStatusClass(status)}${s.enabled === false ? " mcp-card-off" : ""}`}
@@ -702,14 +703,14 @@ export function McpPage({
                     <span className="mcp-badge">{s.transport || "unknown"}</span>
                     {s.scope ? <span className="mcp-badge">{s.scope}</span> : null}
                     {s.enabled === false ? (
-                      <span className="mcp-badge mcp-badge-off">disabled</span>
+                      <span className="mcp-badge mcp-badge-off">{t("mcp.disabled")}</span>
                     ) : null}
                     {s.envKeys?.length ? (
-                      <span className="mcp-badge">env {s.envKeys.length}</span>
+                      <span className="mcp-badge">{t("mcp.envN", { n: s.envKeys.length })}</span>
                     ) : null}
                     {s.headerKeys?.length ? (
                       <span className="mcp-badge">
-                        headers {s.headerKeys.length}
+                        {t("mcp.headersN", { n: s.headerKeys.length })}
                       </span>
                     ) : null}
                   </span>
@@ -726,7 +727,7 @@ export function McpPage({
                     disabled={writeLocked}
                     onClick={() => void onToggle(s)}
                   >
-                    {s.enabled === false ? "Enable" : "Disable"}
+                    {s.enabled === false ? t("mcp.enable") : t("mcp.disable")}
                   </button>
                   <button
                     type="button"
@@ -734,17 +735,19 @@ export function McpPage({
                     disabled={testLocked}
                     onClick={() => void onDoctor(s)}
                   >
-                    {testingThis && testing !== "all" ? "Testing…" : "Test"}
+                    {testingThis && testing !== "all"
+                      ? t("mcp.testing")
+                      : t("mcp.test")}
                   </button>
                   {needsFolderTrust(s, view) && parked ? (
                     <button
                       type="button"
                       className="btn btn-sm primary"
                       disabled={trustLocked}
-                      title={folderTrustButtonTitle(hasProject, Boolean(parked))}
+                      title={folderTrustButtonTitle(t, hasProject, Boolean(parked))}
                       onClick={() => void onTrustFolder()}
                     >
-                      {trustBusy ? "Trusting…" : "Trust folder"}
+                      {trustBusy ? t("mcp.trusting") : t("mcp.trustFolder")}
                     </button>
                   ) : null}
                   {mcpNeedsSignIn(s, view) || viewNeedsAuth(view) ? (
@@ -754,16 +757,16 @@ export function McpPage({
                       disabled={authLocked || writeLocked || !hasProject}
                       title={
                         hasProject
-                          ? "Open a browser sign-in (same as TUI /mcps + i)"
-                          : "Open a project first so the live agent can open the browser"
+                          ? t("mcp.signInTitle")
+                          : t("mcp.needProject")
                       }
                       onClick={() => void onAuth(s)}
                     >
                       {authing === s.name
-                        ? "Signing in…"
+                        ? t("mcp.signingIn")
                         : s.signedIn
-                          ? "Re-auth"
-                          : "Sign in"}
+                          ? t("mcp.reAuth")
+                          : t("mcp.signIn")}
                     </button>
                   ) : null}
                   {s.signedIn ? (
@@ -771,10 +774,10 @@ export function McpPage({
                       type="button"
                       className="btn btn-sm"
                       disabled={writeLocked || authLocked}
-                      title="Remove the stored OAuth token for this server"
+                      title={t("mcp.logOutTitle")}
                       onClick={() => void onLogout(s)}
                     >
-                      Log out
+                      {t("mcp.logOut")}
                     </button>
                   ) : null}
                   {isManagedMcp(s) ? null : (
@@ -784,7 +787,7 @@ export function McpPage({
                       disabled={writeLocked}
                       onClick={() => beginEdit(s)}
                     >
-                      Edit
+                      {t("mcp.edit")}
                     </button>
                   )}
                   {isManagedMcp(s) ? null : (
@@ -794,7 +797,7 @@ export function McpPage({
                       disabled={writeLocked}
                       onClick={() => void onRemove(s)}
                     >
-                      Remove
+                      {t("mcp.remove")}
                     </button>
                   )}
                 </div>
@@ -802,6 +805,7 @@ export function McpPage({
               {view ? (
                 <McpTestPanel
                   view={view}
+                  t={t}
                   onAuth={
                     viewNeedsAuth(view)
                       ? () => void onAuth(s)
@@ -833,22 +837,24 @@ export function McpPage({
           >
             <div className="modal-header">
               <h2 id="mcp-form-title">
-                {editingName ? `Edit ${editingName}` : "Add server"}
+                {editingName
+                  ? t("mcp.editTitle", { name: editingName })
+                  : t("mcp.addServer")}
               </h2>
               <button
                 type="button"
                 className="btn ghost btn-sm"
                 disabled={writeLocked}
                 onClick={() => resetForm()}
-                aria-label="Close"
+                aria-label={t("files.close")}
               >
-                Close
+                {t("files.close")}
               </button>
             </div>
             <div className="modal-body mcp-add">
           <div className="mcp-grid-2">
             <label className="mcp-field">
-              <span>Name</span>
+              <span>{t("mcp.name")}</span>
               <input
                 className="settings-input"
                 value={editingName || name}
@@ -859,11 +865,11 @@ export function McpPage({
               />
             </label>
             <label className="mcp-field">
-              <span>Transport</span>
+              <span>{t("mcp.transport")}</span>
               <select
                 className="settings-select"
                 value={transport}
-                aria-label="MCP transport"
+                aria-label={t("mcp.transportAria")}
                 disabled={writeLocked}
                 onChange={(e) =>
                   setTransport(e.target.value as "stdio" | "http" | "sse")
@@ -878,7 +884,7 @@ export function McpPage({
           {transport === "stdio" ? (
             <>
               <label className="mcp-field">
-                <span>Command</span>
+                <span>{t("mcp.command")}</span>
                 <input
                   className="settings-input"
                   value={command}
@@ -889,7 +895,7 @@ export function McpPage({
                 />
               </label>
               <label className="mcp-field">
-                <span>Args</span>
+                <span>{t("mcp.args")}</span>
                 <input
                   className="settings-input"
                   value={argsText}
@@ -899,7 +905,7 @@ export function McpPage({
                   disabled={writeLocked}
                 />
               </label>
-              <span className="mcp-field-label">Environment</span>
+              <span className="mcp-field-label">{t("mcp.env")}</span>
               {envRows.map((row, i) => (
                 <div className="mcp-kv" key={`env-${i}`}>
                   <input
@@ -918,7 +924,7 @@ export function McpPage({
                     className="settings-input"
                     type="password"
                     value={row.value}
-                    placeholder={editingName ? "leave blank to drop" : "value"}
+                    placeholder={editingName ? t("mcp.leaveBlank") : t("mcp.value")}
                     autoComplete="off"
                     disabled={writeLocked}
                     onChange={(e) => {
@@ -931,7 +937,7 @@ export function McpPage({
                     type="button"
                     className="btn btn-sm"
                     disabled={writeLocked || envRows.length === 1}
-                    aria-label="Remove env row"
+                    aria-label={t("mcp.removeEnvRow")}
                     onClick={() =>
                       setEnvRows(envRows.filter((_, idx) => idx !== i))
                     }
@@ -946,13 +952,13 @@ export function McpPage({
                 disabled={writeLocked}
                 onClick={() => setEnvRows([...envRows, { key: "", value: "" }])}
               >
-                Add env
+                {t("mcp.addEnv")}
               </button>
             </>
           ) : (
             <>
               <label className="mcp-field">
-                <span>URL</span>
+                <span>{t("mcp.url")}</span>
                 <input
                   className="settings-input"
                   value={url}
@@ -962,13 +968,13 @@ export function McpPage({
                   disabled={writeLocked}
                 />
               </label>
-              <span className="mcp-field-label">Headers</span>
+              <span className="mcp-field-label">{t("mcp.headers")}</span>
               {headerRows.map((row, i) => (
                 <div className="mcp-kv" key={`hdr-${i}`}>
                   <input
                     className="settings-input"
                     value={row.key}
-                    placeholder="Header"
+                    placeholder={t("mcp.header")}
                     autoComplete="off"
                     disabled={writeLocked}
                     onChange={(e) => {
@@ -981,7 +987,7 @@ export function McpPage({
                     className="settings-input"
                     type="password"
                     value={row.value}
-                    placeholder={editingName ? "leave blank to drop" : "value"}
+                    placeholder={editingName ? t("mcp.leaveBlank") : t("mcp.value")}
                     autoComplete="off"
                     disabled={writeLocked}
                     onChange={(e) => {
@@ -994,7 +1000,7 @@ export function McpPage({
                     type="button"
                     className="btn btn-sm"
                     disabled={writeLocked || headerRows.length === 1}
-                    aria-label="Remove header row"
+                    aria-label={t("mcp.removeHeaderRow")}
                     onClick={() =>
                       setHeaderRows(headerRows.filter((_, idx) => idx !== i))
                     }
@@ -1011,7 +1017,7 @@ export function McpPage({
                   setHeaderRows([...headerRows, { key: "", value: "" }])
                 }
               >
-                Add header
+                {t("mcp.addHeader")}
               </button>
             </>
           )}
@@ -1023,8 +1029,8 @@ export function McpPage({
               onChange={(e) => setProjectScope(e.target.checked)}
             />
             <span>
-              Project scope (<code>.grok/config.toml</code>
-              {hasProject ? "" : " — open a project first"})
+              {t("mcp.projectScope")} (<code>.grok/config.toml</code>
+              {hasProject ? "" : t("mcp.projectScopeNeed")})
             </span>
           </label>
               {note ? (
@@ -1038,7 +1044,7 @@ export function McpPage({
                 disabled={writeLocked}
                 onClick={() => resetForm()}
               >
-                Cancel
+                {t("mcp.cancel")}
               </button>
               <button
                 type="button"
@@ -1047,12 +1053,12 @@ export function McpPage({
                 onClick={() => void onAdd()}
               >
                 {restarting
-                  ? "Restarting…"
+                  ? t("mcp.restarting")
                   : writeBusy
-                    ? "Working…"
+                    ? t("mcp.working")
                     : editingName
-                      ? "Save"
-                      : "Add"}
+                      ? t("peek.save")
+                      : t("mcp.add")}
               </button>
             </div>
           </div>
@@ -1067,11 +1073,13 @@ export function McpPage({
 
 function McpTestPanel({
   view,
+  t,
   onAuth,
   authBusy,
   authDisabled,
 }: {
   view: TestView;
+  t: TFunc;
   onAuth?: () => void;
   authBusy?: boolean;
   authDisabled?: boolean;
@@ -1096,7 +1104,7 @@ function McpTestPanel({
               : ""
         }`}
       >
-        {testHeadline(view)}
+        {testHeadline(view, t)}
       </div>
       {view.checks && view.checks.length > 0 ? (
         <ul className="mcp-checks">
@@ -1129,18 +1137,16 @@ function McpTestPanel({
             className="btn btn-sm"
             disabled={authBusy || authDisabled}
             title={
-              authDisabled
-                ? "Open a project first so the live agent can open the browser"
-                : undefined
+              authDisabled ? t("mcp.needProject") : undefined
             }
             onClick={onAuth}
           >
-            {authBusy ? "Signing in…" : "Sign in with browser"}
+            {authBusy ? t("mcp.signingIn") : t("mcp.signInBrowser")}
           </button>
         </div>
       ) : null}
       {tools.length > 0 ? (
-        <div className="mcp-tools" aria-label="Discovered tools">
+        <div className="mcp-tools" aria-label={t("mcp.discoveredTools")}>
           {tools.map((tool) => (
             <span className="mcp-tool" key={tool}>
               {tool}

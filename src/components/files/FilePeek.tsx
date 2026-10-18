@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { basen } from "../../lib/path-utils";
 import { fileFromDiffPayload, shouldRenderDiff } from "../../lib/line-diff";
 import { usePrivacy } from "../../lib/privacy-context";
+import { useI18n } from "../../lib/i18n";
 import { DiffView } from "../DiffView";
 import { MarkdownPeek } from "./MarkdownPeek";
 import { isMarkdownPath } from "./markdown-doc";
@@ -39,6 +40,7 @@ export function FilePeek({
   onClose: () => void;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const dirty = isDirty(doc);
   const canEdit = canEditFile(doc);
   const peekIsBinary =
@@ -83,7 +85,7 @@ export function FilePeek({
     if (sourceText == null) return null;
     if (sourceText.includes("\u0000")) return null;
     if (sourceText.length > PEEK_CHAR_CAP) {
-      return `${sourceText.slice(0, PEEK_CHAR_CAP)}\n… (truncated)`;
+      return `${sourceText.slice(0, PEEK_CHAR_CAP)}\n${t("peek.truncated")}`;
     }
     return sourceText;
   }, [sourceText]);
@@ -107,29 +109,27 @@ export function FilePeek({
           <button
             type="button"
             className="btn ghost btn-sm"
-            title={
-              sourceMode ? "Show rendered markdown" : "Show markdown source"
-            }
+            title={sourceMode ? t("peek.showRendered") : t("peek.showSource")}
             onClick={() => setSourceMode((on) => !on)}
           >
-            {sourceMode ? "Preview" : "Source"}
+            {sourceMode ? t("peek.preview") : t("peek.source")}
           </button>
         ) : null}
         {canEdit ? (
           <button
             type="button"
             className="btn ghost btn-sm"
-            title="Save (⌘S)"
+            title={t("peek.saveTitle")}
             disabled={!dirty || saving}
             onClick={() => onSave()}
           >
-            {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+            {saving ? t("peek.saving") : dirty ? t("peek.save") : t("peek.saved")}
           </button>
         ) : null}
         <button
           type="button"
           className="btn ghost btn-sm"
-          title={`Open in ${editorLabel}`}
+          title={t("peek.openIn", { editor: editorLabel })}
           onClick={() => onOpenEditor()}
         >
           {editorLabel}
@@ -137,16 +137,16 @@ export function FilePeek({
         <button
           type="button"
           className="btn ghost btn-sm"
-          title="Copy path"
+          title={t("files.copyPath")}
           onClick={() => onCopyPath()}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("peek.copied") : t("peek.copy")}
         </button>
         <button
           type="button"
           className="btn ghost btn-sm file-reveal"
-          title="Show in folder"
-          aria-label={`Show ${basen(doc.path)} in folder`}
+          title={t("files.showFolder")}
+          aria-label={t("peek.showInFolderAria", { name: basen(doc.path) })}
           onClick={() => void window.grokDesktop.showItem(doc.absPath)}
         >
           ↗
@@ -154,8 +154,8 @@ export function FilePeek({
         <button
           type="button"
           className="btn ghost btn-sm"
-          title="Close"
-          aria-label="Close"
+          title={t("files.close")}
+          aria-label={t("files.close")}
           onClick={() => onClose()}
         >
           ×
@@ -166,7 +166,7 @@ export function FilePeek({
       ) : null}
       <div className="file-peek-body">
         {doc.status === "loading" ? (
-          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("files.loading")}</p>
         ) : doc.error && doc.error !== "Binary file" ? (
           <p style={{ color: "var(--danger, #f87171)", fontSize: 13 }}>
             {doc.error}
@@ -175,22 +175,22 @@ export function FilePeek({
           <DiffView diff={peekDiff} className="file-peek-diff" />
         ) : doc.kind === "diff" ? (
           <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-            No textual diff.
+            {t("peek.noDiff")}
           </p>
         ) : peekIsBinary || doc.error === "Binary file" ? (
           <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-            Binary file — open it in {editorLabel} instead.
+            {t("peek.binaryHint", { editor: editorLabel })}
           </p>
         ) : showMarkdown ? (
           <>
             {doc.truncated ? (
               <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                File is too large to edit here. Showing the start of it.
+                {t("peek.tooLargePreview")}
               </p>
             ) : null}
             <MarkdownPeek
               text={redact(peekFileText ?? "")}
-              label={`Preview of ${basen(doc.path)}`}
+              label={t("peek.previewOf", { name: basen(doc.path) })}
               fileAbsPath={doc.absPath}
               project={project}
               onOpenFile={onOpenLinkedFile}
@@ -200,7 +200,7 @@ export function FilePeek({
         ) : doc.truncated ? (
           <>
             <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-              File is too large to edit here. Open it in {editorLabel}.
+              {t("peek.tooLargeEdit", { editor: editorLabel })}
             </p>
             {peekFileText != null ? (
               <pre className="file-peek-text">{redact(peekFileText)}</pre>
@@ -211,7 +211,7 @@ export function FilePeek({
             className="file-peek-editor"
             value={doc.draft}
             spellCheck={false}
-            aria-label={`Edit ${basen(doc.path)}`}
+            aria-label={t("peek.editAria", { name: basen(doc.path) })}
             onChange={(e) => onDraftChange(e.target.value)}
           />
         ) : peekFileText != null ? (

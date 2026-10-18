@@ -4,6 +4,7 @@ import {
   type AutoCompactAt,
 } from "../../../shared/auto-compact.mjs";
 import type { GrokEngineInfo, GrokUpdateCheck } from "../../vite-env";
+import { useI18n } from "../../lib/i18n";
 
 export function EnginePage({
   grokBinary,
@@ -18,6 +19,7 @@ export function EnginePage({
   onSetAutoCompactAt: (next: AutoCompactAt) => void;
   onRestartAgent: () => void;
 }) {
+  const { t } = useI18n();
   const [engine, setEngine] = useState<GrokEngineInfo | null>(null);
   const [engineBusy, setEngineBusy] = useState(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
@@ -37,13 +39,8 @@ export function EnginePage({
     <section className="settings-section">
       <label className="settings-row settings-row-stack">
         <div className="settings-row-text">
-          <span className="settings-label">Auto-compress context</span>
-          <span className="settings-desc">
-            When last context size passes this mark, Desktop calls the agent
-            compact API (same as the topbar Compress button). The CLI still
-            compresses on its own near the hard window. Off unless you want it
-            earlier — pick a lower number to kick off sooner.
-          </span>
+          <span className="settings-label">{t("engine.compact")}</span>
+          <span className="settings-desc">{t("engine.compactDesc")}</span>
         </div>
         <select
           className="settings-select"
@@ -53,17 +50,25 @@ export function EnginePage({
           }
         >
           {AUTO_COMPACT_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id} title={opt.hint}>
-              {opt.id === "off" ? "Off" : opt.label}
+            <option
+              key={opt.id}
+              value={opt.id}
+              title={
+                opt.id === "off"
+                  ? t("engine.autoCompactOffHint")
+                  : t(`engine.autoCompact${opt.id}Hint`)
+              }
+            >
+              {opt.id === "off" ? t("engine.autoCompactOff") : opt.label}
             </option>
           ))}
         </select>
       </label>
       <div className="settings-row settings-row-stack">
         <div className="settings-row-text">
-          <span className="settings-label">Grok CLI</span>
+          <span className="settings-label">{t("engine.cli")}</span>
           <span className="settings-desc">
-            Path:{" "}
+            {t("engine.pathLabel")}{" "}
             <code
               className="settings-path"
               title={engine?.binary || grokBinary || ""}
@@ -72,12 +77,12 @@ export function EnginePage({
             </code>
           </span>
           <span className="settings-desc">
-            Version:{" "}
+            {t("engine.versionLabel")}{" "}
             {engine == null
               ? "…"
               : engine.binaryFound
-                ? engine.version || engine.error || "unknown"
-                : "not found"}
+                ? engine.version || engine.error || t("engine.unknown")
+                : t("engine.notFound")}
           </span>
           {updateNote ? (
             <span className="settings-desc settings-note">{updateNote}</span>
@@ -96,15 +101,17 @@ export function EnginePage({
                   await window.grokDesktop.checkGrokUpdate();
                 if (!check.ok) {
                   setUpdateNote(
-                    check.error || "Could not check for CLI updates.",
+                    check.error || t("engine.checkFailed"),
                   );
                   return;
                 }
                 if (!check.updateAvailable) {
                   setUpdateNote(
                     check.currentVersion
-                      ? `Grok ${check.currentVersion} is up to date.`
-                      : "Grok CLI is up to date.",
+                      ? t("engine.upToDateVersion", {
+                          version: check.currentVersion,
+                        })
+                      : t("engine.upToDate"),
                   );
                   return;
                 }
@@ -112,43 +119,40 @@ export function EnginePage({
                 const to = check.latestVersion || "latest";
                 if (
                   !window.confirm(
-                    `Install Grok CLI ${to}?\n\nCurrent: ${from}\nDesktop will not auto-upgrade the engine.`,
+                    t("engine.installConfirm", { from, to }),
                   )
                 ) {
                   setUpdateNote(
-                    `Update available: ${from} → ${to}. Install cancelled.`,
+                    t("engine.updateCancelled", { from, to }),
                   );
                   return;
                 }
                 const installed = await window.grokDesktop.installGrokUpdate();
                 if (!installed.ok) {
-                  setUpdateNote(installed.error || "CLI update failed.");
+                  setUpdateNote(installed.error || t("engine.cliUpdateFailed"));
                   return;
                 }
                 const next = await window.grokDesktop.getGrokEngine();
                 setEngine(next);
                 setUpdateNote(
-                  `Installed Grok ${next.version || to}. Restart the agent to use it.`,
+                  t("engine.installedNote", { version: next.version || to }),
                 );
               } catch (e: unknown) {
                 const msg = e instanceof Error ? e.message : String(e);
-                setUpdateNote(msg || "CLI update check failed.");
+                setUpdateNote(msg || t("engine.checkFailedShort"));
               } finally {
                 setEngineBusy(false);
               }
             })();
           }}
         >
-          {engineBusy ? "Working…" : "Check for CLI updates"}
+          {engineBusy ? t("mcp.working") : t("engine.checkBtn")}
         </button>
       </div>
       <div className="settings-row">
         <div className="settings-row-text">
-          <span className="settings-label">Restart agent</span>
-          <span className="settings-desc">
-            Respawn the Grok process and resume this chat. Needed after CLI
-            updates or ~/.grok skill changes.
-          </span>
+          <span className="settings-label">{t("engine.restart")}</span>
+          <span className="settings-desc">{t("engine.restartDesc")}</span>
         </div>
         <button
           type="button"
@@ -156,7 +160,7 @@ export function EnginePage({
           disabled={restarting}
           onClick={() => onRestartAgent()}
         >
-          {restarting ? "Restarting…" : "Restart agent"}
+          {restarting ? t("mcp.restarting") : t("engine.restart")}
         </button>
       </div>
     </section>

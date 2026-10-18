@@ -129,12 +129,17 @@ export {
 export async function fileToPendingImage(
   file: Blob,
   name?: string,
+  t?: (key: string, vars?: Record<string, string | number>) => string,
 ): Promise<PendingImage> {
   if (!file.type.startsWith("image/")) {
-    throw new Error("Only image files can be attached");
+    throw new Error(
+      t ? t("err.onlyImages") : "Only image files can be attached",
+    );
   }
   if (file.size > MAX_SOURCE_IMAGE_BYTES) {
-    throw new Error("Image is too large (max 12 MB)");
+    throw new Error(
+      t ? t("err.imageTooLarge") : "Image is too large (max 12 MB)",
+    );
   }
   const mimeType = file.type || "image/png";
   return {
@@ -181,6 +186,7 @@ export async function encodePendingImages(
 /** Decode a list of image blobs; returns successes + first error message. */
 export async function filesToPendingImages(
   files: ArrayLike<Blob | File>,
+  t?: (key: string, vars?: Record<string, string | number>) => string,
 ): Promise<{ images: PendingImage[]; error: string | null }> {
   const images: PendingImage[] = [];
   let error: string | null = null;
@@ -190,6 +196,7 @@ export async function filesToPendingImages(
         await fileToPendingImage(
           file,
           file instanceof File ? file.name : undefined,
+          t,
         ),
       );
     } catch (e: unknown) {
