@@ -163,7 +163,7 @@ Desktop is a shell. Config ownership:
 
 **Outstanding / not in GUI (document for team):**
 
-- No settings UI for models or skill authoring (README changelog: still planned). MCP list/add/edit/toggle/test/sign-in and plugin list/toggle are in Settings; skills are listed read-only.
+- No settings UI for models or skill authoring (`CHANGELOG.md` Unreleased). MCP list/add/edit/toggle/test/sign-in and plugin list/toggle are in Settings; skills are listed read-only.
 - No in-app editor for project `AGENTS.md` (edit in the repo)
 - No plugin marketplace browser (install from git URL only)
 - Config changes under `~/.grok` need a **new agent process** (Settings → Restart agent) to bind into the live session. MCP/plugin writes already restart.
