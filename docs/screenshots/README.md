@@ -9,10 +9,11 @@ Product shots for the GitHub README (theme-matched HTML mocks of the real UI).
 | `approvals.png` | Tool permission card |
 | `preview.png` | Detachable Preview window (address bar + guest page) |
 | `worktree.png` | Same-checkout prompt — switch, reuse, or create a Grok worktree |
+| `zh-dark.png` | Night theme, Simplified Chinese main window (real app capture, not a mock) |
 
 ## Regenerate
 
-Requires Brave, Chrome, or Edge (macOS or Windows):
+Requires Brave, Chrome, or Edge (macOS or Windows). `zh-dark.png` is a real window capture and is not produced by this script.
 
 ```bash
 node docs/screenshots/render.mjs

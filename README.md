@@ -24,7 +24,13 @@ Desktop GUI for the [Grok Build](https://github.com/xai-org/grok-build) coding a
 
 </p>
 
-<p align="center"><sub>Day theme · browser sign-in · tool approvals · detachable Preview · Grok worktrees</sub></p>
+<p align="center">
+
+![Grok Desktop at night in Simplified Chinese: menus, sidebar, diff, and files](docs/screenshots/zh-dark.png)
+
+</p>
+
+<p align="center"><sub>Day theme · browser sign-in · tool approvals · detachable Preview · Grok worktrees · Night theme · 简体中文</sub></p>
 
 ## Install for the team (no npm)
 
