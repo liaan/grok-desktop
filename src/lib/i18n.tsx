@@ -17,6 +17,12 @@ import {
 
 const STORAGE_KEY = "grok-desktop-locale";
 
+/**
+ * Bumped only by a user setPref. Bootstrap captures this before getInfo and
+ * passes it back; a stale snapshot must not write localStorage.
+ */
+export const localeGen = { current: 0 };
+
 export function readStoredLocalePref(): LocalePref | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,7 +44,8 @@ export function storeLocalePref(pref: LocalePref): void {
 type I18nValue = {
   pref: LocalePref;
   locale: Locale;
-  setPref: (pref: LocalePref) => void;
+  /** User write. Pass `{ gen }` to apply a getInfo snapshot without setLocale. */
+  setPref: (pref: unknown, opts?: { gen?: number }) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
 };
 
@@ -50,19 +57,19 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   );
   const locale = resolveLocale(pref, navigator.language);
 
-  const setPref = useCallback((next: LocalePref) => {
-    const pref = normalizeLocalePref(next);
-    storeLocalePref(pref);
-    setPrefState(pref);
-    void window.grokDesktop?.setLocale?.(pref);
+  const setPref = useCallback((next: unknown, opts?: { gen?: number }) => {
+    if (opts && opts.gen !== localeGen.current) return;
+    if (!opts) localeGen.current += 1;
+    const value = normalizeLocalePref(next);
+    storeLocalePref(value);
+    setPrefState(value);
+    if (opts) return;
+    void window.grokDesktop?.setLocale?.(value);
   }, []);
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh-CN" ? "zh-CN" : "en";
-    if (readStoredLocalePref() != null) {
-      void window.grokDesktop?.setLocale?.(pref);
-    }
-  }, [locale, pref]);
+  }, [locale]);
 
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>) =>

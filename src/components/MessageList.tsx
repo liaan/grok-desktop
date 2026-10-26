@@ -512,7 +512,11 @@ function PendingApprovalCard({
 }) {
   const tool = request.params?.toolCall;
   const { t } = useI18n();
-  const options = request.params?.options?.length
+  const options: Array<{
+    optionId: string;
+    name: string;
+    kind?: string;
+  }> = request.params?.options?.length
     ? request.params.options
     : [
         { optionId: "allow-once", name: t("msg.allowOnce") },
@@ -548,7 +552,7 @@ function PendingApprovalCard({
                   className={permissionButtonClass(cls)}
                   onClick={() => onPermission(request.reqId, opt.optionId)}
                 >
-                  {localizeOptionLabel(opt.optionId, opt.name, t)}
+                  {localizeOptionLabel(opt.optionId, opt.name, t, opt.kind)}
                 </button>
               );
             })}

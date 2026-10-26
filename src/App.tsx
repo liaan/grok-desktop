@@ -46,7 +46,7 @@ import { PrivacyProvider } from "./lib/privacy-context";
 import { redactSensitiveText } from "./lib/privacy";
 import { hideBootSplash } from "./lib/boot-splash";
 import { applyTheme, readStoredTheme, storeTheme } from "./lib/theme";
-import { useI18n } from "./lib/i18n";
+import { localeGen, useI18n } from "./lib/i18n";
 import { readHideThinking, storeHideThinking } from "./lib/hide-thinking";
 import { finalizeOpenTools, uid } from "./lib/timeline";
 import { useAgentEvents } from "./hooks/useAgentEvents";
@@ -67,7 +67,7 @@ import type {
 } from "./vite-env";
 
 export default function App() {
-  const { t } = useI18n();
+  const { t, setPref } = useI18n();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [backbone, setBackbone] = useState<BackboneSummary | null>(null);
@@ -169,6 +169,7 @@ export default function App() {
   }, []);
 
   const bootstrap = useCallback(async () => {
+    const gen = localeGen.current;
     try {
       const i = await window.grokDesktop.getInfo();
       setInfo(i);
@@ -184,6 +185,7 @@ export default function App() {
       const nextTheme = i.theme === "light" ? "light" : "dark";
       setTheme(nextTheme);
       applyTheme(nextTheme);
+      setPref(i.localePref, { gen });
       setAuth(i.auth);
       if (i.auth.authenticated && !i.auth.expired) {
         void refreshBackbone(i.lastProject || undefined);
@@ -191,7 +193,7 @@ export default function App() {
     } catch {
       /* WelcomeView still renders; native splash waits for first paint, not this. */
     }
-  }, [refreshBackbone, hydrateFromInfo]);
+  }, [refreshBackbone, hydrateFromInfo, setPref]);
 
   useEffect(() => {
     hideBootSplash();

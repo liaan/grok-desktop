@@ -120,10 +120,13 @@
       <div class="boot-spin" aria-hidden="true"></div>
     </div>
     <script>
-      if (new URLSearchParams(location.search).get("lang") === "zh-CN") {
-        var loading = document.querySelector("[data-splash-loading]");
-        if (loading) loading.textContent = "正在加载…";
-      }
+      (function () {
+        try {
+          var loadingText = new URLSearchParams(location.search).get("loading");
+          var loading = document.querySelector("[data-splash-loading]");
+          if (loading && loadingText) loading.textContent = loadingText;
+        } catch (e) {}
+      })();
     </script>
   </body>
 </html>

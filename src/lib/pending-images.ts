@@ -9,7 +9,7 @@ import {
   type ImageQuality,
 } from "../../shared/image-compress.mjs";
 import type { PromptImage } from "../vite-env";
-import { uid } from "./timeline";
+import { uid } from "./timeline.ts";
 
 export type PendingImage = PromptImage & {
   id: string;
@@ -128,18 +128,14 @@ export {
 
 export async function fileToPendingImage(
   file: Blob,
-  name?: string,
-  t?: (key: string, vars?: Record<string, string | number>) => string,
+  name: string | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string,
 ): Promise<PendingImage> {
   if (!file.type.startsWith("image/")) {
-    throw new Error(
-      t ? t("err.onlyImages") : "Only image files can be attached",
-    );
+    throw new Error(t("err.onlyImages"));
   }
   if (file.size > MAX_SOURCE_IMAGE_BYTES) {
-    throw new Error(
-      t ? t("err.imageTooLarge") : "Image is too large (max 12 MB)",
-    );
+    throw new Error(t("err.imageTooLarge"));
   }
   const mimeType = file.type || "image/png";
   return {
@@ -186,7 +182,7 @@ export async function encodePendingImages(
 /** Decode a list of image blobs; returns successes + first error message. */
 export async function filesToPendingImages(
   files: ArrayLike<Blob | File>,
-  t?: (key: string, vars?: Record<string, string | number>) => string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
 ): Promise<{ images: PendingImage[]; error: string | null }> {
   const images: PendingImage[] = [];
   let error: string | null = null;

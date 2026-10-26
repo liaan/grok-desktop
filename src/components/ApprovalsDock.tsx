@@ -62,7 +62,11 @@ export const ApprovalsDock = memo(function ApprovalsDock({
         {permissions.map((p) => {
           const tool = p.params?.toolCall;
           const title = tool?.title || tool?.kind || t("approvals.tool");
-          const options = p.params?.options?.length
+          const options: Array<{
+            optionId: string;
+            name: string;
+            kind?: string;
+          }> = p.params?.options?.length
             ? p.params.options
             : [
                 { optionId: "allow-once", name: t("msg.allowOnce") },
@@ -83,7 +87,7 @@ export const ApprovalsDock = memo(function ApprovalsDock({
                       className={permissionButtonClass(cls, { size: "sm" })}
                       onClick={() => onPermission(p.reqId, opt.optionId)}
                     >
-                      {localizeOptionLabel(opt.optionId, opt.name, t)}
+                      {localizeOptionLabel(opt.optionId, opt.name, t, opt.kind)}
                     </button>
                   );
                 })}

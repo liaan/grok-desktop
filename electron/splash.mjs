@@ -9,6 +9,7 @@
 import { BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { translate } from "../shared/ui-copy.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,8 +60,11 @@ export function createSplashWindow(theme, lang = "en") {
   });
   splash.setMenu(null);
   splashWindow = splash;
+  const locale = lang === "zh-CN" ? "zh-CN" : "en";
+  // loadFile's query object encodes values; do not pre-encode.
+  const loading = translate(locale, "splash.loading");
   void splash.loadFile(path.join(__dirname, "splash.html"), {
-    query: { theme: t, lang: lang === "zh-CN" ? "zh-CN" : "en" },
+    query: { theme: t, lang: locale, loading },
   });
   splash.once("ready-to-show", () => {
     if (!splashAllowed || splash.isDestroyed()) {

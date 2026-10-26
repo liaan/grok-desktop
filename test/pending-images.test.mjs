@@ -1,10 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { MAX_SOURCE_IMAGE_BYTES } from "../shared/image-compress.mjs";
 import {
   pendingImageFromBase64,
   previewCaptureRefuseError,
   previewCaptureToSubmit,
 } from "../shared/preview-capture.mjs";
+import {
+  fileToPendingImage,
+  filesToPendingImages,
+} from "../src/lib/pending-images.ts";
+
+/** @param {string} key */
+const t = (key) => `k:${key}`;
 
 test("pendingImageFromBase64 defaults mime and builds a data URL", () => {
   const img = pendingImageFromBase64("QQ==", "", "shot.jpg");
@@ -55,6 +63,36 @@ test("previewCaptureToSubmit uses payload text and mime", () => {
   assert.equal(r.submit.images[0].mimeType, "image/png");
   assert.equal(r.submit.mode, "auto");
   assert.equal(r.submit.imageQuality, "compact");
+});
+
+test("image attach errors come from the translator", async () => {
+  await assert.rejects(
+    () => fileToPendingImage({ type: "text/plain", size: 4 }, "note.txt", t),
+    (err) => err instanceof Error && err.message === "k:err.onlyImages",
+  );
+  await assert.rejects(
+    () =>
+      fileToPendingImage(
+        { type: "image/png", size: MAX_SOURCE_IMAGE_BYTES + 1 },
+        "big.png",
+        t,
+      ),
+    (err) => err instanceof Error && err.message === "k:err.imageTooLarge",
+  );
+});
+
+test("filesToPendingImages keeps the first translator error", async () => {
+  const empty = await filesToPendingImages([], t);
+  assert.deepEqual(empty, { images: [], error: null });
+  const { images, error } = await filesToPendingImages(
+    [
+      { type: "text/plain", size: 1 },
+      { type: "image/png", size: MAX_SOURCE_IMAGE_BYTES + 1 },
+    ],
+    t,
+  );
+  assert.equal(images.length, 0);
+  assert.equal(error, "k:err.onlyImages");
 });
 
 test("previewCaptureRefuseError does not say open a project when one is set", () => {

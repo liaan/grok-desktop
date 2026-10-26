@@ -1,3 +1,5 @@
+import { translate } from "../../shared/ui-copy.mjs";
+
 /** Slash commands: ACP agent list + skills + desktop-local handlers. */
 
 export type SlashCommand = {
@@ -30,28 +32,28 @@ export function commandDescription(
 export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "new",
-    description: "Start a new chat (same as CLI /new)",
+    description: translate("en", "cmd.desc.new"),
     descriptionKey: "cmd.desc.new",
     source: "desktop",
     local: true,
   },
   {
     name: "clear",
-    description: "Start a new chat (alias of /new)",
+    description: translate("en", "cmd.desc.clear"),
     descriptionKey: "cmd.desc.clear",
     source: "desktop",
     local: true,
   },
   {
     name: "always-approve",
-    description: "Toggle Always-approve permission mode (or use Settings / Perms)",
+    description: translate("en", "cmd.desc.always-approve"),
     descriptionKey: "cmd.desc.always-approve",
     source: "desktop",
     local: true,
   },
   {
     name: "preview",
-    description: "Open the detachable Preview window (optional URL)",
+    description: translate("en", "cmd.desc.preview"),
     descriptionKey: "cmd.desc.preview",
     source: "desktop",
     inputHint: "url | close",
@@ -59,7 +61,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   },
   {
     name: "effort",
-    description: "Set reasoning effort (or use topbar Effort: low/medium/high/xhigh)",
+    description: translate("en", "cmd.desc.effort"),
     descriptionKey: "cmd.desc.effort",
     source: "desktop",
     inputHint: "low|medium|high|xhigh",
@@ -67,7 +69,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   },
   {
     name: "plan",
-    description: "Enter plan mode (explore + design before coding)",
+    description: translate("en", "cmd.desc.plan"),
     descriptionKey: "cmd.desc.plan",
     source: "desktop",
     inputHint: "description",
@@ -76,7 +78,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   },
   {
     name: "compact",
-    description: "Summarize older turns to free context (same as topbar Compress)",
+    description: translate("en", "cmd.desc.compact"),
     descriptionKey: "cmd.desc.compact",
     source: "desktop",
     inputHint: "optional note to keep",
@@ -84,7 +86,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   },
   {
     name: "view-plan",
-    description: "Ask the agent to show the current plan",
+    description: translate("en", "cmd.desc.view-plan"),
     descriptionKey: "cmd.desc.view-plan",
     source: "desktop",
     // Sent to agent
