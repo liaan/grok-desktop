@@ -119,6 +119,7 @@ Runs on **Windows, macOS, and Linux** (Electron). Team installers ship for **Win
 | Settings UI (plugins list / enable / disable / install-from-git) | **Done** — via `grok plugin` (never edits `config.toml` in-app) |
 | Settings UI (skills list) | **Done** — read-only from `grok inspect`; invoke via `/` |
 | Settings UI (model / skills editor) | **Planned** — configure under `~/.grok` for now |
+| Simplified Chinese | **Done** — Settings → General → Language: Follow System, English, or 简体中文. Menus and the splash screen follow that choice |
 | Native installers | **Windows + macOS + Linux Done** — [Releases](https://github.com/liaan/grok-desktop/releases) |
 | Detachable **Preview** window (you or the agent open / snapshot / click / fill / network waterfall) | **Done** — topbar **Preview**, `/preview [url\|close]`, or ask the agent to show a URL |
 
@@ -143,6 +144,7 @@ Desktop does **not** reimplement skills, MCP, models, or project rules. It opens
 | **Plugins** | Settings → Plugins (list / enable / disable / install from git URL) | Marketplace browse still CLI |
 | **Models** | Whatever the agent session uses | Model / routing in CLI config |
 | **Project rules** (`AGENTS.md`, `CLAUDE.md`, …) | Apply when you **Open project…** to that repo | Edit the files in the repo (agent loads from cwd) |
+| **Language** | Settings → General: Follow System, English, or 简体中文 | Follow System uses Simplified Chinese when the OS language is Chinese |
 | Tool permission mode (Ask / Auto / Always approve) | Topbar **Perms** dropdown + Settings | `_meta.yoloMode` / `permissionMode` on session start + live `_x.ai/yolo_mode_changed` |
 | Plan mode (`/plan`) | Composer `/plan` (optional description) + topbar **Plan** pill | ACP `session/set_mode` `modeId: "plan"` first (same as TUI). `/plan add auth` then prompts `add auth` after the mode RPC. |
 | Reasoning effort (`/effort`) | Topbar **Effort** dropdown (Low / Medium / High / X-High) | Agent `--reasoning-effort` on spawn + live `session/set_model` `_meta.reasoningEffort` |
