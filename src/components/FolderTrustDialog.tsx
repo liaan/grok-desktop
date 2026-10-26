@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePrivacy } from "../lib/privacy-context";
+import { useI18n } from "../lib/i18n";
 
 export type FolderTrustRequest = {
   reqId: string;
@@ -24,6 +25,7 @@ export function FolderTrustDialog({
 }) {
   const trustRef = useRef<HTMLButtonElement>(null);
   const { redact } = usePrivacy();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!request) return;
@@ -58,11 +60,11 @@ export function FolderTrustDialog({
         aria-labelledby="folder-trust-title"
       >
         <div className="modal-header">
-          <h2 id="folder-trust-title">Trust this folder?</h2>
+          <h2 id="folder-trust-title">{t("trust.title")}</h2>
           <button
             type="button"
             className="btn ghost btn-sm"
-            aria-label="Don't trust"
+            aria-label={t("trust.dont")}
             onClick={() => onRespond(request.reqId, { outcome: "reject" })}
           >
             ✕
@@ -85,7 +87,7 @@ export function FolderTrustDialog({
             className="btn"
             onClick={() => onRespond(request.reqId, { outcome: "reject" })}
           >
-            Don&apos;t trust
+            {t("trust.dont")}
           </button>
           <button
             ref={trustRef}
@@ -93,7 +95,7 @@ export function FolderTrustDialog({
             className="btn primary"
             onClick={() => onRespond(request.reqId, { outcome: "trust" })}
           >
-            Trust folder
+            {t("ft.trustFolder")}
           </button>
         </div>
       </div>

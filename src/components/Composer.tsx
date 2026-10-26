@@ -18,6 +18,7 @@ import {
   slashQuery,
   type SlashCommand,
 } from "../lib/commands";
+import { useI18n } from "../lib/i18n";
 import type { ConnState } from "../lib/conn";
 import {
   encodePendingImages,
@@ -112,6 +113,7 @@ export const Composer = memo(function Composer({
 }) {
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const { t } = useI18n();
   const [highDetail, setHighDetail] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
@@ -227,13 +229,13 @@ export const Composer = memo(function Composer({
 
   const addImages = useCallback(
     async (files: ArrayLike<Blob | File>) => {
-      const { images, error } = await filesToPendingImages(files);
+      const { images, error } = await filesToPendingImages(files, t);
       if (images.length) {
         setPendingImages((prev) => [...prev, ...images]);
       }
       if (error) onError(error);
     },
-    [onError],
+    [onError, t],
   );
 
   const removePendingImage = useCallback((id: string) => {
@@ -424,11 +426,11 @@ export const Composer = memo(function Composer({
         className="composer-resize-handle"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="Resize input"
+        aria-label={t("composer.resize")}
         aria-valuemin={COMPOSER_HEIGHT_MIN}
         aria-valuemax={composerHeightMax()}
         aria-valuenow={composerHeight}
-        title="Drag to resize input · double-click to reset"
+        title={t("composer.resizeTitle")}
         onPointerDown={onResizePointerDown}
         onPointerMove={onResizePointerMove}
         onPointerUp={endResizeDrag}
@@ -458,11 +460,11 @@ export const Composer = memo(function Composer({
             <div className="composer-images">
               {pendingImages.map((img) => (
                 <div key={img.id} className="composer-image">
-                  <img src={img.previewUrl} alt={img.name || "Attached"} />
+                  <img src={img.previewUrl} alt={img.name || t("composer.attached")} />
                   <button
                     type="button"
                     className="composer-image-remove"
-                    title="Remove image"
+                    title={t("composer.removeImage")}
                     onClick={() => removePendingImage(img.id)}
                   >
                     ×
@@ -478,24 +480,28 @@ export const Composer = memo(function Composer({
               />
               <span>
                 <span className="composer-image-quality-label">
-                  Higher detail
+                  {t("composer.higherDetail")}
                 </span>
                 <span className="composer-image-quality-hint">
-                  This send only · uses more tokens
+                  {t("composer.higherDetailHint")}
                 </span>
               </span>
             </label>
           </div>
         )}
         {promptQueue.length > 0 && (
-          <div className="prompt-queue" aria-label="Queued follow-ups">
+          <div className="prompt-queue" aria-label={t("composer.queue")}>
             <div className="prompt-queue-head">
               <span>
-                Queue · {promptQueue.length} follow-up
-                {promptQueue.length === 1 ? "" : "s"}
+                {t(
+                  promptQueue.length === 1
+                    ? "composer.queueHeadOne"
+                    : "composer.queueHead",
+                  { n: promptQueue.length },
+                )}
               </span>
               <span className="prompt-queue-hint">
-                waits for this turn · empty Enter interjects now
+                {t("composer.queueHint")}
               </span>
             </div>
             <ul className="prompt-queue-list">
@@ -508,21 +514,26 @@ export const Composer = memo(function Composer({
                   >
                     {q.timelineText ||
                       q.text ||
-                      `(${q.images.length} image${q.images.length === 1 ? "" : "s"})`}
+                      t(
+                        q.images.length === 1
+                          ? "composer.imageCountOne"
+                          : "composer.imageCount",
+                        { n: q.images.length },
+                      )}
                   </span>
                   <button
                     type="button"
                     className="btn ghost btn-sm"
-                    title="Interject this follow-up now"
+                    title={t("composer.interject")}
                     disabled={conn === "connecting"}
                     onClick={() => onSendQueuedNow(q.id)}
                   >
-                    Now
+                    {t("composer.now")}
                   </button>
                   <button
                     type="button"
                     className="btn ghost btn-sm"
-                    title="Remove from queue"
+                    title={t("composer.removeQueue")}
                     onClick={() => onRemoveQueued(q.id)}
                   >
                     ×
@@ -538,8 +549,8 @@ export const Composer = memo(function Composer({
           style={{ height: composerHeight }}
           placeholder={
             conn === "busy"
-              ? "Follow-up: Enter waits for this turn · empty Enter interjects now…"
-              : "Ask Grok… or type / for skills & commands (review, design, implement…)"
+              ? t("composer.placeholderBusy")
+              : t("composer.placeholder")
           }
           onChange={(e) => setInput(e.target.value)}
           onPaste={(e) => void onPaste(e)}
@@ -565,14 +576,12 @@ export const Composer = memo(function Composer({
               className="btn"
               disabled={conn === "connecting"}
               onClick={() => fileInputRef.current?.click()}
-              title="Attach images"
+              title={t("composer.attach")}
             >
-              Attach
+              {t("composer.attachLabel")}
             </button>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {conn === "busy"
-                ? "Enter queues · empty Enter / Interject now · Ctrl/⌘+Enter stops turn"
-                : "/ commands · Enter send · Shift+Enter newline"}
+              {conn === "busy" ? t("composer.hintBusy") : t("composer.hint")}
             </span>
           </div>
           <div className="row" style={{ gap: 8 }}>
@@ -583,7 +592,7 @@ export const Composer = memo(function Composer({
                 <button
                   type="button"
                   className="btn"
-                  title="Inject into this turn now (does not cancel). Empty Enter does the same for the queued follow-up."
+                  title={t("composer.inject")}
                   onClick={() => {
                     if (!input.trim() && pendingImages.length === 0) {
                       onSendQueuedNow();
@@ -592,7 +601,7 @@ export const Composer = memo(function Composer({
                     void submit(undefined, "interject");
                   }}
                 >
-                  Interject now
+                  {t("composer.interjectNow")}
                 </button>
               )}
             <button
@@ -607,7 +616,7 @@ export const Composer = memo(function Composer({
                 !projectOpen
               }
             >
-              {conn === "busy" ? "Queue" : "Send"}
+              {conn === "busy" ? t("composer.queueBtn") : t("composer.send")}
             </button>
           </div>
         </div>

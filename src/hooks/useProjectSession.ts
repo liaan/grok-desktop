@@ -18,6 +18,7 @@ import type {
   TimelineItem,
 } from "../vite-env";
 import type { SlashCommand } from "../lib/commands";
+import { useI18n } from "../lib/i18n";
 
 /**
  * Open / resume project sessions and apply agent open results.
@@ -63,6 +64,7 @@ export function useProjectSession(opts: {
   /** Same checkout already open in another window — prompt for a worktree. */
   onCheckoutConflict?: (conflict: CheckoutConflict, cwd: string) => void;
 }) {
+  const { t } = useI18n();
   const {
     auth,
     project,
@@ -219,11 +221,11 @@ export function useProjectSession(opts: {
     ) => {
       const status = auth || (await refreshAuth());
       if (!status.authenticated || status.expired) {
-        setError("Sign in to Grok before opening a project.");
+        setError(t("err.signInBeforeOpen"));
         return;
       }
       if (busyRef.current || openingRef.current) {
-        setError("Wait for the current turn or open to finish.");
+        setError(t("err.waitCurrentTurn"));
         return;
       }
 
@@ -279,6 +281,7 @@ export function useProjectSession(opts: {
       setError,
       setItems,
       setOpeningLabel,
+      t,
     ],
   );
 
@@ -287,18 +290,18 @@ export function useProjectSession(opts: {
       if (!project) return;
       const status = auth || (await refreshAuth());
       if (!status.authenticated || status.expired) {
-        setError("Sign in to Grok first.");
+        setError(t("session.signInFirst"));
         return;
       }
       if (busyRef.current) {
-        setError("Stop the current turn before switching chats.");
+        setError(t("session.stopBeforeSwitch"));
         return;
       }
       if (openingRef.current) return;
 
       openingRef.current = true;
       setConn("connecting");
-      setOpeningLabel(sessionOpts.mode === "new" ? "New chat" : "Resuming…");
+      setOpeningLabel(sessionOpts.mode === "new" ? t("session.newChat") : t("session.resuming"));
       setError(null);
       setItems([]);
       clearSessionScoped();
@@ -311,8 +314,8 @@ export function useProjectSession(opts: {
         await applyOpenResult(res, {
           note:
             sessionOpts.mode === "new"
-              ? "Started a new chat (CLI /new)"
-              : "Resumed previous chat (CLI /resume)",
+              ? t("session.startedNew")
+              : t("session.resumed"),
         });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -342,17 +345,18 @@ export function useProjectSession(opts: {
       setError,
       setItems,
       setOpeningLabel,
+      t,
     ],
   );
 
   const restartAgent = useCallback(async () => {
     if (!project) {
-      setError("Open a project before restarting the agent.");
+      setError(t("session.openBeforeRestart"));
       return;
     }
     const status = auth || (await refreshAuth());
     if (!status.authenticated || status.expired) {
-      setError("Sign in to Grok first.");
+      setError(t("session.signInFirst"));
       return;
     }
     if (openingRef.current) return;
@@ -361,14 +365,14 @@ export function useProjectSession(opts: {
     busyRef.current = false;
     clearPromptQueue();
     setConn("connecting");
-    setOpeningLabel("Restarting agent…");
+    setOpeningLabel(t("status.restarting"));
     setError(null);
     try {
       const res = await window.grokDesktop.restartAgent();
       await applyOpenResult(res, {
         note: res.resumed
-          ? "Restarted Grok agent (same session)"
-          : "Restarted Grok agent (new session)",
+          ? t("session.restartedSame")
+          : t("session.restartedNew"),
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -399,6 +403,7 @@ export function useProjectSession(opts: {
     setConn,
     setError,
     setOpeningLabel,
+    t,
   ]);
 
   return { openProject, openSession, restartAgent, isAuthError };

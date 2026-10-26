@@ -10,10 +10,12 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  commandDescription,
   matchSlashCommand,
   parseSlashInvocation,
   type SlashCommand,
 } from "../lib/commands";
+import { useI18n } from "../lib/i18n";
 import {
   formatClock,
   formatDayLabel,
@@ -21,7 +23,8 @@ import {
   sameCalendarDay,
 } from "../lib/time";
 import type { PermissionRequest, TimelineItem } from "../vite-env";
-import { displayUserMessageText, formatOptionLabel } from "../lib/timeline";
+import { displayUserMessageText } from "../lib/timeline";
+import { localizeOptionLabel } from "../lib/permission-labels";
 import {
   classifyOptionId,
   permissionButtonClass,
@@ -68,10 +71,11 @@ function MarkdownLink({
 
 /** Only allow http(s) remote images; block data:/file: model-driven egress. */
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useI18n();
   if (!src || !/^https?:\/\//i.test(src)) {
     return (
       <span className="md-img-blocked" title={src || ""}>
-        [{alt || "image blocked"}]
+        [{alt || t("msg.imageBlocked")}]
       </span>
     );
   }
@@ -81,14 +85,15 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
 function MarkdownCodeBlock({ children }: { children?: ReactNode }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   return (
     <div className="md-codeblock">
       <button
         type="button"
         className="btn ghost btn-sm md-code-copy"
-        title="Copy code"
-        aria-label="Copy code"
+        title={t("msg.copy")}
+        aria-label={t("msg.copy")}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -102,7 +107,7 @@ function MarkdownCodeBlock({ children }: { children?: ReactNode }) {
             .catch(() => {});
         }}
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? t("msg.copied") : t("msg.copyBtn")}
       </button>
       <pre ref={preRef}>{children}</pre>
     </div>
@@ -146,7 +151,7 @@ function MsgMeta({
 
 function CopyReplyButton({
   markdown,
-  ariaLabel = "Copy reply with formatting",
+  ariaLabel,
   plain = false,
 }: {
   markdown: string;
@@ -155,6 +160,7 @@ function CopyReplyButton({
   plain?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
   const text = markdown.trim();
   if (!text) return null;
 
@@ -163,11 +169,9 @@ function CopyReplyButton({
       type="button"
       className="btn ghost btn-sm msg-copy"
       title={
-        plain
-          ? "Copy prompt as plain text"
-          : "Copy with formatting for Slack, Docs, and Teams. Shift+click copies Markdown."
+        plain ? t("msg.copyPlainTitle") : t("msg.copyReplyTitle")
       }
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? t(plain ? "msg.copyPrompt" : "msg.copyReply")}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -181,7 +185,7 @@ function CopyReplyButton({
           .catch(() => {});
       }}
     >
-      {copied ? "Copied" : "Copy"}
+      {copied ? t("msg.copied") : t("msg.copyBtn")}
     </button>
   );
 }
@@ -231,6 +235,7 @@ function ThoughtBlock({
   hideThinking: boolean;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   /** null follows the checkbox. A click pins this block open or shut. */
   const [pinnedOpen, setPinnedOpen] = useState<boolean | null>(null);
   useEffect(() => {
@@ -257,14 +262,14 @@ function ThoughtBlock({
           onClick={() => setPinnedOpen(!open)}
         >
           <span className="thought-chevron" aria-hidden="true" />
-          <span className="thought-label">{live ? "Thinking" : "Thought"}</span>
+          <span className="thought-label">{live ? t("msg.thinking") : t("msg.thought")}</span>
           {open && hideThinking ? (
-            <span className="thought-preview thought-preview--hint">Hide</span>
+            <span className="thought-preview thought-preview--hint">{t("msg.hide")}</span>
           ) : open ? null : preview ? (
             <span className="thought-preview">{preview}</span>
           ) : (
             <span className="thought-preview thought-preview--hint">
-              {live ? "…" : "Empty"}
+              {live ? "…" : t("msg.empty")}
             </span>
           )}
           {clock ? (
@@ -309,6 +314,7 @@ const TimelineRow = memo(function TimelineRow({
   hideThinking?: boolean;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const day =
     showDay && typeof item.at === "number" ? (
       <DayDivider at={item.at} />
@@ -337,16 +343,16 @@ const TimelineRow = memo(function TimelineRow({
           <MsgMeta
             role={
               item.queued
-                ? "You · waiting"
+                ? t("msg.youWaiting")
                 : isCmd
-                  ? "You · command"
-                  : "You"
+                  ? t("msg.youCommand")
+                  : t("msg.you")
             }
             at={item.at}
             actions={
               <CopyReplyButton
                 markdown={displayText}
-                ariaLabel="Copy prompt"
+                ariaLabel={t("msg.copyPrompt")}
                 plain
               />
             }
@@ -358,10 +364,10 @@ const TimelineRow = memo(function TimelineRow({
                   key={j}
                   type="button"
                   className="msg-image"
-                  title="Image attachment"
+                  title={t("msg.image")}
                   onClick={(e) => e.preventDefault()}
                 >
-                  <img src={img.previewUrl} alt={`Attachment ${j + 1}`} />
+                  <img src={img.previewUrl} alt={t("msg.attachmentN", { n: j + 1 })} />
                 </button>
               ))}
             </div>
@@ -373,15 +379,15 @@ const TimelineRow = memo(function TimelineRow({
                   className={`cmd-invocation ${matched ? "cmd-known" : "cmd-unknown"}`}
                   title={
                     matched
-                      ? `${matched.description}${matched.local ? " (handled in app)" : " (sent to agent)"}`
-                      : "Looks like a slash command — agent will interpret it"
+                      ? `${commandDescription(matched, t)}${matched.local ? ` ${t("msg.cmdAppHandled")}` : ` ${t("msg.cmdAgent")}`}`
+                      : t("msg.cmdUnknownTitle")
                   }
                 >
                   <span className={`cmd-badge ${badge}`}>{badge}</span>
                   <code className="cmd-name">/{inv.name}</code>
                   {matched ? (
                     <span className="cmd-picked">
-                      {matched.local ? "app command" : "skill / command"}
+                      {matched.local ? t("msg.cmdApp") : t("msg.cmdSkill")}
                     </span>
                   ) : (
                     <span className="cmd-picked cmd-picked-soft">slash</span>
@@ -408,7 +414,7 @@ const TimelineRow = memo(function TimelineRow({
         {day}
         <article className={planQuestion ? "msg ask-user-question" : "msg"}>
           <MsgMeta
-            role="Grok"
+            role={t("msg.grok")}
             at={item.at}
             actions={<CopyReplyButton markdown={display} />}
           />
@@ -448,7 +454,7 @@ const TimelineRow = memo(function TimelineRow({
         <article
           className={item.askUser ? "msg tool ask-user-question" : "msg tool"}
         >
-          <MsgMeta role="Tool" at={item.at} />
+          <MsgMeta role={t("msg.tool")} at={item.at} />
           <div className="tool-body">
             <div className="tool-header">
               <div className="tool-title-wrap">
@@ -457,7 +463,7 @@ const TimelineRow = memo(function TimelineRow({
               <span className={`tool-status ${item.status}`}>{item.status}</span>
             </div>
             {card.output ? (
-              <pre className="tool-output" title="Output">
+              <pre className="tool-output" title={t("msg.output")}>
                 {redact(card.output)}
               </pre>
             ) : null}
@@ -473,7 +479,7 @@ const TimelineRow = memo(function TimelineRow({
       <Fragment>
         {day}
         <article className="msg plan">
-          <MsgMeta role="Plan" at={item.at} />
+          <MsgMeta role={t("msg.plan")} at={item.at} />
           <div className="body">
             <ol>
               {entries.map((e, j) => (
@@ -490,7 +496,7 @@ const TimelineRow = memo(function TimelineRow({
     <Fragment>
       {day}
       <article className="msg">
-        <MsgMeta role="System" at={item.at} />
+        <MsgMeta role={t("msg.system")} at={item.at} />
         <div className="body">{redact(item.text || "")}</div>
       </article>
     </Fragment>
@@ -505,11 +511,12 @@ function PendingApprovalCard({
   onPermission?: (reqId: string, optionId: string | "cancelled") => void;
 }) {
   const tool = request.params?.toolCall;
+  const { t } = useI18n();
   const options = request.params?.options?.length
     ? request.params.options
     : [
-        { optionId: "allow-once", name: "Allow once" },
-        { optionId: "reject", name: "Reject" },
+        { optionId: "allow-once", name: t("msg.allowOnce") },
+        { optionId: "reject", name: t("msg.reject") },
       ];
   const card = buildToolCard({
     title: tool?.title,
@@ -524,13 +531,11 @@ function PendingApprovalCard({
       aria-live="polite"
     >
       <div className="meta">
-        <span className="meta-role">Approval</span>
-        <span className="pending-approval-pill">Waiting</span>
+        <span className="meta-role">{t("msg.approval")}</span>
+        <span className="pending-approval-pill">{t("msg.waiting")}</span>
       </div>
       <div className="body pending-approval-body">
-        <div className="pending-approval-title">
-          Waiting for tool approval…
-        </div>
+        <div className="pending-approval-title">{t("msg.waitingTool")}</div>
         <ToolCardView card={card} />
         {onPermission ? (
           <div className="perm-actions">
@@ -543,7 +548,7 @@ function PendingApprovalCard({
                   className={permissionButtonClass(cls)}
                   onClick={() => onPermission(request.reqId, opt.optionId)}
                 >
-                  {formatOptionLabel(opt.optionId, opt.name)}
+                  {localizeOptionLabel(opt.optionId, opt.name, t)}
                 </button>
               );
             })}
@@ -552,11 +557,11 @@ function PendingApprovalCard({
               className="btn danger"
               onClick={() => onPermission(request.reqId, "cancelled")}
             >
-              Cancel
+              {t("msg.cancel")}
             </button>
           </div>
         ) : (
-          <div className="pending-approval-hint">Waiting for approval…</div>
+          <div className="pending-approval-hint">{t("approvals.waitingHint")}</div>
         )}
       </div>
     </article>
@@ -605,6 +610,7 @@ export const MessageList = memo(function MessageList({
 }) {
   const cmds = knownCommands ?? EMPTY_COMMANDS;
   const perms = pendingPermissions ?? EMPTY_PERMISSIONS;
+  const { t } = useI18n();
   const questionId = planMode ? lastPlanQuestionId(items) : null;
   const tail = items[items.length - 1];
   const liveThoughtId =
@@ -628,11 +634,9 @@ export const MessageList = memo(function MessageList({
     <div className="timeline" ref={scrollerRef}>
       {emptyWelcome ? (
         <div className="empty-state">
-          <h2>What should we build?</h2>
+          <h2>{t("msg.emptyTitle")}</h2>
           <p>
-            This desktop app is a GUI on top of the Grok agent backbone
-            (<code>grok agent stdio</code> + ACP). Skills, MCP, auth, and models still
-            come from your Grok install.
+            {t("msg.emptyLead", { code: "grok agent stdio" })}
           </p>
         </div>
       ) : (
@@ -658,17 +662,16 @@ export const MessageList = memo(function MessageList({
             );
           })}
           {perms.length > 1 && onAllowAllPermissions ? (
-            <div className="perm-batch-inline" role="region" aria-label="Batch approvals">
+            <div className="perm-batch-inline" role="region" aria-label={t("msg.batch")}>
               <p className="perm-batch-hint">
-                {perms.length} tools waiting — Allow all grants each once so
-                multi-edit batches do not stall.
+                {t("msg.batchHint", { n: perms.length })}
               </p>
               <button
                 type="button"
                 className="btn primary"
                 onClick={() => onAllowAllPermissions()}
               >
-                Allow all ({perms.length})
+                {t("msg.allowAll", { n: perms.length })}
               </button>
             </div>
           ) : null}

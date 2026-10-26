@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { SessionUsage } from "../lib/usage";
 import { formatUsageBar, formatUsageTooltip } from "../lib/usage";
+import { useI18n } from "../lib/i18n";
 
 /**
  * Bottom status strip for the main column — privacy, token usage, git branch.
@@ -18,22 +19,23 @@ export const StatusBar = memo(function StatusBar({
   gitDetached: boolean;
   sessionUsage?: SessionUsage | null;
 }) {
+  const { t } = useI18n();
   const usageLabel = sessionUsage ? formatUsageBar(sessionUsage) : "";
   const usageTip = sessionUsage
     ? formatUsageTooltip(sessionUsage)
-    : "Token usage appears after the first completed turn.";
+    : t("status.usageHint");
 
   return (
-    <footer className="status-bar" role="status" aria-label="Project status">
+    <footer className="status-bar" role="status" aria-label={t("status.aria")}>
       <div className="status-bar-left">
         {privacyMode ? (
           <button
             type="button"
             className="status-bar-chip privacy"
-            title="Privacy mode is on — home paths are hidden in the UI. Click to open Settings."
+            title={t("status.privacy")}
             onClick={onOpenSettings}
           >
-            Privacy
+            {t("general.privacy")}
           </button>
         ) : null}
         {usageLabel ? (
@@ -42,7 +44,7 @@ export const StatusBar = memo(function StatusBar({
           </span>
         ) : (
           <span className="status-bar-usage muted" title={usageTip}>
-            usage —
+            {t("status.usageEmpty")}
           </span>
         )}
       </div>
@@ -52,8 +54,8 @@ export const StatusBar = memo(function StatusBar({
             className={`status-bar-git ${gitDetached ? "detached" : ""}`}
             title={
               gitDetached
-                ? `Detached HEAD @ ${gitBranch}`
-                : `Git branch: ${gitBranch}`
+                ? t("status.detached", { branch: gitBranch })
+                : t("status.branch", { branch: gitBranch })
             }
           >
             <span className="status-bar-git-icon" aria-hidden>
@@ -65,7 +67,7 @@ export const StatusBar = memo(function StatusBar({
             ) : null}
           </span>
         ) : (
-          <span className="status-bar-git muted" title="Not a git repository">
+          <span className="status-bar-git muted" title={t("status.notGit")}>
             <span className="status-bar-git-icon" aria-hidden>
               ⎇
             </span>

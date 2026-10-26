@@ -7,6 +7,7 @@ import type {
 import { basen, samePathKey } from "../lib/path-utils";
 import { BrandMark, Spinner } from "./BrandMark";
 import { AuthGate } from "./AuthGate";
+import { useI18n } from "../lib/i18n";
 
 /**
  * No-project landing: auth + open project.
@@ -66,6 +67,7 @@ export function WelcomeView({
   platform?: string;
   inert?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={`app no-project ${platformClass}`.trim()}
@@ -78,21 +80,16 @@ export function WelcomeView({
             <BrandMark size={40} />
             <div className="brand-text">
               <h1>Grok Desktop</h1>
-              <p>xAI · Desktop GUI · Grok Build backbone</p>
+              <p>{t("welcome.tagline")}</p>
             </div>
           </div>
-          <p className="welcome-lead">
-            Graphical shell over the same agent as the CLI. Sign in once in the
-            app, then open a project — skills, plugins, and MCP from{" "}
-            <code>~/.grok</code> load automatically. Manage them in Settings —
-            no terminal.
-          </p>
+          <p className="welcome-lead">{t("welcome.lead")}</p>
           {!auth && !isOpening ? (
             <div className="loading-banner" role="status" aria-live="polite">
               <Spinner size={18} />
               <div>
-                <strong>Starting…</strong>
-                <span>Loading Grok login and backbone</span>
+                <strong>{t("welcome.starting")}</strong>
+                <span>{t("welcome.loading")}</span>
               </div>
             </div>
           ) : null}
@@ -116,9 +113,9 @@ export function WelcomeView({
           />
 
           <ul className="checklist">
-            <li>Browser sign-in (no CLI required after Grok is installed)</li>
-            <li>Skills, plugins &amp; MCP from your existing ~/.grok setup</li>
-            <li>Streaming chat, thoughts, plans, tool approvals</li>
+            <li>{t("welcome.b1")}</li>
+            <li>{t("welcome.b2")}</li>
+            <li>{t("welcome.b3")}</li>
           </ul>
 
           <div className="welcome-actions">
@@ -128,16 +125,16 @@ export function WelcomeView({
               onClick={onPickProject}
               disabled={!signedIn || isOpening}
               title={
-                signedIn ? "Open a project folder" : "Sign in to Grok first"
+                signedIn ? t("welcome.open") : t("welcome.signInFirst")
               }
             >
               {isOpening ? (
                 <>
                   <Spinner size={16} />
-                  Opening…
+                  {t("sidebar.opening")}
                 </>
               ) : (
-                "Open project…"
+                t("sidebar.openProject")
               )}
             </button>
             {signedIn &&
@@ -149,14 +146,14 @@ export function WelcomeView({
                   disabled={isOpening}
                   title={
                     openCheckouts.some((row) => samePathKey(row.cwd, p))
-                      ? "Already open in a Grok window"
+                      ? t("welcome.alreadyOpen")
                       : p
                   }
                   onClick={() => onOpenProject(p)}
                 >
                   {basen(p)}
                   {openCheckouts.some((row) => samePathKey(row.cwd, p)) ? (
-                    <span className="open-badge">open</span>
+                    <span className="open-badge">{t("sidebar.openBadge")}</span>
                   ) : null}
                 </button>
               ))}
@@ -166,10 +163,11 @@ export function WelcomeView({
             <div className="loading-banner" role="status" aria-live="polite">
               <Spinner size={18} />
               <div>
-                <strong>Starting Grok agent…</strong>
+                <strong>{t("welcome.agent")}</strong>
                 <span>
-                  Connecting to backbone
-                  {openingLabel ? ` for ${openingLabel}` : ""}
+                  {openingLabel
+                    ? t("welcome.connectingFor", { label: openingLabel })
+                    : t("welcome.connecting")}
                 </span>
               </div>
             </div>
@@ -178,7 +176,7 @@ export function WelcomeView({
           {error && <p className="welcome-error">{error}</p>}
           <p className="welcome-meta">
             App v{appVersion || "…"} · Backbone:{" "}
-            {grokBinary || auth?.binary || "detecting…"}
+            {grokBinary || auth?.binary || t("welcome.detecting")}
           </p>
         </div>
       </div>

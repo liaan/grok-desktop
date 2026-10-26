@@ -37,6 +37,7 @@ import type { McpElicitRequest } from "../components/McpElicitDialog";
 import { planApproveCommentsText } from "../../shared/plan-approval.mjs";
 import { currentModeIdFromUpdate } from "../../shared/session-mode.mjs";
 import { interjectRpcFollowUp } from "../../shared/prompt-delivery.mjs";
+import { useI18n } from "../lib/i18n";
 
 function isAllowChoice(optionId: string, options?: PermissionRequest["params"]["options"]): boolean {
   if (optionId === "cancelled" || optionId === "cancel") return false;
@@ -143,6 +144,7 @@ export function useAgentEvents(opts: {
   /** After plan approve-with-comments: queue if busy, else session/prompt. */
   deliverPlanComments?: (text: string) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const {
     openingRef,
     sessionIdRef,
@@ -476,13 +478,13 @@ export function useAgentEvents(opts: {
       window.grokDesktop.on("agent:error", (payload) => {
         if (openingRef.current) return;
         setConn("error");
-        setError(payload?.message || "Agent error");
+        setError(payload?.message || t("err.agentError"));
       }),
       window.grokDesktop.on("agent:exit", () => {
         if (openingRef.current) return;
         setConn("error");
         setSessionId(null);
-        setError("Agent process exited");
+        setError(t("err.agentExited"));
         gateEpoch.current += 1;
         setPermissions([]);
         setPlanApproval(null);
@@ -513,6 +515,7 @@ export function useAgentEvents(opts: {
     setItems,
     setSessionId,
     setSettingsOpen,
+    t,
   ]);
 
   const onAllowWritesThisSession = useCallback(async () => {
@@ -522,9 +525,9 @@ export function useAgentEvents(opts: {
       setPermissions([]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(`Could not allow writes this session: ${msg}`);
+      setError(t("err.allowWritesFailed", { msg }));
     }
-  }, [setError]);
+  }, [setError, t]);
 
   const onRevokeWritesThisSession = useCallback(async () => {
     try {
@@ -532,9 +535,9 @@ export function useAgentEvents(opts: {
       setAllowWritesThisSession(Boolean(res?.allowWritesThisSession));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(`Could not revoke session writes: ${msg}`);
+      setError(t("err.revokeWritesFailed", { msg }));
     }
-  }, [setError]);
+  }, [setError, t]);
 
   const clearSessionScoped = useCallback(() => {
     setBackgroundTasks([]);
@@ -676,7 +679,7 @@ export function useAgentEvents(opts: {
         setPermissions((prev) =>
           prev.some((p) => p.reqId === reqId) ? prev : [...prev, removed!],
         );
-        setError("Could not map that approval option. Try another choice.");
+        setError(t("err.approvalMapFailed"));
         return;
       }
 
@@ -695,9 +698,7 @@ export function useAgentEvents(opts: {
             prev.some((p) => p.reqId === reqId) ? prev : [...prev, removed!],
           );
           if (allowing) revertToolStatus(toolId);
-          setError(
-            "Could not apply that approval (request already closed). Try again if the tool is still waiting.",
-          );
+          setError(t("err.approvalApplyFailed"));
         }
       } catch (e: unknown) {
         setPermissions((prev) =>
@@ -705,10 +706,10 @@ export function useAgentEvents(opts: {
         );
         if (allowing) revertToolStatus(toolId);
         const msg = e instanceof Error ? e.message : String(e);
-        setError(`Permission response failed: ${msg}`);
+        setError(t("err.permissionResponseFailed", { msg }));
       }
     },
-    [markToolInProgress, revertToolStatus, setError],
+    [markToolInProgress, revertToolStatus, setError, t],
   );
 
   /**

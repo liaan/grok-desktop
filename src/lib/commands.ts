@@ -10,31 +10,49 @@ export type SlashCommand = {
   inputHint?: string;
   /** Handled in the desktop shell instead of session/prompt */
   local?: boolean;
+  /** ui-copy key for desktop-owned descriptions (agent/skill text stays as-is) */
+  descriptionKey?: string;
 };
+
+/**
+ * Resolve a command description through the translator. Desktop commands use
+ * ui-copy keys; agent/skill descriptions come from the agent and stay as-is.
+ */
+export function commandDescription(
+  cmd: SlashCommand,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  if (cmd.descriptionKey) return t(cmd.descriptionKey);
+  return cmd.description;
+}
 
 /** Desktop-only commands (GUI actions). */
 export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "new",
     description: "Start a new chat (same as CLI /new)",
+    descriptionKey: "cmd.desc.new",
     source: "desktop",
     local: true,
   },
   {
     name: "clear",
     description: "Start a new chat (alias of /new)",
+    descriptionKey: "cmd.desc.clear",
     source: "desktop",
     local: true,
   },
   {
     name: "always-approve",
     description: "Toggle Always-approve permission mode (or use Settings / Perms)",
+    descriptionKey: "cmd.desc.always-approve",
     source: "desktop",
     local: true,
   },
   {
     name: "preview",
     description: "Open the detachable Preview window (optional URL)",
+    descriptionKey: "cmd.desc.preview",
     source: "desktop",
     inputHint: "url | close",
     local: true,
@@ -42,6 +60,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "effort",
     description: "Set reasoning effort (or use topbar Effort: low/medium/high/xhigh)",
+    descriptionKey: "cmd.desc.effort",
     source: "desktop",
     inputHint: "low|medium|high|xhigh",
     // Not local: agent handles `/effort` the same as the CLI
@@ -49,6 +68,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "plan",
     description: "Enter plan mode (explore + design before coding)",
+    descriptionKey: "cmd.desc.plan",
     source: "desktop",
     inputHint: "description",
     // Local: ACP session/set_mode (same as TUI /plan). Remainder is the first prompt.
@@ -57,6 +77,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "compact",
     description: "Summarize older turns to free context (same as topbar Compress)",
+    descriptionKey: "cmd.desc.compact",
     source: "desktop",
     inputHint: "optional note to keep",
     local: true,
@@ -64,6 +85,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
   {
     name: "view-plan",
     description: "Ask the agent to show the current plan",
+    descriptionKey: "cmd.desc.view-plan",
     source: "desktop",
     // Sent to agent
   },

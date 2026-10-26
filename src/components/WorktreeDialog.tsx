@@ -1,5 +1,6 @@
 import { basen } from "../lib/path-utils";
 import { usePrivacy } from "../lib/privacy-context";
+import { useI18n } from "../lib/i18n";
 import type { CheckoutConflict } from "../vite-env";
 
 export type WorktreeDialogState = {
@@ -32,6 +33,7 @@ export function WorktreeDialog({
   onCreate: (opts: { cwd: string; newWindow: boolean }) => void;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   if (!state) return null;
 
   const inspect = state.conflict;
@@ -52,11 +54,11 @@ export function WorktreeDialog({
         aria-labelledby="worktree-dialog-title"
       >
         <div className="modal-header">
-          <h2 id="worktree-dialog-title">This folder is already open</h2>
+          <h2 id="worktree-dialog-title">{t("worktree.already")}</h2>
           <button
             type="button"
             className="btn ghost btn-sm"
-            aria-label="Cancel"
+            aria-label={t("worktree.cancel")}
             disabled={busy}
             onClick={onCancel}
           >
@@ -66,29 +68,22 @@ export function WorktreeDialog({
 
         <div className="modal-body">
           <p className="worktree-lead">
-            Another Grok window is already using{" "}
-            <strong>{basen(sourceCwd)}</strong>
-            {occ?.branch ? (
-              <>
-                {" "}
-                on <code>{occ.branch}</code>
-              </>
-            ) : null}
-            . Two windows on the same checkout share files and the same branch.
+            {t(occ?.branch ? "worktree.leadBranch" : "worktree.lead", {
+              folder: basen(sourceCwd),
+              branch: occ?.branch || "",
+            })}
           </p>
           <p className="worktree-path" title={redact(sourceCwd)}>
             {redact(sourceCwd)}
           </p>
           <p className="muted">
-            Create a Grok worktree (same as TUI <code>/new</code> with a
-            worktree). Grok picks the path under <code>~/.grok/worktrees</code>
-            — no branch or folder to type.
+            {t("worktree.desc")}
           </p>
 
           {unusedTrees.length > 0 ? (
             <div className="worktree-existing">
               <div className="worktree-existing-label">
-                Existing Grok worktrees (not open)
+                {t("worktree.existing")}
               </div>
               {unusedTrees.map((t) => (
                 <button
@@ -118,16 +113,16 @@ export function WorktreeDialog({
             disabled={busy}
             onClick={onCancel}
           >
-            Cancel
+            {t("worktree.cancel")}
           </button>
           <button
             type="button"
             className="btn"
             disabled={busy}
-            title="Two agents will share this working copy"
+            title={t("worktree.shareTitle")}
             onClick={() => onOpenAnyway(sourceCwd)}
           >
-            Open anyway
+            {t("worktree.openAnyway")}
           </button>
           {occ ? (
             <button
@@ -136,7 +131,7 @@ export function WorktreeDialog({
               disabled={busy}
               onClick={() => onFocusWindow(occ.windowId)}
             >
-              Switch to open window
+              {t("worktree.switch")}
             </button>
           ) : null}
           <button
@@ -145,7 +140,7 @@ export function WorktreeDialog({
             disabled={busy}
             onClick={() => onCreate({ cwd: sourceCwd, newWindow: false })}
           >
-            {busy ? "Creating…" : "Create worktree"}
+            {busy ? t("worktree.creating") : t("worktree.create")}
           </button>
         </div>
       </div>

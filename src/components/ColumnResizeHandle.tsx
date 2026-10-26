@@ -1,4 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useI18n } from "../lib/i18n";
 
 export function ColumnResizeHandle({
   side,
@@ -21,8 +22,9 @@ export function ColumnResizeHandle({
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onDoubleClick: () => void;
 }) {
+  const { t } = useI18n();
   const label =
-    side === "sidebar" ? "Resize left sidebar" : "Resize files panel";
+    side === "sidebar" ? t("resize.sidebar") : t("resize.panel");
   return (
     <div
       className={
@@ -36,7 +38,7 @@ export function ColumnResizeHandle({
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={width}
-      title="Drag to resize · double-click to reset width"
+      title={t("resize.hint")}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

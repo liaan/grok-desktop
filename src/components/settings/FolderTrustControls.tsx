@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { needsFolderTrust } from "../../../shared/mcp-status.mjs";
 import type { McpServerInfo } from "../../vite-env";
+import { useI18n } from "../../lib/i18n";
 
 type DoctorView = {
   error?: string | null;
@@ -28,6 +29,7 @@ export function useFolderTrustAction({
 }) {
   const [parked, setParked] = useState<ParkedTrust | null>(null);
   const [trustBusy, setTrustBusy] = useState(false);
+  const { t } = useI18n();
 
   const refreshParked = useCallback(async () => {
     try {
@@ -60,7 +62,7 @@ export function useFolderTrustAction({
 
   const onTrustFolder = useCallback(async () => {
     if (!hasProject) {
-      onNote("Open a project first, then trust the folder.");
+      onNote(t("ft.openProjectFirst"));
       return;
     }
     setTrustBusy(true);
@@ -70,27 +72,25 @@ export function useFolderTrustAction({
       const row = Array.isArray(gates?.folderTrust) ? gates.folderTrust[0] : null;
       setParked(row?.reqId ? { reqId: row.reqId } : null);
       if (!row?.reqId) {
-        onNote(
-          "No trust prompt is waiting. Type /hooks-trust in chat to be asked again.",
-        );
+        onNote(t("ft.noPrompt"));
         return;
       }
       const ok = await window.grokDesktop.respondFolderTrust(row.reqId, {
         outcome: "trust",
       });
       if (!ok) {
-        onNote("Could not record folder trust. Try again.");
+        onNote(t("ft.recordFailed"));
         return;
       }
       setParked(null);
       await onReload(false);
-      onNote("Folder trusted.");
+      onNote(t("ft.trusted"));
     } catch (e: unknown) {
       onNote(e instanceof Error ? e.message : String(e));
     } finally {
       setTrustBusy(false);
     }
-  }, [hasProject, onNote, onReload]);
+  }, [hasProject, onNote, onReload, t]);
 
   return {
     parked,
@@ -101,12 +101,13 @@ export function useFolderTrustAction({
 }
 
 export function folderTrustButtonTitle(
+  t: (key: string) => string,
   hasProject: boolean,
   parked: boolean,
 ): string {
-  if (!hasProject) return "Open a project first";
-  if (!parked) return "No waiting prompt — type /hooks-trust in chat";
-  return "Trust this workspace for project MCP, hooks, and LSP";
+  if (!hasProject) return t("ft.btnTitleNoProject");
+  if (!parked) return t("ft.btnTitleNoPrompt");
+  return t("ft.btnTitle");
 }
 
 export function folderTrustBannerVisible(
@@ -133,20 +134,15 @@ export function FolderTrustBanner({
   hasProject: boolean;
   onTrust: () => void;
 }) {
+  const { t } = useI18n();
   if (!show) return null;
   return (
     <div className="mcp-trust-banner">
       <p className="settings-desc">
         {parked ? (
-          <>
-            Project MCP stays unloaded until this folder is trusted — same as
-            TUI <code>/hooks-trust</code>.
-          </>
+          <>{t("ft.bannerParked")}</>
         ) : (
-          <>
-            This folder is not trusted. Type <code>/hooks-trust</code> in chat
-            to get the Trust dialog again.
-          </>
+          <>{t("ft.bannerUnparked")}</>
         )}
       </p>
       {parked ? (
@@ -154,10 +150,10 @@ export function FolderTrustBanner({
           type="button"
           className="btn btn-sm primary"
           disabled={trustLocked}
-          title={folderTrustButtonTitle(hasProject, parked)}
+          title={folderTrustButtonTitle(t, hasProject, parked)}
           onClick={onTrust}
         >
-          {trustBusy ? "Trusting…" : "Trust folder"}
+          {trustBusy ? t("ft.trusting") : t("ft.trustFolder")}
         </button>
       ) : null}
     </div>

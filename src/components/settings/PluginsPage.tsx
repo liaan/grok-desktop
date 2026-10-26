@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { PluginInfo } from "../../vite-env";
+import { useI18n } from "../../lib/i18n";
 
-function pluginRowDetail(p: PluginInfo): string {
+function pluginRowDetail(p: PluginInfo, t: (key: string) => string): string {
   const bits = [
-    p.enabled === false ? "disabled" : p.enabled === true ? "enabled" : null,
+    p.enabled === false ? t("plugins.disabled") : p.enabled === true ? t("plugins.enabled") : null,
     p.version || null,
     p.marketplace || p.source || null,
     p.skillCount != null ? `${p.skillCount} skills` : null,
@@ -32,6 +33,7 @@ export function PluginsPage({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [source, setSource] = useState("");
+  const { t } = useI18n();
 
   const locked = busy || restarting;
 
@@ -69,7 +71,7 @@ export function PluginsPage({
 
   const afterWrite = async (ok: boolean, error?: string | null) => {
     if (!ok) {
-      setNote(error || "Plugin command failed.");
+      setNote(error || t("plugins.cmdFailed"));
       return;
     }
     setNote(null);
@@ -98,14 +100,10 @@ export function PluginsPage({
   const onInstall = async () => {
     const trimmed = source.trim();
     if (!trimmed) {
-      setNote("Git URL or owner/repo is required.");
+      setNote(t("plugins.sourceRequired"));
       return;
     }
-    if (
-      !window.confirm(
-        `Install plugin from “${trimmed}”?\n\nThis runs grok plugin install --trust (does not edit config.toml in the app). Only install plugins from sources you trust.`,
-      )
-    ) {
+    if (!window.confirm(t("plugins.installConfirm", { source: trimmed }))) {
       return;
     }
     setBusy(true);
@@ -123,23 +121,17 @@ export function PluginsPage({
 
   return (
     <section className="settings-section" ref={sectionRef} id="settings-plugins">
-      <h3>Plugins</h3>
-      <p className="settings-desc settings-lead">
-        Same as <code>grok plugin</code> — enable, disable, or install from a
-        git URL. Desktop never edits <code>config.toml</code>. Writes restart
-        the agent so skills from the plugin show up in <code>/</code>.
-      </p>
-      {loading ? <p className="settings-desc">Loading plugins…</p> : null}
+      <h3>{t("nav.plugins")}</h3>
+      <p className="settings-desc settings-lead">{t("plugins.lead")}</p>
+      {loading ? <p className="settings-desc">{t("plugins.loading")}</p> : null}
       {!loading && plugins.length === 0 ? (
-        <p className="settings-desc">
-          No plugins installed. Paste a git URL below — no terminal.
-        </p>
+        <p className="settings-desc">{t("plugins.none")}</p>
       ) : null}
       {plugins.map((p) => (
         <div className="settings-row mcp-row" key={p.name}>
           <div className="settings-row-text">
             <span className="settings-label">{p.name}</span>
-            <span className="settings-desc">{pluginRowDetail(p)}</span>
+            <span className="settings-desc">{pluginRowDetail(p, t)}</span>
           </div>
           <div className="mcp-actions">
             <button
@@ -148,16 +140,16 @@ export function PluginsPage({
               disabled={locked}
               onClick={() => void onToggle(p)}
             >
-              {p.enabled === false ? "Enable" : "Disable"}
+              {p.enabled === false ? t("plugins.enable") : t("plugins.disable")}
             </button>
           </div>
         </div>
       ))}
 
       <div className="mcp-add">
-        <span className="settings-label">Install from git URL</span>
+        <span className="settings-label">{t("plugins.installFromGit")}</span>
         <label className="mcp-field">
-          <span>Source</span>
+          <span>{t("plugins.source")}</span>
           <input
             className="settings-input"
             value={source}
@@ -174,7 +166,7 @@ export function PluginsPage({
             disabled={locked || !source.trim()}
             onClick={() => void onInstall()}
           >
-            {restarting ? "Restarting…" : busy ? "Working…" : "Install"}
+            {restarting ? t("plugins.restarting") : busy ? t("plugins.working") : t("plugins.install")}
           </button>
         </div>
       </div>

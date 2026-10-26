@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AuthStatus, BackboneSummary, LoginProgress } from "../vite-env";
+import { useI18n } from "../lib/i18n";
 
 const BINARY_POLL_MS = 2000;
 const BINARY_POLL_FOR_MS = 60_000;
@@ -64,6 +65,7 @@ export function AuthGate({
   const [polling, setPolling] = useState(false);
   const [engineVersion, setEngineVersion] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { t } = useI18n();
 
   const stopPoll = () => {
     if (pollRef.current) {
@@ -114,7 +116,7 @@ export function AuthGate({
   if (!auth) {
     return (
       <div className="auth-card">
-        <p className="auth-muted">Starting… checking Grok login.</p>
+        <p className="auth-muted">{t("auth.starting")}</p>
       </div>
     );
   }
@@ -127,11 +129,8 @@ export function AuthGate({
     ];
     return (
       <div className="auth-card">
-        <h3>Install Grok Build</h3>
-        <p>
-          Grok Desktop uses the same agent backbone as the CLI. Install Grok
-          Build once, then sign in here — no terminal required after that.
-        </p>
+        <h3>{t("auth.install")}</h3>
+        <p>{t("auth.installLead")}</p>
         <div className="auth-steps">
           {steps.map((step) => (
             <div
@@ -154,7 +153,7 @@ export function AuthGate({
               startBinaryPoll();
             }}
           >
-            Open install guide
+            {t("auth.openGuide")}
           </button>
           <button
             className="btn"
@@ -164,17 +163,14 @@ export function AuthGate({
             }}
             disabled={busy}
           >
-            I installed it — refresh
+            {t("auth.installedRefresh")}
           </button>
         </div>
         <p className="auth-muted">
-          Looking for binary: <code>{auth.binary}</code>
+          {t("auth.lookingBinary")} <code>{auth.binary}</code>
         </p>
         {polling ? (
-          <p className="auth-muted">
-            Checking every 2 seconds for about a minute so a Dock-launched app
-            can pick up ~/.grok/bin/grok without a restart.
-          </p>
+          <p className="auth-muted">{t("auth.checkingPoll")}</p>
         ) : null}
       </div>
     );
@@ -187,9 +183,9 @@ export function AuthGate({
       <div className="auth-card auth-ok">
         <div className="auth-row">
           <div>
-            <div className="auth-label">Signed in</div>
+            <div className="auth-label">{t("auth.signedIn")}</div>
             <div className="auth-value">
-              {auth.displayName || auth.email || "Grok account"}
+              {auth.displayName || auth.email || t("auth.accountFallback")}
               {auth.method ? (
                 <span className="auth-pill">{auth.method}</span>
               ) : null}
@@ -199,7 +195,7 @@ export function AuthGate({
             ) : null}
           </div>
           <button className="btn" onClick={onLogout} disabled={busy}>
-            Sign out
+            {t("auth.signOut")}
           </button>
         </div>
 
@@ -212,14 +208,16 @@ export function AuthGate({
                   className="auth-link"
                   onClick={() => onOpenSettingsSection("skills")}
                 >
-                  <strong>{backbone.skills.length}</strong> skills
+                  <strong>{backbone.skills.length}</strong>
+                  {t("auth.skillsSuffix")}
                 </button>
               ) : (
                 <>
-                  <strong>{backbone.skills.length}</strong> skills
+                  <strong>{backbone.skills.length}</strong>
+                  {t("auth.skillsSuffix")}
                 </>
               )}
-              <span className="auth-muted"> · same as CLI</span>
+              <span className="auth-muted"> · {t("auth.sameAsCli")}</span>
             </div>
             <div>
               {onOpenSettingsSection ? (
@@ -228,13 +226,21 @@ export function AuthGate({
                   className="auth-link"
                   onClick={() => onOpenSettingsSection("mcp")}
                 >
-                  <strong>{backbone.mcpServers.length}</strong> MCP
-                  {backbone.mcpServers.length === 1 ? "" : "s"}
+                  <strong>{backbone.mcpServers.length}</strong>
+                  {t(
+                    backbone.mcpServers.length === 1
+                      ? "auth.mcpSuffix"
+                      : "auth.mcpSuffixS",
+                  )}
                 </button>
               ) : (
                 <>
-                  <strong>{backbone.mcpServers.length}</strong> MCP
-                  {backbone.mcpServers.length === 1 ? "" : "s"}
+                  <strong>{backbone.mcpServers.length}</strong>
+                  {t(
+                    backbone.mcpServers.length === 1
+                      ? "auth.mcpSuffix"
+                      : "auth.mcpSuffixS",
+                  )}
                 </>
               )}
               {backbone.mcpServers.length > 0 ? (
@@ -243,10 +249,7 @@ export function AuthGate({
                   · {backbone.mcpServers.map((m) => m.name).join(", ")}
                 </span>
               ) : (
-                <span className="auth-muted">
-                  {" "}
-                  · add in Settings — no terminal
-                </span>
+                <span className="auth-muted"> · {t("auth.addInSettings")}</span>
               )}
             </div>
             <div>
@@ -256,13 +259,21 @@ export function AuthGate({
                   className="auth-link"
                   onClick={() => onOpenSettingsSection("plugins")}
                 >
-                  <strong>{backbone.plugins.length}</strong> plugin
-                  {backbone.plugins.length === 1 ? "" : "s"}
+                  <strong>{backbone.plugins.length}</strong>
+                  {t(
+                    backbone.plugins.length === 1
+                      ? "auth.pluginSuffix"
+                      : "auth.pluginSuffixS",
+                  )}
                 </button>
               ) : (
                 <>
-                  <strong>{backbone.plugins.length}</strong> plugin
-                  {backbone.plugins.length === 1 ? "" : "s"}
+                  <strong>{backbone.plugins.length}</strong>
+                  {t(
+                    backbone.plugins.length === 1
+                      ? "auth.pluginSuffix"
+                      : "auth.pluginSuffixS",
+                  )}
                 </>
               )}
               {backbone.plugins.length > 0 ? (
@@ -273,25 +284,25 @@ export function AuthGate({
               ) : (
                 <span className="auth-muted">
                   {" "}
-                  · install from a git URL in Settings
+                  · {t("auth.installFromGit")}
                 </span>
               )}
             </div>
             {versionLabel ? (
-              <div className="auth-muted">Grok {versionLabel}</div>
+              <div className="auth-muted">
+                {t("auth.grokVersion", { version: versionLabel })}
+              </div>
             ) : null}
             <div className="auth-muted">
-              Path: <code>{auth.binary}</code>
+              {t("auth.pathLabel")} <code>{auth.binary}</code>
             </div>
           </div>
         ) : backbone && !backbone.ok ? (
           <p className="auth-muted">
-            Could not list skills/MCP/plugins yet: {backbone.error}
+            {t("auth.listFailed", { error: backbone.error ?? "" })}
           </p>
         ) : (
-          <p className="auth-muted">
-            Loading skills, MCP &amp; plugins from ~/.grok…
-          </p>
+          <p className="auth-muted">{t("auth.loadingBackbone")}</p>
         )}
       </div>
     );
@@ -299,19 +310,15 @@ export function AuthGate({
 
   return (
     <div className="auth-card">
-      <h3>{auth.expired ? "Session expired" : "Sign in to Grok"}</h3>
-      <p>
-        Uses the official Grok browser login (same credentials as the CLI).
-        Your skills, MCP servers, and config stay in <code>~/.grok</code> —
-        this app only opens the sign-in flow.
-      </p>
+      <h3>{auth.expired ? t("auth.expired") : t("auth.signInTitle")}</h3>
+      <p>{t("auth.lead")}</p>
       {versionLabel ? (
         <p className="auth-muted">
-          Grok {versionLabel} · <code>{auth.binary}</code>
+          {t("auth.grokWithPath", { version: versionLabel, path: auth.binary })}
         </p>
       ) : (
         <p className="auth-muted">
-          Binary: <code>{auth.binary}</code>
+          {t("auth.binaryLabel")} <code>{auth.binary}</code>
         </p>
       )}
 
@@ -322,12 +329,12 @@ export function AuthGate({
           disabled={busy || auth.loginInProgress}
         >
           {auth.loginInProgress || busy
-            ? "Waiting for sign-in…"
-            : "Sign in with browser"}
+            ? t("auth.waitingSignIn")
+            : t("auth.signInBrowser")}
         </button>
         {(busy || auth.loginInProgress) && (
           <button className="btn" onClick={onCancelLogin}>
-            Cancel
+            {t("auth.cancel")}
           </button>
         )}
         <button
@@ -335,10 +342,10 @@ export function AuthGate({
           onClick={() => onLogin(true)}
           disabled={busy || auth.loginInProgress}
         >
-          Device code…
+          {t("auth.deviceCodeBtn")}
         </button>
         <button className="btn" onClick={onRefresh} disabled={busy}>
-          Refresh status
+          {t("auth.refresh")}
         </button>
       </div>
 
@@ -378,18 +385,15 @@ export function AuthGate({
 
       {message ? <pre className="auth-output">{message}</pre> : null}
 
-      <div className="auth-divider">or</div>
+      <div className="auth-divider">{t("auth.or")}</div>
 
       <button className="btn block" onClick={() => setShowKey((v) => !v)}>
-        {showKey ? "Hide API key option" : "Use API key instead"}
+        {showKey ? t("auth.hideKey") : t("auth.useKey")}
       </button>
 
       {showKey ? (
         <div className="auth-key-box">
-          <p className="auth-muted">
-            From console.x.ai — used only for this app session (not written to
-            disk). Session login still takes precedence if present.
-          </p>
+          <p className="auth-muted">{t("auth.keyHint")}</p>
           <input
             type="password"
             className="auth-input"
@@ -403,7 +407,7 @@ export function AuthGate({
             disabled={!apiKey.trim() || busy}
             onClick={() => onSetApiKey(apiKey.trim())}
           >
-            Continue with API key
+            {t("auth.continueKey")}
           </button>
         </div>
       ) : null}
@@ -432,52 +436,45 @@ function LoginAssist({
   onOpen: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="auth-login-assist">
       {url ? (
         <div className="auth-url-box">
-          <div className="auth-label">Sign-in URL</div>
-          <p className="auth-muted">
-            If the browser did not open, copy this URL or open it yourself.
-          </p>
+          <div className="auth-label">{t("auth.url")}</div>
+          <p className="auth-muted">{t("auth.urlHint")}</p>
           <code className="auth-url">{url}</code>
           <div className="auth-actions">
             <button className="btn" type="button" onClick={onCopy}>
-              {copied ? "Copied" : "Copy URL"}
+              {copied ? t("auth.copied") : t("auth.copyUrl")}
             </button>
             <button className="btn" type="button" onClick={onOpen}>
-              Open in browser
+              {t("auth.openBrowser")}
             </button>
           </div>
         </div>
       ) : (
         <p className="auth-muted">
-          Waiting for Grok to print a sign-in URL. If nothing appears, use
-          Device code… or the CLI: <code>grok login --oauth</code>
+          {t("auth.waitingUrl")} <code>grok login --oauth</code>
         </p>
       )}
 
       {userCode ? (
         <div className="auth-user-code">
-          <div className="auth-label">Device code</div>
+          <div className="auth-label">{t("auth.device")}</div>
           <code>{userCode}</code>
-          <p className="auth-muted">
-            Enter this code on the sign-in page if asked.
-          </p>
+          <p className="auth-muted">{t("auth.deviceHint")}</p>
         </div>
       ) : null}
 
       {showPaste ? (
       <div className="auth-code-box">
-        <div className="auth-label">Paste finish-sign-in code</div>
-        <p className="auth-muted">
-          After you allow access, the browser may show a code (or a
-          localhost URL) to paste back into Grok Build. Paste it here.
-        </p>
+        <div className="auth-label">{t("auth.pasteLabel")}</div>
+        <p className="auth-muted">{t("auth.pasteHint")}</p>
         <input
           type="text"
           className="auth-input"
-          placeholder="Paste the code from the browser"
+          placeholder={t("auth.paste")}
           value={loginCode}
           onChange={(e) => onLoginCode(e.target.value)}
           onKeyDown={(e) => {
@@ -495,7 +492,7 @@ function LoginAssist({
           disabled={!loginCode.trim()}
           onClick={onSubmit}
         >
-          Submit code
+          {t("auth.submitCode")}
         </button>
       </div>
       ) : null}

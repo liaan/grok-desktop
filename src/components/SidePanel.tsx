@@ -11,6 +11,7 @@ import { hasAnyTasks, runningTaskCount } from "../lib/background-tasks";
 import { usePrivacy } from "../lib/privacy-context";
 import { stripAnsi } from "../lib/tool-display";
 import { ColToggle } from "./ColToggle";
+import { useI18n } from "../lib/i18n";
 import { FileBrowser, useProjectFiles } from "./files/FileBrowser";
 import { FilePeek } from "./files/FilePeek";
 import { useFileDocument } from "./files/useFileDocument";
@@ -46,6 +47,7 @@ export const SidePanel = memo(function SidePanel({
   inert?: boolean;
 }) {
   const { redact } = usePrivacy();
+  const { t } = useI18n();
   const running = runningTaskCount(backgroundTasks);
   const hasTasks = hasAnyTasks(backgroundTasks);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -110,16 +112,16 @@ export const SidePanel = memo(function SidePanel({
   }, [running, hasTasks]);
 
   const tasksLabel = running
-    ? `Tasks (${running})`
+    ? t("files.tasksCount", { n: running })
     : hasTasks
-      ? `Tasks (${backgroundTasks.length})`
-      : "Tasks";
+      ? t("files.tasksCount", { n: backgroundTasks.length })
+      : t("files.tasks");
 
   const visibleChanges = visibleGitChanges(files.changes, hideIgnored);
   const changesLabel =
     visibleChanges.length > 0
-      ? `Changes (${visibleChanges.length})`
-      : "Changes";
+      ? t("files.changesCount", { n: visibleChanges.length })
+      : t("files.changes");
 
   const peekRef = useRef(peek);
   peekRef.current = peek;
@@ -193,19 +195,21 @@ export const SidePanel = memo(function SidePanel({
       className={"panel" + (collapsed ? " panel--collapsed" : "")}
       inert={shellInert || undefined}
     >
-      <div className="panel-tabs" role="tablist" aria-label="Side panel">
+      <div className="panel-tabs" role="tablist" aria-label={t("panel.aria")}>
         <ColToggle
           collapsed={collapsed}
           expandToward="left"
-          labelExpand="Expand files panel"
-          labelCollapse="Collapse files panel"
+          labelExpand={t("panel.expand")}
+          labelCollapse={t("panel.collapse")}
           onClick={onToggleCollapsed}
         />
         {collapsed ? (
           running > 0 ? (
             <span
               className="rail-badge"
-              title={`${running} running task${running === 1 ? "" : "s"}`}
+              title={t(running === 1 ? "panel.runningOne" : "panel.running", {
+                n: running,
+              })}
             >
               {running}
             </span>
@@ -227,7 +231,7 @@ export const SidePanel = memo(function SidePanel({
             peek.reset();
           }}
         >
-          Files
+          {t("files.files")}
         </button>
         <button
           type="button"
@@ -331,9 +335,9 @@ export const SidePanel = memo(function SidePanel({
           title={
             hasTasks
               ? tasksOpen
-                ? "Collapse background tasks"
-                : "Expand background tasks"
-              : "No background tasks"
+                ? t("panel.collapseTasks")
+                : t("panel.expandTasks")
+              : t("panel.noTasks")
           }
           onClick={() => {
             if (!hasTasks) return;
@@ -352,34 +356,44 @@ export const SidePanel = memo(function SidePanel({
             id="tasks-dock-body"
             className="tasks-dock-body"
             role="region"
-            aria-label="Background tasks"
+            aria-label={t("panel.tasks")}
           >
-            {backgroundTasks.map((t) => (
-              <div key={t.id} className={`task-card status-${t.status}`}>
+            {backgroundTasks.map((task) => (
+              <div key={task.id} className={`task-card status-${task.status}`}>
                 <div className="task-card-top">
-                  <span className="task-kind">{t.kind}</span>
-                  <span className={`task-status status-${t.status}`}>
-                    {t.status}
+                  <span className="task-kind">{task.kind}</span>
+                  <span className={`task-status status-${task.status}`}>
+                    {String(task.status) === "running"
+                      ? t("task.running")
+                      : String(task.status) === "completed"
+                        ? t("task.completed")
+                        : String(task.status) === "failed"
+                          ? t("task.failed")
+                          : String(task.status) === "cancelled"
+                            ? t("task.cancelled")
+                            : task.status}
                   </span>
                 </div>
-                <h3 className="task-title" title={redact(t.title)}>
-                  {redact(t.title)}
+                <h3 className="task-title" title={redact(task.title)}>
+                  {redact(task.title)}
                 </h3>
-                {t.detail ? (
-                  <div className="task-detail" title={redact(t.detail)}>
-                    {redact(t.detail)}
+                {task.detail ? (
+                  <div className="task-detail" title={redact(task.detail)}>
+                    {redact(task.detail)}
                   </div>
                 ) : null}
-                {t.command && t.command !== t.title ? (
-                  <pre className="task-cmd">{redact(t.command)}</pre>
+                {task.command && task.command !== task.title ? (
+                  <pre className="task-cmd">{redact(task.command)}</pre>
                 ) : null}
-                {t.outputSnippet ? (
+                {task.outputSnippet ? (
                   <pre className="task-out">
-                    {redact(stripAnsi(t.outputSnippet))}
+                    {redact(stripAnsi(task.outputSnippet))}
                   </pre>
                 ) : null}
-                {t.exitCode != null ? (
-                  <div className="task-meta">exit {t.exitCode}</div>
+                {task.exitCode != null ? (
+                  <div className="task-meta">
+                    {t("task.exit", { code: task.exitCode })}
+                  </div>
                 ) : null}
               </div>
             ))}

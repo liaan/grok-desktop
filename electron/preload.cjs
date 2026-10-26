@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   setSandboxTerminal: (value) =>
     ipcRenderer.invoke("agent:set-sandbox-terminal", value),
   setTheme: (value) => ipcRenderer.invoke("app:set-theme", value),
+  setLocale: (value) => ipcRenderer.invoke("app:set-locale", value),
   setPrivacyMode: (value) => ipcRenderer.invoke("app:set-privacy-mode", value),
   setAutoCompactAt: (value) =>
     ipcRenderer.invoke("app:set-auto-compact-at", value),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "../lib/i18n";
 
 export type AskUserQuestion = {
   id?: string;
@@ -33,6 +34,7 @@ export function AskUserDialog({
       | { type: "declined" },
   ) => void;
 }) {
+  const { t } = useI18n();
   const questions = request?.questions || [];
   /** questionKey → selected option id(s) */
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
@@ -92,11 +94,11 @@ export function AskUserDialog({
         aria-labelledby="ask-user-title"
       >
         <div className="modal-header">
-          <h2 id="ask-user-title">Agent needs your input</h2>
+          <h2 id="ask-user-title">{t("ask.title")}</h2>
         </div>
         <div className="modal-body">
           {questions.length === 0 ? (
-            <p className="muted">No questions provided.</p>
+            <p className="muted">{t("ask.none")}</p>
           ) : (
             questions.map((q, i) => {
               const qKey = String(q.id ?? i);
@@ -145,7 +147,7 @@ export function AskUserDialog({
             className="btn"
             onClick={() => onRespond(request.reqId, { type: "declined" })}
           >
-            Cancel
+            {t("ask.cancel")}
           </button>
           <button
             type="button"
@@ -153,7 +155,7 @@ export function AskUserDialog({
             disabled={!allAnswered}
             onClick={submit}
           >
-            Submit
+            {t("ask.submit")}
           </button>
         </div>
       </div>
