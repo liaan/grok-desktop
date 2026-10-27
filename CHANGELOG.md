@@ -6,7 +6,7 @@ Newest first. A `-beta` version is a preview (Settings → Preview updates). Ins
 
 - Settings editor for models and for skill files. Those stay under `~/.grok`.
 
-## [1.4.8-beta](https://github.com/liaan/grok-desktop/releases/tag/v1.4.8-beta) — 2026-10-26
+## [1.4.8](https://github.com/liaan/grok-desktop/releases/tag/v1.4.8) — 2026-10-27
 
 Simplified Chinese. Settings → General → Language: Follow System, English, or 简体中文. Menus and the splash screen follow that choice.
 
